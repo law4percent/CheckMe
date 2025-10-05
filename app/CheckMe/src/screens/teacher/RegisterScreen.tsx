@@ -10,7 +10,8 @@ import {
   Platform,
   ScrollView,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -22,62 +23,40 @@ import {
   validateUsername, 
   validateEmployeeId 
 } from '../../utils/validation';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherRegister'>;
 
 const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
   const [employeeId, setEmployeeId] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
 
   const validateForm = (): string | null => {
-    // Full Name validation
-    if (!fullName.trim()) {
-      return 'Full name is required';
-    }
-
-    // Email validation
-    if (!email.trim()) {
-      return 'Email is required';
-    }
-
-    if (!isGmailAddress(email)) {
-      return 'Only Gmail addresses (@gmail.com) are allowed';
-    }
-
-    // Password validation
-    const passwordCheck = validatePassword(password);
-    if (!passwordCheck.isValid) {
-      return passwordCheck.message || 'Invalid password';
-    }
-
-    // Confirm password
-    if (password !== confirmPassword) {
-      return 'Passwords do not match';
-    }
-
-    // Username validation
+    if (!fullName.trim()) return 'Full name is required';
+    if (!email.trim()) return 'Email is required';
+    if (!isGmailAddress(email)) return 'Only Gmail addresses (@gmail.com) are allowed';
+    
     const usernameCheck = validateUsername(username);
-    if (!usernameCheck.isValid) {
-      return usernameCheck.message || 'Invalid username';
-    }
-
-    // Employee ID validation
+    if (!usernameCheck.isValid) return usernameCheck.message || 'Invalid username';
+    
     const employeeIdCheck = validateEmployeeId(employeeId);
-    if (!employeeIdCheck.isValid) {
-      return employeeIdCheck.message || 'Invalid employee ID';
-    }
-
+    if (!employeeIdCheck.isValid) return employeeIdCheck.message || 'Invalid employee ID';
+    
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.isValid) return passwordCheck.message || 'Invalid password';
+    
+    if (password !== confirmPassword) return 'Passwords do not match';
+    
     return null;
   };
 
   const handleRegister = async () => {
-    // Validate form
     const validationError = validateForm();
     if (validationError) {
       Alert.alert('Validation Error', validationError);
@@ -97,12 +76,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       Alert.alert(
         'Success',
         'Account created successfully! Please login with your credentials.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('TeacherLogin')
-          }
-        ]
+        [{ text: 'OK', onPress: () => navigation.navigate('TeacherLogin') }]
       );
     } catch (error: any) {
       Alert.alert('Registration Failed', error.message);
@@ -123,102 +97,106 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
-            <View style={styles.header}>
-              <Text style={styles.title}>Create Account</Text>
-              <Text style={styles.subtitle}>Register as a teacher</Text>
+            {/* Logo Section */}
+            <View style={styles.logoContainer}>
+              <Image 
+                source={require('../../../assets/checkme-logo.jpg')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+              {/* Decorative dots */}
+              <View style={[styles.dot, styles.dotTopLeft]} />
+              <View style={[styles.dot, styles.dotTopRight]} />
+              <View style={[styles.dot, styles.dotBottomLeft]} />
+              <View style={[styles.dot, styles.dotBottomRight]} />
             </View>
 
+            <Text style={styles.title}>Teacher Sign Up</Text>
+
+            {/* Form */}
             <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Full Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your full name"
-                  value={fullName}
-                  onChangeText={setFullName}
-                  autoCapitalize="words"
-                  editable={!loading}
-                />
-              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                placeholderTextColor="#94a3b8"
+                value={fullName}
+                onChangeText={setFullName}
+                autoCapitalize="words"
+                editable={!loading}
+              />
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="yourname@gmail.com"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  editable={!loading}
-                />
-                <Text style={styles.helpText}>Only Gmail addresses are allowed</Text>
-              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Email (Gmail only)"
+                placeholderTextColor="#94a3b8"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                editable={!loading}
+              />
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Username</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Choose a username"
-                  value={username}
-                  onChangeText={setUsername}
-                  autoCapitalize="none"
-                  editable={!loading}
-                />
-                <Text style={styles.helpText}>3-20 characters, letters, numbers, and underscores only</Text>
-              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Username"
+                placeholderTextColor="#94a3b8"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                editable={!loading}
+              />
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Employee ID</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your employee ID"
-                  value={employeeId}
-                  onChangeText={setEmployeeId}
-                  autoCapitalize="characters"
-                  editable={!loading}
-                />
-              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Employee ID"
+                placeholderTextColor="#94a3b8"
+                value={employeeId}
+                onChangeText={setEmployeeId}
+                autoCapitalize="characters"
+                editable={!loading}
+              />
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Create a password"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  editable={!loading}
-                />
-                <Text style={styles.helpText}>Minimum 6 characters</Text>
-              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#94a3b8"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                editable={!loading}
+              />
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Confirm Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Re-enter your password"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  editable={!loading}
-                />
-              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm Password"
+                placeholderTextColor="#94a3b8"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                editable={!loading}
+              />
 
               <TouchableOpacity
-                style={[styles.registerButton, loading && styles.disabledButton]}
+                style={styles.buttonWrapper}
                 onPress={handleRegister}
                 disabled={loading}
                 activeOpacity={0.8}
               >
-                {loading ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={styles.registerButtonText}>Register</Text>
-                )}
+                <LinearGradient
+                  colors={['#84cc16', '#22c55e']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.gradientButton}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.buttonText}>Sign Up</Text>
+                  )}
+                </LinearGradient>
               </TouchableOpacity>
 
               <View style={styles.loginContainer}>
@@ -241,7 +219,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#171443'
   },
   keyboardView: {
     flex: 1
@@ -252,75 +230,99 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20
+    paddingHorizontal: 40,
+    paddingTop: 20,
+    alignItems: 'center'
   },
-  header: {
-    marginBottom: 30
+  logoContainer: {
+    position: 'relative',
+    marginBottom: 30,
+    alignItems: 'center',
+    width: 150,
+    height: 150
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%'
+  },
+  dot: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e'
+  },
+  dotTopLeft: {
+    top: 10,
+    left: 10
+  },
+  dotTopRight: {
+    top: 10,
+    right: 10
+  },
+  dotBottomLeft: {
+    bottom: 10,
+    left: 10
+  },
+  dotBottomRight: {
+    bottom: 10,
+    right: 10
   },
   title: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 8
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#64748b'
+    color: '#ffffff',
+    marginBottom: 25,
+    textAlign: 'center'
   },
   form: {
-    gap: 20
-  },
-  inputGroup: {
-    gap: 8
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b'
+    width: '100%',
+    gap: 15
   },
   input: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 25,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    fontSize: 15,
     color: '#1e293b'
   },
-  helpText: {
-    fontSize: 13,
-    color: '#64748b',
-    marginTop: -4
+  buttonWrapper: {
+    width: '100%',
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginTop: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8
   },
-  registerButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 12,
-    padding: 16,
+  gradientButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 40,
     alignItems: 'center',
-    marginTop: 10
+    justifyContent: 'center'
   },
-  disabledButton: {
-    opacity: 0.6
-  },
-  registerButtonText: {
-    color: '#ffffff',
+  buttonText: {
     fontSize: 18,
-    fontWeight: '600'
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 0.5
   },
   loginContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10
+    marginTop: 15
   },
   loginText: {
-    fontSize: 16,
-    color: '#64748b'
+    fontSize: 14,
+    color: '#cbd5e1'
   },
   loginLink: {
-    fontSize: 16,
-    color: '#2563eb',
+    fontSize: 14,
+    color: '#22c55e',
     fontWeight: '600'
   }
 });

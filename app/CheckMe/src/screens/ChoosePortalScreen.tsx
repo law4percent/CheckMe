@@ -5,11 +5,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  StatusBar
+  StatusBar,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChoosePortal'>;
 
@@ -19,48 +21,59 @@ const ChoosePortalScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleStudentPress = () => {
-    // TODO: Implement student portal in future phase
     alert('Student portal coming soon!');
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="light-content" backgroundColor="#171443" />
       
       <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.appName}>CheckMe</Text>
-          <Text style={styles.subtitle}>Choose your portal</Text>
+        {/* Logo Section */}
+        <View style={styles.logoContainer}>
+          <Image 
+            source={require('../../assets/checkme-logo.jpg')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+          {/* Decorative dots */}
+          <View style={[styles.dot, styles.dotTopLeft]} />
+          <View style={[styles.dot, styles.dotTopRight]} />
+          <View style={[styles.dot, styles.dotBottomLeft]} />
+          <View style={[styles.dot, styles.dotBottomRight]} />
         </View>
 
+        {/* Buttons */}
         <View style={styles.buttonsContainer}>
           <TouchableOpacity 
-            style={styles.portalButton}
+            style={styles.buttonWrapper}
             onPress={handleTeacherPress}
             activeOpacity={0.8}
           >
-            <Text style={styles.portalIcon}>👨‍🏫</Text>
-            <Text style={styles.portalTitle}>Teacher</Text>
-            <Text style={styles.portalDescription}>
-              Access teacher dashboard and manage your classes
-            </Text>
+            <LinearGradient
+              colors={['#84cc16', '#22c55e']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              <Text style={styles.buttonText}>Teacher Portal</Text>
+            </LinearGradient>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.portalButton, styles.disabledButton]}
+            style={styles.buttonWrapper}
             onPress={handleStudentPress}
             activeOpacity={0.8}
           >
-            <Text style={styles.portalIcon}>🎓</Text>
-            <Text style={styles.portalTitle}>Student</Text>
-            <Text style={styles.portalDescription}>
-              Coming soon
-            </Text>
+            <LinearGradient
+              colors={['#06b6d4', '#3b82f6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              <Text style={styles.buttonText}>Student Portal</Text>
+            </LinearGradient>
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Version 1.0.0</Text>
         </View>
       </View>
     </SafeAreaView>
@@ -70,71 +83,73 @@ const ChoosePortalScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#171443'
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24
-  },
-  header: {
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 60,
-    marginBottom: 40
+    paddingHorizontal: 40
   },
-  appName: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#2563eb',
-    marginBottom: 8
+  logoContainer: {
+    position: 'relative',
+    marginBottom: 80,
+    alignItems: 'center',
+    width: 250,
+    height: 250
   },
-  subtitle: {
-    fontSize: 18,
-    color: '#64748b',
-    fontWeight: '500'
+  logoImage: {
+    width: '100%',
+    height: '100%'
+  },
+  dot: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22c55e'
+  },
+  dotTopLeft: {
+    top: 20,
+    left: 20
+  },
+  dotTopRight: {
+    top: 20,
+    right: 20
+  },
+  dotBottomLeft: {
+    bottom: 20,
+    left: 20
+  },
+  dotBottomRight: {
+    bottom: 20,
+    right: 20
   },
   buttonsContainer: {
-    flex: 1,
+    width: '100%',
     gap: 20
   },
-  portalButton: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
+  buttonWrapper: {
+    width: '100%',
+    borderRadius: 30,
+    overflow: 'hidden',
+    elevation: 5,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8
   },
-  disabledButton: {
-    opacity: 0.6
-  },
-  portalIcon: {
-    fontSize: 64,
-    marginBottom: 16
-  },
-  portalTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 8
-  },
-  portalDescription: {
-    fontSize: 16,
-    color: '#64748b',
-    textAlign: 'center'
-  },
-  footer: {
+  gradientButton: {
+    paddingVertical: 18,
+    paddingHorizontal: 40,
     alignItems: 'center',
-    paddingVertical: 20
+    justifyContent: 'center'
   },
-  footerText: {
-    fontSize: 14,
-    color: '#94a3b8'
+  buttonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 0.5
   }
 });
 

@@ -10,12 +10,14 @@ import {
   Platform,
   ScrollView,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherLogin'>;
 
@@ -26,7 +28,6 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const { signIn } = useAuth();
 
   const handleLogin = async () => {
-    // Basic validation
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -35,7 +36,6 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     try {
       setLoading(true);
       await signIn({ email: email.trim(), password });
-      // Navigation is handled automatically by AuthContext
     } catch (error: any) {
       Alert.alert('Login Failed', error.message);
     } finally {
@@ -56,58 +56,74 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
         <ScrollView 
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
-            <View style={styles.header}>
-              <Text style={styles.title}>Welcome Back</Text>
-              <Text style={styles.subtitle}>Sign in to your teacher account</Text>
+            {/* Logo Section */}
+            <View style={styles.logoContainer}>
+              <Image 
+                source={require('../../../assets/checkme-logo.jpg')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+              {/* Decorative dots */}
+              <View style={[styles.dot, styles.dotTopLeft]} />
+              <View style={[styles.dot, styles.dotTopRight]} />
+              <View style={[styles.dot, styles.dotBottomLeft]} />
+              <View style={[styles.dot, styles.dotBottomRight]} />
             </View>
 
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your email"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  editable={!loading}
-                />
-              </View>
+            <Text style={styles.title}>Teacher Login</Text>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  editable={!loading}
-                />
-              </View>
+            {/* Form */}
+            <View style={styles.form}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor="#94a3b8"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                editable={!loading}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#94a3b8"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                editable={!loading}
+              />
 
               <TouchableOpacity
-                style={[styles.loginButton, loading && styles.disabledButton]}
+                style={styles.buttonWrapper}
                 onPress={handleLogin}
                 disabled={loading}
                 activeOpacity={0.8}
               >
-                {loading ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={styles.loginButtonText}>Login</Text>
-                )}
+                <LinearGradient
+                  colors={['#84cc16', '#22c55e']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.gradientButton}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.buttonText}>Login</Text>
+                  )}
+                </LinearGradient>
               </TouchableOpacity>
 
               <View style={styles.registerContainer}>
-                <Text style={styles.registerText}>Don't have an account? </Text>
+                <Text style={styles.registerText}>Don't have you account? </Text>
                 <TouchableOpacity onPress={handleRegisterPress} disabled={loading}>
-                  <Text style={styles.registerLink}>Register</Text>
+                  <Text style={styles.registerLink}>Sign Up as Teacher</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -121,7 +137,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#171443'
   },
   keyboardView: {
     flex: 1
@@ -131,70 +147,100 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 40
+    paddingHorizontal: 40,
+    paddingTop: 40,
+    alignItems: 'center'
   },
-  header: {
-    marginBottom: 40
+  logoContainer: {
+    position: 'relative',
+    marginBottom: 40,
+    alignItems: 'center',
+    width: 180,
+    height: 180
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%'
+  },
+  dot: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#22c55e'
+  },
+  dotTopLeft: {
+    top: 15,
+    left: 15
+  },
+  dotTopRight: {
+    top: 15,
+    right: 15
+  },
+  dotBottomLeft: {
+    bottom: 15,
+    left: 15
+  },
+  dotBottomRight: {
+    bottom: 15,
+    right: 15
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 8
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#64748b'
+    color: '#ffffff',
+    marginBottom: 30,
+    textAlign: 'center'
   },
   form: {
+    width: '100%',
     gap: 20
   },
-  inputGroup: {
-    gap: 8
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b'
-  },
   input: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 25,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     color: '#1e293b'
   },
-  loginButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 12,
-    padding: 16,
+  buttonWrapper: {
+    width: '100%',
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginTop: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8
+  },
+  gradientButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 40,
     alignItems: 'center',
-    marginTop: 10
+    justifyContent: 'center'
   },
-  disabledButton: {
-    opacity: 0.6
-  },
-  loginButtonText: {
-    color: '#ffffff',
+  buttonText: {
     fontSize: 18,
-    fontWeight: '600'
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 0.5
   },
   registerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20
+    marginTop: 20,
+    flexWrap: 'wrap'
   },
   registerText: {
-    fontSize: 16,
-    color: '#64748b'
+    fontSize: 14,
+    color: '#cbd5e1'
   },
   registerLink: {
-    fontSize: 16,
-    color: '#2563eb',
+    fontSize: 14,
+    color: '#22c55e',
     fontWeight: '600'
   }
 });
