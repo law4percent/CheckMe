@@ -1,0 +1,114 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code - Force LF (Unix-style line endings)
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Configuration files - Force LF
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.nvmrc text eol=lf
+.env* text eol=lf
+.editorconfig text eol=lf
+
+# React Native / Expo specific
+*.config.js text eol=lf
+*.config.ts text eol=lf
+metro.config.js text eol=lf
+babel.config.js text eol=lf
+app.json text eol=lf
+
+# Scripts - Force LF for cross-platform compatibility
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows scripts - Force CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Documentation
+*.txt text eol=lf
+README* text eol=lf
+LICENSE text eol=lf
+CHANGELOG* text eol=lf
+
+# Web files
+*.html text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.sass text eol=lf
+*.xml text eol=lf
+*.svg text eol=lf
+
+# Binary files - No line ending conversion
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.bmp binary
+
+# Audio/Video
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.flac binary
+
+# Archives
+*.zip binary
+*.gz binary
+*.tar binary
+*.rar binary
+*.7z binary
+
+# Mobile app files
+*.apk binary
+*.aab binary
+*.ipa binary
+
+# Java/Android
+*.jar binary
+*.aar binary
+*.class binary
+*.dex binary
+
+# iOS
+*.a binary
+
+# Fonts
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+
+# Documents
+*.pdf binary
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+
+# Database
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# Other
+*.pbxproj binary
+*.keystore binary
+*.jks binary
