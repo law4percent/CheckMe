@@ -1,5 +1,32 @@
 // src/types/index.ts
 
+export interface Section {
+  id: string;
+  year: string;
+  sectionName: string;
+  subjectCount: number;
+  teacherId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateSectionData {
+  year: string;
+  sectionName: string;
+  teacherId: string;
+}
+
+export interface UpdateSectionData {
+  year?: string;
+  sectionName?: string;
+}
+
+export interface UpdateTeacherProfileData {
+  fullName?: string;
+  username?: string;
+  employeeId?: string;
+}
+
 export interface TeacherSignUpData {
   fullName: string;
   email: string;
