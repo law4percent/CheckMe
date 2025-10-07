@@ -78,6 +78,9 @@ export type RootStackParamList = {
   TeacherLogin: undefined;
   TeacherRegister: undefined;
   TeacherDashboard: undefined;
+  TeacherSectionSubject: {
+    section: Section;
+  };
 };
 
 declare global {

@@ -23,8 +23,12 @@ import {
   Section
 } from '../../services/sectionService';
 import { updateTeacherProfile } from '../../services/authService';
+import { RootStackParamList } from '../../types';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-const DashboardScreen: React.FC = () => {
+type Props = NativeStackScreenProps<RootStackParamList, 'TeacherDashboard'>;
+
+const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   const { user, signOut } = useAuth();
   
   // State for Profile Modal
@@ -271,11 +275,7 @@ const DashboardScreen: React.FC = () => {
   };
 
   const handleSectionPress = (section: Section) => {
-    // TODO: Navigate to section details
-    Alert.alert(
-      `${section.year}-${section.sectionName}`,
-      `This section has ${section.subjectCount} subjects\n\nCreated: ${new Date(section.createdAt).toLocaleDateString()}`
-    );
+    navigation.navigate('TeacherSectionSubject', { section });
   };
 
   if (loading) {
