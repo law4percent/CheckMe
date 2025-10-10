@@ -5,7 +5,7 @@ import {
   signOut as firebaseSignOut,
   User
 } from 'firebase/auth';
-import { ref, set, get } from 'firebase/database';
+import { ref, set, get, update } from 'firebase/database';
 import { auth, database } from '../config/firebase';
 import { TeacherSignUpData, TeacherLoginData, TeacherProfile } from '../types';
 import { isGmailAddress } from '../utils/validation';
@@ -113,5 +113,31 @@ export const getTeacherProfile = async (uid: string): Promise<TeacherProfile | n
     return null;
   } catch (error: any) {
     throw new Error(error.message || 'Failed to fetch profile');
+  }
+};
+
+/**
+ * Update teacher profile
+ */
+export const updateTeacherProfile = async (
+  teacherId: string,
+  data: {
+    fullName?: string;
+    username?: string;
+    employeeId?: string;
+  }
+): Promise<void> => {
+  try {
+    const teacherRef = ref(database, `users/teachers/${teacherId}`);
+    
+    const updates: any = {};
+    
+    if (data.fullName) updates.fullName = data.fullName.trim();
+    if (data.username) updates.username = data.username.trim();
+    if (data.employeeId) updates.employeeId = data.employeeId.trim();
+
+    await update(teacherRef, updates);
+  } catch (error: any) {
+    throw new Error(error.message || 'Failed to update profile');
   }
 };
