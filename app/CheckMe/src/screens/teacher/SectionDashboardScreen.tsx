@@ -25,9 +25,9 @@ import {
 } from '../../services/subjectService';
 import { updateSectionSubjectCount } from '../../services/sectionService';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSectionSubject'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSectionDashboard'>;
 
-const SectionSubjectScreen: React.FC<Props> = ({ route, navigation }) => {
+const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const { section } = route.params;
   const { user } = useAuth();
 
@@ -671,4 +671,4 @@ const styles = StyleSheet.create({
 });
 
 
-export default SectionSubjectScreen;
+export default SectionDashboardScreen;

@@ -78,7 +78,7 @@ export type RootStackParamList = {
   TeacherLogin: undefined;
   TeacherRegister: undefined;
   TeacherDashboard: undefined;
-  TeacherSectionSubject: {
+  TeacherSectionDashboard: {
     section: Section;
   };
 };
