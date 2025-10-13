@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Clipboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -45,6 +46,10 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [editSubjectModalVisible, setEditSubjectModalVisible] = useState(false);
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
   const [editSubjectName, setEditSubjectName] = useState('');
+
+  // State for Subject Details Modal
+  const [subjectDetailsModalVisible, setSubjectDetailsModalVisible] = useState(false);
+  const [selectedSubjectForDetails, setSelectedSubjectForDetails] = useState<Subject | null>(null);
 
   // Load subjects on mount
   useEffect(() => {
@@ -211,6 +216,33 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     Alert.alert('Coming Soon', `Subject details for "${subject.subjectName}" will be available soon!`);
   };
 
+  const handleShowSubjectDetails = (subject: Subject, event: any) => {
+    event.stopPropagation();
+    setSelectedSubjectForDetails(subject);
+    setSubjectDetailsModalVisible(true);
+  };
+
+  const handleCloseSubjectDetails = () => {
+    setSubjectDetailsModalVisible(false);
+    setSelectedSubjectForDetails(null);
+  };
+
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const handleCopyToClipboard = (text: string, label: string) => {
+    Clipboard.setString(text);
+    Alert.alert('Copied!', `${label} copied to clipboard`);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -240,6 +272,15 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           </Text>
         </View>
 
+{/* 
+  Add a small icon (Detail icon) that if click the overlayed firebase detials of this subject will appear.
+  Those detail are:
+  > Created at
+  > Subject ID (UID)
+  > Section ID (UID)
+  > Teacher ID (UID)
+*/}
+
         {/* Manage Subjects */}
         <View style={styles.manageSections}>
           <View style={styles.subjectHeader}>
@@ -268,13 +309,22 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   activeOpacity={0.7}
                   disabled={actionLoading}
                 >
-                  <View>
-                    <Text style={styles.subjectCardTitle}>
-                      {subject.subjectName}
-                    </Text>
-                    <Text style={styles.subjectCardDetails}>
-                      {subject.studentCount} {subject.studentCount === 1 ? 'enrolled student' : 'enrolled students'}
-                    </Text>
+                  <View style={styles.subjectCardContentRow}>
+                    <View style={styles.subjectCardInfo}>
+                      <Text style={styles.subjectCardTitle}>
+                        {subject.subjectName}
+                      </Text>
+                      <Text style={styles.subjectCardDetails}>
+                        {subject.studentCount} {subject.studentCount === 1 ? 'enrolled student' : 'enrolled students'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.detailIconButton}
+                      onPress={(e) => handleShowSubjectDetails(subject, e)}
+                      disabled={actionLoading}
+                    >
+                      <Text style={styles.detailIconText}>ℹ️</Text>
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
 
@@ -425,6 +475,89 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Subject Details Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={subjectDetailsModalVisible}
+        onRequestClose={handleCloseSubjectDetails}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Subject Details</Text>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={handleCloseSubjectDetails}
+              >
+                <Text style={styles.iconButtonText}>✕ Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Subject Name</Text>
+                <Text style={styles.modalValue}>
+                  {selectedSubjectForDetails?.subjectName}
+                </Text>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Created At</Text>
+                <Text style={styles.modalValue}>
+                  {selectedSubjectForDetails?.createdAt ? formatDate(selectedSubjectForDetails.createdAt) : 'N/A'}
+                </Text>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Subject ID (UID)</Text>
+                <View style={styles.uidContainer}>
+                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
+                    {selectedSubjectForDetails?.id}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.copyButton}
+                    onPress={() => handleCopyToClipboard(selectedSubjectForDetails?.id || '', 'Subject ID')}
+                  >
+                    <Text style={styles.copyButtonText}>📋 Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Section ID (UID)</Text>
+                <View style={styles.uidContainer}>
+                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
+                    {selectedSubjectForDetails?.sectionId}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.copyButton}
+                    onPress={() => handleCopyToClipboard(selectedSubjectForDetails?.sectionId || '', 'Section ID')}
+                  >
+                    <Text style={styles.copyButtonText}>📋 Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Teacher ID (UID)</Text>
+                <View style={styles.uidContainer}>
+                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
+                    {selectedSubjectForDetails?.teacherId}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.copyButton}
+                    onPress={() => handleCopyToClipboard(selectedSubjectForDetails?.teacherId || '', 'Teacher ID')}
+                  >
+                    <Text style={styles.copyButtonText}>📋 Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -537,6 +670,32 @@ const styles = StyleSheet.create({
   subjectCardContent: {
     padding: 20
   },
+  subjectCardContentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  subjectCardInfo: {
+    flex: 1
+  },
+  detailIconButton: {
+    padding: 8,
+    marginLeft: 8
+  },
+  detailIconText: {
+    fontSize: 20
+  },
+  iconButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f1f5f9'
+  },
+  iconButtonText: {
+    fontSize: 14,
+    color: '#475569',
+    fontWeight: '600'
+  },
   subjectCardTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -625,6 +784,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#475569',
     marginBottom: 8
+  },
+  modalValue: {
+    fontSize: 16,
+    color: '#1e293b',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8
+  },
+  monoValue: {
+    fontFamily: 'monospace',
+    fontSize: 12
+  },
+  uidContainer: {
+    flexDirection: 'column',
+    gap: 8
+  },
+  uidText: {
+    flex: 1
+  },
+  copyButton: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center'
+  },
+  copyButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 14
   },
   modalInput: {
     fontSize: 16,

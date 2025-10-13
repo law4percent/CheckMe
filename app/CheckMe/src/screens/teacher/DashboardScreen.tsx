@@ -10,7 +10,8 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Clipboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
@@ -58,6 +59,10 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  
+  // State for Section Details Modal
+  const [sectionDetailsModalVisible, setSectionDetailsModalVisible] = useState(false);
+  const [selectedSectionForDetails, setSelectedSectionForDetails] = useState<Section | null>(null);
   
   const totalSections = sections.length;
 
@@ -278,6 +283,33 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     navigation.navigate('TeacherSectionDashboard', { section });
   };
 
+  const handleShowSectionDetails = (section: Section, event: any) => {
+    event.stopPropagation();
+    setSelectedSectionForDetails(section);
+    setSectionDetailsModalVisible(true);
+  };
+
+  const handleCloseSectionDetails = () => {
+    setSectionDetailsModalVisible(false);
+    setSelectedSectionForDetails(null);
+  };
+
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const handleCopyToClipboard = (text: string, label: string) => {
+    Clipboard.setString(text);
+    Alert.alert('Copied!', `${label} copied to clipboard`);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -315,7 +347,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
-
         {/* Manage Sections */}
         <View style={styles.manageSections}>
           <View style={styles.sectionHeader}>
@@ -344,13 +375,22 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   activeOpacity={0.7}
                   disabled={actionLoading}
                 >
-                  <View>
-                    <Text style={styles.sectionCardTitle}>
-                      {section.year}-{section.sectionName}
-                    </Text>
-                    <Text style={styles.sectionCardDetails}>
-                      {section.subjectCount} {section.subjectCount === 1 ? 'subject' : 'subjects'}
-                    </Text>
+                  <View style={styles.sectionCardContentRow}>
+                    <View style={styles.sectionCardInfo}>
+                      <Text style={styles.sectionCardTitle}>
+                        {section.year}-{section.sectionName}
+                      </Text>
+                      <Text style={styles.sectionCardDetails}>
+                        {section.subjectCount} {section.subjectCount === 1 ? 'subject' : 'subjects'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.detailIconButton}
+                      onPress={(e) => handleShowSectionDetails(section, e)}
+                      disabled={actionLoading}
+                    >
+                      <Text style={styles.detailIconText}>ℹ️</Text>
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
                 
@@ -653,6 +693,74 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Section Details Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={sectionDetailsModalVisible}
+        onRequestClose={handleCloseSectionDetails}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Section Details</Text>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={handleCloseSectionDetails}
+              >
+                <Text style={styles.iconButtonText}>✕ Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Section Name</Text>
+                <Text style={styles.modalValue}>
+                  {selectedSectionForDetails?.year}-{selectedSectionForDetails?.sectionName}
+                </Text>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Created At</Text>
+                <Text style={styles.modalValue}>
+                  {selectedSectionForDetails?.createdAt ? formatDate(selectedSectionForDetails.createdAt) : 'N/A'}
+                </Text>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Section ID (UID)</Text>
+                <View style={styles.uidContainer}>
+                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
+                    {selectedSectionForDetails?.id}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.copyButton}
+                    onPress={() => handleCopyToClipboard(selectedSectionForDetails?.id || '', 'Section ID')}
+                  >
+                    <Text style={styles.copyButtonText}>📋 Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Teacher ID (UID)</Text>
+                <View style={styles.uidContainer}>
+                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
+                    {selectedSectionForDetails?.teacherId}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.copyButton}
+                    onPress={() => handleCopyToClipboard(selectedSectionForDetails?.teacherId || '', 'Teacher ID')}
+                  >
+                    <Text style={styles.copyButtonText}>📋 Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -785,6 +893,21 @@ const styles = StyleSheet.create({
   },
   sectionCardContent: {
     padding: 20
+  },
+  sectionCardContentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  sectionCardInfo: {
+    flex: 1
+  },
+  detailIconButton: {
+    padding: 8,
+    marginLeft: 8
+  },
+  detailIconText: {
+    fontSize: 20
   },
   sectionCardTitle: {
     fontSize: 18,
@@ -923,6 +1046,29 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 4,
     fontStyle: 'italic'
+  },
+  monoValue: {
+    fontFamily: 'monospace',
+    fontSize: 12
+  },
+  uidContainer: {
+    flexDirection: 'column',
+    gap: 8
+  },
+  uidText: {
+    flex: 1
+  },
+  copyButton: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center'
+  },
+  copyButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 14
   },
   createSectionActions: {
     flexDirection: 'row',
