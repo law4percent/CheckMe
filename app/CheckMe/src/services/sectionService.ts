@@ -118,13 +118,18 @@ export const updateSection = async (
 };
 
 /**
- * Delete a section
+ * Delete a section and all its associated subjects (cascade delete)
  */
 export const deleteSection = async (
   teacherId: string,
   sectionId: string
 ): Promise<void> => {
   try {
+    // First, delete all subjects associated with this section
+    const subjectsRef = ref(database, `subjects/${teacherId}/${sectionId}`);
+    await remove(subjectsRef);
+    
+    // Then, delete the section itself
     const sectionRef = ref(database, `sections/${teacherId}/${sectionId}`);
     await remove(sectionRef);
   } catch (error: any) {
