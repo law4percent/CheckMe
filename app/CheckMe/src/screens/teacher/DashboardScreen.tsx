@@ -275,7 +275,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleSectionPress = (section: Section) => {
-    navigation.navigate('TeacherSectionSubject', { section });
+    navigation.navigate('TeacherSectionDashboard', { section });
   };
 
   if (loading) {

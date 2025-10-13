@@ -34,12 +34,12 @@ const AppNavigator: React.FC = () => {
           // User is authenticated - show dashboard
           <>
             <Stack.Screen 
-              name="TeacherDashboard" // ERROR Type '"TeacherDashboard"' is not assignable to type '"TeacherSectionSubject"'.
+              name="TeacherDashboard" // ERROR Type '"TeacherDashboard"' is not assignable to type '"TeacherSectionDashboard"'.
               component={DashboardScreen}
               options={{ headerShown: false }}
             />
             <Stack.Screen 
-              name="TeacherSectionDashboard" // ERROR Type '"TeacherSectionSubject"' is not assignable to type 'keyof RootStackParamList'.
+              name="TeacherSectionDashboard" // ERROR Type '"TeacherSectionDashboard"' is not assignable to type 'keyof RootStackParamList'.
               component={SectionDashboardScreen}
               options={{ 
                 headerShown: true, 
