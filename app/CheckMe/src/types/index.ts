@@ -72,6 +72,19 @@ export interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
+// Subject interface
+export interface Subject {
+  id: string;
+  year: string;
+  subjectName: string;
+  subjectCode?: string;
+  studentCount: number;
+  teacherId: string;
+  sectionId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Navigation types
 export type RootStackParamList = {
   ChoosePortal: undefined;
@@ -79,6 +92,10 @@ export type RootStackParamList = {
   TeacherRegister: undefined;
   TeacherDashboard: undefined;
   TeacherSectionDashboard: {
+    section: Section;
+  };
+  TeacherSubjectDashboard: {
+    subject: Subject;
     section: Section;
   };
 };

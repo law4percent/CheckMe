@@ -6,6 +6,7 @@ export interface Subject {
   id: string;
   year: string;
   subjectName: string;
+  subjectCode?: string;
   studentCount: number;
   teacherId: string;
   sectionId: string;
@@ -26,17 +27,32 @@ export interface UpdateSubjectData {
 }
 
 /**
+ * Generate a unique subject code
+ */
+const generateSubjectCode = (teacherUsername: string, sectionName: string): string => {
+  const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const shortSection = sectionName.substring(0, 4).toUpperCase();
+  return `${teacherUsername}-${shortSection}-${randomString}`;
+};
+
+/**
  * Create a new subject
  */
-export const createSubject = async (data: CreateSubjectData): Promise<Subject> => {
+export const createSubject = async (data: CreateSubjectData & { teacherUsername?: string; sectionName?: string }): Promise<Subject> => {
   try {
-    const subjectsRef = ref(database, `subjects/${data.teacherId}/${data.sectionId}`); // This should be the format because teacher has multiple sections and sections have multiple subjects
+    const subjectsRef = ref(database, `subjects/${data.teacherId}/${data.sectionId}`);
     const newSubjectRef = push(subjectsRef);
+    
+    // Generate subject code if teacher username and section name are provided
+    const subjectCode = data.teacherUsername && data.sectionName
+      ? generateSubjectCode(data.teacherUsername, data.sectionName)
+      : undefined;
     
     const subject: Subject = {
       id: newSubjectRef.key!,
       year: data.year.trim(),
       subjectName: data.subjectName.trim(),
+      subjectCode,
       studentCount: 0,
       teacherId: data.teacherId,
       sectionId: data.sectionId,

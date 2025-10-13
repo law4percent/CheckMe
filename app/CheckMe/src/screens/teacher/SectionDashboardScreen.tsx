@@ -212,8 +212,7 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleSubjectPress = (subject: Subject) => {
-    // TODO: Navigate to SubjectDetailScreen (students, attendance, etc.)
-    Alert.alert('Coming Soon', `Subject details for "${subject.subjectName}" will be available soon!`);
+    navigation.navigate('TeacherSubjectDashboard', { subject, section });
   };
 
   const handleShowSubjectDetails = (subject: Subject, event: any) => {

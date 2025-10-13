@@ -11,6 +11,7 @@ import LoginScreen from '../screens/teacher/LoginScreen';
 import RegisterScreen from '../screens/teacher/RegisterScreen';
 import DashboardScreen from '../screens/teacher/DashboardScreen';
 import SectionDashboardScreen from '../screens/teacher/SectionDashboardScreen';
+import SubjectDashboardScreen from '../screens/teacher/SubjectDashboardScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -33,18 +34,27 @@ const AppNavigator: React.FC = () => {
         {user ? (
           // User is authenticated - show dashboard
           <>
-            <Stack.Screen 
-              name="TeacherDashboard" // ERROR Type '"TeacherDashboard"' is not assignable to type '"TeacherSectionDashboard"'.
+            <Stack.Screen
+              name="TeacherDashboard"
               component={DashboardScreen}
               options={{ headerShown: false }}
             />
-            <Stack.Screen 
-              name="TeacherSectionDashboard" // ERROR Type '"TeacherSectionDashboard"' is not assignable to type 'keyof RootStackParamList'.
+            <Stack.Screen
+              name="TeacherSectionDashboard"
               component={SectionDashboardScreen}
-              options={{ 
-                headerShown: true, 
+              options={{
+                headerShown: true,
                 title: 'Section > Subjects',
-                headerBackTitle: 'Back' 
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="TeacherSubjectDashboard"
+              component={SubjectDashboardScreen}
+              options={{
+                headerShown: true,
+                title: 'Subject Dashboard',
+                headerBackTitle: 'Back'
               }}
             />
           </>
