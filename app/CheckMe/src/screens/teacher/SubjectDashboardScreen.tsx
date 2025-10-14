@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Clipboard,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -38,6 +39,12 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   // Modal states
   const [createAssessmentModalVisible, setCreateAssessmentModalVisible] = useState(false);
   const [selectedAssessmentType, setSelectedAssessmentType] = useState<'quiz' | 'exam' | null>(null);
+  const [assessmentName, setAssessmentName] = useState('');
+  const [enrolledStudentsModalVisible, setEnrolledStudentsModalVisible] = useState(false);
+  const [isEditingEnrollments, setIsEditingEnrollments] = useState(false);
+  const [inviteStudentsModalVisible, setInviteStudentsModalVisible] = useState(false);
+  const [inviteMethod, setInviteMethod] = useState<'code' | 'search' | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     console.log('🔄 [SubjectDashboard] useEffect triggered');
@@ -99,6 +106,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const handleCreateAssessment = () => {
     setSelectedAssessmentType(null);
+    setAssessmentName('');
     setCreateAssessmentModalVisible(true);
   };
 
@@ -108,8 +116,80 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       return;
     }
 
-    Alert.alert('Coming Soon', `${selectedAssessmentType === 'quiz' ? 'Quiz' : 'Exam'} creation will be available soon!`);
+    if (!assessmentName.trim()) {
+      Alert.alert('Error', 'Please enter assessment name');
+      return;
+    }
+
+    Alert.alert('Coming Soon', `${selectedAssessmentType === 'quiz' ? 'Quiz' : 'Exam'} "${assessmentName}" creation will be available soon!`);
     setCreateAssessmentModalVisible(false);
+  };
+
+  const handleViewEnrolledStudents = () => {
+    setIsEditingEnrollments(false);
+    setEnrolledStudentsModalVisible(true);
+  };
+
+  const handleUnenrollStudent = async (studentId: string, studentName: string) => {
+    Alert.alert(
+      'Unenroll Student',
+      `Are you sure you want to unenroll ${studentName}? This will also remove all their scores.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unenroll',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActionLoading(true);
+              // TODO: Implement unenrollStudent service function
+              Alert.alert('Coming Soon', 'Unenroll functionality will be available soon!');
+              setEnrollments(enrollments.filter(e => e.studentId !== studentId));
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+            } finally {
+              setActionLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleInviteStudents = () => {
+    setInviteMethod(null);
+    setSearchQuery('');
+    setInviteStudentsModalVisible(true);
+  };
+
+  const handleGenerateInviteCode = () => {
+    // Generate a unique invite code for this subject
+    const inviteCode = `${subject.subjectCode || subject.id.substring(0, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    
+    Alert.alert(
+      'Invite Code Generated',
+      `Share this code with your students:\n\n${inviteCode}\n\nStudents can enter this code in their app to join this subject.`,
+      [
+        {
+          text: 'Copy Code',
+          onPress: () => {
+            Clipboard.setString(inviteCode);
+            Alert.alert('Copied!', 'Invite code copied to clipboard');
+          }
+        },
+        { text: 'Done' }
+      ]
+    );
+  };
+
+  const handleSearchStudents = () => {
+    if (!searchQuery.trim()) {
+      Alert.alert('Error', 'Please enter a student name or email to search');
+      return;
+    }
+    
+    // TODO: Implement searchStudents service function
+    Alert.alert('Coming Soon', 'Student search functionality will be available soon!');
   };
 
   const handleApproveEnrollment = async (enrollment: Enrollment) => {
@@ -246,6 +326,11 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             onPress={handleCreateAssessment}
             disabled={actionLoading}
           >
+            {/* /**
+            * If this button is pressed the modal will appear to ask user for:
+            *  Select assessment type: Quiz or Exam
+            *  Name of the assessment
+            */ }
             <LinearGradient
               colors={['#6366f1', '#8b5cf6']}
               start={{ x: 0, y: 0 }}
@@ -258,7 +343,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => Alert.alert('Coming Soon', 'Student invitation feature will be available soon!')}
+            onPress={handleInviteStudents}
             disabled={actionLoading}
           >
             <LinearGradient
@@ -306,23 +391,23 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* Enrolled Students */}
+        {/* Assessments Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Enrolled Students ({approvedEnrollments.length})</Text>
-          {approvedEnrollments.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateIcon}>👥</Text>
-              <Text style={styles.emptyStateText}>No enrolled students yet</Text>
-              <Text style={styles.emptyStateSubtext}>Invite students to get started</Text>
-            </View>
-          ) : (
-            approvedEnrollments.map((enrollment) => (
-              <View key={enrollment.studentId} style={styles.studentCard}>
-                <Text style={styles.studentName}>{enrollment.studentName}</Text>
-                <Text style={styles.studentEmail}>{enrollment.studentEmail}</Text>
-              </View>
-            ))
-          )}
+          {/* Header with Assessments and Enrolled Students horizontally aligned */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Assessments</Text>
+            <TouchableOpacity onPress={handleViewEnrolledStudents}>
+              <Text style={[styles.sectionTitle, styles.clickableTitle]}>
+                Enrolled Students ({approvedEnrollments.length}) 👁️
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateIcon}>📝</Text>
+            <Text style={styles.emptyStateText}>No assessments yet</Text>
+            <Text style={styles.emptyStateSubtext}>Create your first assessment to get started</Text>
+          </View>
         </View>
       </ScrollView>
 
@@ -347,7 +432,17 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
 
             <View style={styles.modalBody}>
-              <Text style={styles.modalLabel}>Select Assessment Type:</Text>
+              <Text style={styles.modalLabel}>Assessment Name:</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Enter assessment name"
+                placeholderTextColor="#94a3b8"
+                value={assessmentName}
+                onChangeText={setAssessmentName}
+                autoCapitalize="words"
+              />
+
+              <Text style={[styles.modalLabel, { marginTop: 20 }]}>Select Assessment Type:</Text>
               
               <TouchableOpacity
                 style={[
@@ -401,6 +496,197 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   >
                     <Text style={styles.confirmButtonText}>Create</Text>
                   </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Enrolled Students Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={enrolledStudentsModalVisible}
+        onRequestClose={() => setEnrolledStudentsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Enrolled Students ({approvedEnrollments.length})</Text>
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              <View style={styles.modalBody}>
+                {approvedEnrollments.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateIcon}>👥</Text>
+                    <Text style={styles.emptyStateText}>No enrolled students</Text>
+                  </View>
+                ) : (
+                  approvedEnrollments.map((enrollment) => (
+                    <View key={enrollment.studentId} style={styles.enrolledStudentItem}>
+                      <View style={styles.enrolledStudentInfo}>
+                        <Text style={styles.studentName}>{enrollment.studentName}</Text>
+                        <Text style={styles.studentEmail}>{enrollment.studentEmail}</Text>
+                      </View>
+                      {isEditingEnrollments && (
+                        <TouchableOpacity
+                          style={styles.unenrollButton}
+                          onPress={() => handleUnenrollStudent(enrollment.studentId, enrollment.studentName || 'Student')}
+                        >
+                          <Text style={styles.unenrollButtonText}>Unenroll</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))
+                )}
+
+                <View style={styles.modalActions}>
+                  {approvedEnrollments.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => setIsEditingEnrollments(!isEditingEnrollments)}
+                    >
+                      <Text style={styles.editButtonText}>
+                        {isEditingEnrollments ? '✓ Done' : '✏️ Edit'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.closeButton}
+                    onPress={() => {
+                      setEnrolledStudentsModalVisible(false);
+                      setIsEditingEnrollments(false);
+                    }}
+                  >
+                    <Text style={styles.closeButtonText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Invite Students Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={inviteStudentsModalVisible}
+        onRequestClose={() => setInviteStudentsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Invite Students</Text>
+            </View>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.modalLabel}>Choose Invitation Method:</Text>
+              
+              {/* Invite by Code */}
+              <TouchableOpacity
+                style={[
+                  styles.inviteMethodButton,
+                  inviteMethod === 'code' && styles.inviteMethodButtonSelected
+                ]}
+                onPress={() => setInviteMethod('code')}
+              >
+                <Text style={styles.inviteMethodIcon}>🔑</Text>
+                <View style={styles.inviteMethodTextContainer}>
+                  <Text style={[
+                    styles.inviteMethodTitle,
+                    inviteMethod === 'code' && styles.inviteMethodTitleSelected
+                  ]}>
+                    Invite by Code
+                  </Text>
+                  <Text style={styles.inviteMethodDescription}>
+                    Generate a code that students can enter to join
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Invite by Search */}
+              <TouchableOpacity
+                style={[
+                  styles.inviteMethodButton,
+                  inviteMethod === 'search' && styles.inviteMethodButtonSelected
+                ]}
+                onPress={() => setInviteMethod('search')}
+              >
+                <Text style={styles.inviteMethodIcon}>🔍</Text>
+                <View style={styles.inviteMethodTextContainer}>
+                  <Text style={[
+                    styles.inviteMethodTitle,
+                    inviteMethod === 'search' && styles.inviteMethodTitleSelected
+                  ]}>
+                    Search Students
+                  </Text>
+                  <Text style={styles.inviteMethodDescription}>
+                    Search by name or email to invite directly
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Show relevant content based on selected method */}
+              {inviteMethod === 'code' && (
+                <View style={styles.inviteMethodContent}>
+                  <Text style={styles.inviteMethodContentText}>
+                    Click "Generate Code" to create a unique code for this subject. Share this code with your students, and they can enter it in their app to request enrollment.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.generateCodeButton}
+                    onPress={handleGenerateInviteCode}
+                  >
+                    <LinearGradient
+                      colors={['#6366f1', '#8b5cf6']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.gradientButton}
+                    >
+                      <Text style={styles.generateCodeButtonText}>🔑 Generate Code</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {inviteMethod === 'search' && (
+                <View style={styles.inviteMethodContent}>
+                  <Text style={styles.inviteMethodContentText}>
+                    Search for students by their name or Gmail address:
+                  </Text>
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Enter student name or email"
+                    placeholderTextColor="#94a3b8"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.searchButton}
+                    onPress={handleSearchStudents}
+                  >
+                    <LinearGradient
+                      colors={['#22c55e', '#16a34a']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.gradientButton}
+                    >
+                      <Text style={styles.searchButtonText}>🔍 Search</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.closeModalButton}
+                  onPress={() => setInviteStudentsModalVisible(false)}
+                >
+                  <Text style={styles.closeModalButtonText}>Close</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -504,11 +790,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 24
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 12
+    color: '#1e293b'
+  },
+  clickableTitle: {
+    color: '#6366f1',
+    textDecorationLine: 'underline'
   },
   enrollmentCard: {
     backgroundColor: '#ffffff',
@@ -634,7 +929,68 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#475569',
-    marginBottom: 16
+    marginBottom: 12
+  },
+  textInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#1e293b',
+    marginBottom: 8
+  },
+  modalScrollView: {
+    maxHeight: '70%'
+  },
+  enrolledStudentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0'
+  },
+  enrolledStudentInfo: {
+    flex: 1
+  },
+  unenrollButton: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8
+  },
+  unenrollButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#dc2626'
+  },
+  editButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#dbeafe',
+    alignItems: 'center',
+    marginRight: 8
+  },
+  editButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2563eb'
+  },
+  closeButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center'
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#475569'
   },
   assessmentTypeButton: {
     flexDirection: 'row',
@@ -688,6 +1044,95 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff'
+  },
+  inviteMethodButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    marginBottom: 12,
+    backgroundColor: '#ffffff'
+  },
+  inviteMethodButtonSelected: {
+    borderColor: '#22c55e',
+    backgroundColor: '#f0fdf4'
+  },
+  inviteMethodIcon: {
+    fontSize: 32,
+    marginRight: 16
+  },
+  inviteMethodTextContainer: {
+    flex: 1
+  },
+  inviteMethodTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 4
+  },
+  inviteMethodTitleSelected: {
+    color: '#16a34a'
+  },
+  inviteMethodDescription: {
+    fontSize: 13,
+    color: '#94a3b8'
+  },
+  inviteMethodContent: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
+  },
+  inviteMethodContentText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 16,
+    lineHeight: 20
+  },
+  generateCodeButton: {
+    borderRadius: 10,
+    overflow: 'hidden'
+  },
+  generateCodeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff'
+  },
+  searchInput: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#1e293b',
+    marginBottom: 12
+  },
+  searchButton: {
+    borderRadius: 10,
+    overflow: 'hidden'
+  },
+  searchButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff'
+  },
+  closeModalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center'
+  },
+  closeModalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#475569'
   }
 });
 

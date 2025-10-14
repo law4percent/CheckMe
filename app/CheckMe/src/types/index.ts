@@ -85,6 +85,17 @@ export interface Subject {
   updatedAt: number;
 }
 
+// Assessment interface
+export interface Assessment {
+  id: string;
+  name: string;
+  type: 'quiz' | 'exam';
+  subjectId: string;
+  teacherId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Navigation types
 export type RootStackParamList = {
   ChoosePortal: undefined;
@@ -95,6 +106,11 @@ export type RootStackParamList = {
     section: Section;
   };
   TeacherSubjectDashboard: {
+    subject: Subject;
+    section: Section;
+  };
+  TeacherAssessmentScoreTable: {
+    assessment: Assessment;
     subject: Subject;
     section: Section;
   };

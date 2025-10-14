@@ -12,6 +12,7 @@ import RegisterScreen from '../screens/teacher/RegisterScreen';
 import DashboardScreen from '../screens/teacher/DashboardScreen';
 import SectionDashboardScreen from '../screens/teacher/SectionDashboardScreen';
 import SubjectDashboardScreen from '../screens/teacher/SubjectDashboardScreen';
+import AssessmentScoreTableScreen from '../screens/teacher/AssessmentScoreTableScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -54,6 +55,15 @@ const AppNavigator: React.FC = () => {
               options={{
                 headerShown: true,
                 title: 'Subject Dashboard',
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="TeacherAssessmentScoreTable"
+              component={AssessmentScoreTableScreen}
+              options={{
+                headerShown: true,
+                title: 'Assessment Scores',
                 headerBackTitle: 'Back'
               }}
             />
