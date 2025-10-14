@@ -6,6 +6,7 @@ export interface Subject {
   id: string;
   year: string;
   subjectName: string;
+  subjectCode?: string;
   studentCount: number;
   teacherId: string;
   sectionId: string;
@@ -26,17 +27,41 @@ export interface UpdateSubjectData {
 }
 
 /**
+ * Generate a unique subject code
+ */
+const generateSubjectCode = (teacherUsername: string, sectionName: string): string => {
+  const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const shortSection = sectionName.substring(0, 4).toUpperCase();
+  return `${teacherUsername}-${shortSection}-${randomString}`;
+};
+
+/**
  * Create a new subject
  */
-export const createSubject = async (data: CreateSubjectData): Promise<Subject> => {
+export const createSubject = async (data: CreateSubjectData & { teacherUsername?: string; sectionName?: string }): Promise<Subject> => {
   try {
-    const subjectsRef = ref(database, `subjects/${data.teacherId}/${data.sectionId}`); // This should be the format because teacher has multiple sections and sections have multiple subjects
+    const path = `subjects/${data.teacherId}/${data.sectionId}`;
+    console.log('📚 [createSubject] Creating subject');
+    console.log('  - Path:', path);
+    console.log('  - Data:', data);
+    
+    const subjectsRef = ref(database, path);
     const newSubjectRef = push(subjectsRef);
+    
+    console.log('  - New subject key:', newSubjectRef.key);
+    
+    // Generate subject code if teacher username and section name are provided
+    const subjectCode = data.teacherUsername && data.sectionName
+      ? generateSubjectCode(data.teacherUsername, data.sectionName)
+      : null; // Changed from undefined to null to avoid Firebase error
+    
+    console.log('  - Generated subject code:', subjectCode);
     
     const subject: Subject = {
       id: newSubjectRef.key!,
       year: data.year.trim(),
       subjectName: data.subjectName.trim(),
+      ...(subjectCode && { subjectCode }), // Only include subjectCode if it's not null
       studentCount: 0,
       teacherId: data.teacherId,
       sectionId: data.sectionId,
@@ -44,9 +69,18 @@ export const createSubject = async (data: CreateSubjectData): Promise<Subject> =
       updatedAt: Date.now()
     };
 
+    console.log('  - Subject object:', subject);
+    console.log('  - Writing to Firebase...');
+    
     await set(newSubjectRef, subject);
+    
+    console.log('✅ [createSubject] Subject created successfully');
     return subject;
   } catch (error: any) {
+    console.error('❌ [createSubject] Error:', error);
+    console.error('  - Error code:', error.code);
+    console.error('  - Error message:', error.message);
+    console.error('  - Full error:', error);
     throw new Error(error.message || 'Failed to create subject');
   }
 };
