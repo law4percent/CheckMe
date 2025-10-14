@@ -2,17 +2,20 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '../config/firebase';
-import { 
-  createTeacherAccount, 
-  signInTeacher, 
-  signOutUser, 
-  getTeacherProfile 
+import {
+  createTeacherAccount,
+  createStudentAccount,
+  signInTeacher,
+  signOutUser,
+  getUserProfile
 } from '../services/authService';
-import { 
-  AuthContextType, 
-  TeacherSignUpData, 
-  TeacherLoginData, 
-  UserProfile 
+import {
+  AuthContextType,
+  TeacherSignUpData,
+  StudentSignUpData,
+  TeacherLoginData,
+  StudentLoginData,
+  UserProfile
 } from '../types';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,8 +29,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
         try {
-          // Fetch user profile from database
-          const profile = await getTeacherProfile(firebaseUser.uid);
+          // Fetch user profile from database (checks both teacher and student)
+          const profile = await getUserProfile(firebaseUser.uid);
           setUser(profile);
         } catch (error) {
           console.error('Error fetching user profile:', error);
@@ -43,10 +46,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const signUp = async (data: TeacherSignUpData): Promise<void> => {
+  const signUp = async (data: TeacherSignUpData | StudentSignUpData): Promise<void> => {
     try {
       setLoading(true);
-      await createTeacherAccount(data);
+      
+      // Check if it's student or teacher signup
+      if ('studentId' in data) {
+        // Student signup
+        await createStudentAccount(data as StudentSignUpData);
+      } else {
+        // Teacher signup
+        await createTeacherAccount(data as TeacherSignUpData);
+      }
+      
       // User will be automatically signed out after registration
       await signOutUser();
     } catch (error: any) {
@@ -56,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signIn = async (data: TeacherLoginData): Promise<void> => {
+  const signIn = async (data: TeacherLoginData | StudentLoginData): Promise<void> => {
     try {
       setLoading(true);
       await signInTeacher(data);

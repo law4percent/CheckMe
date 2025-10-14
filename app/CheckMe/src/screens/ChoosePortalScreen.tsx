@@ -21,7 +21,7 @@ const ChoosePortalScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleStudentPress = () => {
-    alert('Student portal coming soon!');
+    navigation.navigate('StudentLogin');
   };
 
   return (

@@ -7,12 +7,15 @@ import { RootStackParamList } from '../types';
 
 // Screens
 import ChoosePortalScreen from '../screens/ChoosePortalScreen';
-import LoginScreen from '../screens/teacher/LoginScreen';
-import RegisterScreen from '../screens/teacher/RegisterScreen';
-import DashboardScreen from '../screens/teacher/DashboardScreen';
+import TeacherLoginScreen from '../screens/teacher/LoginScreen';
+import TeacherRegisterScreen from '../screens/teacher/RegisterScreen';
+import TeacherDashboardScreen from '../screens/teacher/DashboardScreen';
 import SectionDashboardScreen from '../screens/teacher/SectionDashboardScreen';
 import SubjectDashboardScreen from '../screens/teacher/SubjectDashboardScreen';
 import AssessmentScoreTableScreen from '../screens/teacher/AssessmentScoreTableScreen';
+import StudentLoginScreen from '../screens/student/LoginScreen';
+import StudentRegisterScreen from '../screens/student/RegisterScreen';
+import StudentDashboardScreen from '../screens/student/DashboardScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -33,40 +36,52 @@ const AppNavigator: React.FC = () => {
         }}
       >
         {user ? (
-          // User is authenticated - show dashboard
+          // User is authenticated - show dashboard based on role
           <>
-            <Stack.Screen
-              name="TeacherDashboard"
-              component={DashboardScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="TeacherSectionDashboard"
-              component={SectionDashboardScreen}
-              options={{
-                headerShown: true,
-                title: 'Section Dashboard',
-                headerBackTitle: 'Back'
-              }}
-            />
-            <Stack.Screen
-              name="TeacherSubjectDashboard"
-              component={SubjectDashboardScreen}
-              options={{
-                headerShown: true,
-                title: 'Subject Dashboard',
-                headerBackTitle: 'Back'
-              }}
-            />
-            <Stack.Screen
-              name="TeacherAssessmentScoreTable"
-              component={AssessmentScoreTableScreen}
-              options={{
-                headerShown: true,
-                title: 'Assessment Scores',
-                headerBackTitle: 'Back'
-              }}
-            />
+            {user.role === 'teacher' ? (
+              <>
+                <Stack.Screen
+                  name="TeacherDashboard"
+                  component={TeacherDashboardScreen}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="TeacherSectionDashboard"
+                  component={SectionDashboardScreen}
+                  options={{
+                    headerShown: true,
+                    title: 'Section Dashboard',
+                    headerBackTitle: 'Back'
+                  }}
+                />
+                <Stack.Screen
+                  name="TeacherSubjectDashboard"
+                  component={SubjectDashboardScreen}
+                  options={{
+                    headerShown: true,
+                    title: 'Subject Dashboard',
+                    headerBackTitle: 'Back'
+                  }}
+                />
+                <Stack.Screen
+                  name="TeacherAssessmentScoreTable"
+                  component={AssessmentScoreTableScreen}
+                  options={{
+                    headerShown: true,
+                    title: 'Assessment Scores',
+                    headerBackTitle: 'Back'
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <Stack.Screen
+                  name="StudentDashboard"
+                  component={StudentDashboardScreen}
+                  options={{ headerShown: false }}
+                />
+              </>
+            )}
           </>
         ) : (
           // User is not authenticated - show auth flow
@@ -76,21 +91,39 @@ const AppNavigator: React.FC = () => {
               component={ChoosePortalScreen}
               options={{ headerShown: false }}
             />
-            <Stack.Screen 
-              name="TeacherLogin" 
-              component={LoginScreen}
-              options={{ 
+            <Stack.Screen
+              name="TeacherLogin"
+              component={TeacherLoginScreen}
+              options={{
                 headerShown: true,
                 title: 'Teacher Login',
                 headerBackTitle: 'Back'
               }}
             />
-            <Stack.Screen 
-              name="TeacherRegister" 
-              component={RegisterScreen}
-              options={{ 
+            <Stack.Screen
+              name="TeacherRegister"
+              component={TeacherRegisterScreen}
+              options={{
                 headerShown: true,
                 title: 'Teacher Registration',
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="StudentLogin"
+              component={StudentLoginScreen}
+              options={{
+                headerShown: true,
+                title: 'Student Login',
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="StudentRegister"
+              component={StudentRegisterScreen}
+              options={{
+                headerShown: true,
+                title: 'Student Registration',
                 headerBackTitle: 'Back'
               }}
             />
