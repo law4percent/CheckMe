@@ -40,19 +40,28 @@ const generateSubjectCode = (teacherUsername: string, sectionName: string): stri
  */
 export const createSubject = async (data: CreateSubjectData & { teacherUsername?: string; sectionName?: string }): Promise<Subject> => {
   try {
-    const subjectsRef = ref(database, `subjects/${data.teacherId}/${data.sectionId}`);
+    const path = `subjects/${data.teacherId}/${data.sectionId}`;
+    console.log('📚 [createSubject] Creating subject');
+    console.log('  - Path:', path);
+    console.log('  - Data:', data);
+    
+    const subjectsRef = ref(database, path);
     const newSubjectRef = push(subjectsRef);
+    
+    console.log('  - New subject key:', newSubjectRef.key);
     
     // Generate subject code if teacher username and section name are provided
     const subjectCode = data.teacherUsername && data.sectionName
       ? generateSubjectCode(data.teacherUsername, data.sectionName)
-      : undefined;
+      : null; // Changed from undefined to null to avoid Firebase error
+    
+    console.log('  - Generated subject code:', subjectCode);
     
     const subject: Subject = {
       id: newSubjectRef.key!,
       year: data.year.trim(),
       subjectName: data.subjectName.trim(),
-      subjectCode,
+      ...(subjectCode && { subjectCode }), // Only include subjectCode if it's not null
       studentCount: 0,
       teacherId: data.teacherId,
       sectionId: data.sectionId,
@@ -60,9 +69,18 @@ export const createSubject = async (data: CreateSubjectData & { teacherUsername?
       updatedAt: Date.now()
     };
 
+    console.log('  - Subject object:', subject);
+    console.log('  - Writing to Firebase...');
+    
     await set(newSubjectRef, subject);
+    
+    console.log('✅ [createSubject] Subject created successfully');
     return subject;
   } catch (error: any) {
+    console.error('❌ [createSubject] Error:', error);
+    console.error('  - Error code:', error.code);
+    console.error('  - Error message:', error.message);
+    console.error('  - Full error:', error);
     throw new Error(error.message || 'Failed to create subject');
   }
 };

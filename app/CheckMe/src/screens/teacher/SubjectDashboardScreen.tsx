@@ -40,17 +40,44 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [selectedAssessmentType, setSelectedAssessmentType] = useState<'quiz' | 'exam' | null>(null);
 
   useEffect(() => {
+    console.log('🔄 [SubjectDashboard] useEffect triggered');
+    console.log('  - subject:', subject);
+    console.log('  - subject.id:', subject.id);
+    console.log('  - user:', user);
+    console.log('  - user?.uid:', user?.uid);
+    
     if (subject.id) {
       loadEnrollments();
     }
   }, [subject.id]);
 
   const loadEnrollments = async () => {
+    console.log('🔍 [SubjectDashboard] loadEnrollments called');
+    console.log('  - user?.uid:', user?.uid);
+    console.log('  - subject.id:', subject.id);
+    console.log('  - subject:', subject);
+    
+    if (!user?.uid) {
+      console.warn('⚠️ [SubjectDashboard] No user UID, returning early');
+      return;
+    }
+    
     try {
       setLoading(true);
-      const fetchedEnrollments = await getSubjectEnrollments(subject.id);
+      console.log('📡 [SubjectDashboard] Calling getSubjectEnrollments with:', {
+        teacherId: user.uid,
+        subjectId: subject.id
+      });
+      
+      const fetchedEnrollments = await getSubjectEnrollments(user.uid, subject.id);
+      
+      console.log('✅ [SubjectDashboard] Enrollments fetched successfully:', fetchedEnrollments.length);
       setEnrollments(fetchedEnrollments);
     } catch (error: any) {
+      console.error('❌ [SubjectDashboard] Error loading enrollments:', error);
+      console.error('  - Error code:', error.code);
+      console.error('  - Error message:', error.message);
+      console.error('  - Full error:', error);
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);
@@ -86,9 +113,24 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleApproveEnrollment = async (enrollment: Enrollment) => {
+    console.log('✅ [SubjectDashboard] handleApproveEnrollment called');
+    console.log('  - enrollment:', enrollment);
+    console.log('  - user?.uid:', user?.uid);
+    
+    if (!user?.uid) {
+      console.warn('⚠️ [SubjectDashboard] No user UID, returning early');
+      return;
+    }
+    
     try {
       setActionLoading(true);
-      await approveEnrollment(subject.id, enrollment.studentId);
+      console.log('📡 [SubjectDashboard] Calling approveEnrollment with:', {
+        teacherId: user.uid,
+        subjectId: subject.id,
+        studentId: enrollment.studentId
+      });
+      
+      await approveEnrollment(user.uid, subject.id, enrollment.studentId);
       
       // Update local state
       setEnrollments(enrollments.map(e =>
@@ -97,8 +139,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           : e
       ));
 
+      console.log('✅ [SubjectDashboard] Enrollment approved successfully');
       Alert.alert('Success', `${enrollment.studentName} has been approved!`);
     } catch (error: any) {
+      console.error('❌ [SubjectDashboard] Error approving enrollment:', error);
       Alert.alert('Error', error.message);
     } finally {
       setActionLoading(false);
@@ -106,6 +150,15 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleRejectEnrollment = async (enrollment: Enrollment) => {
+    console.log('❌ [SubjectDashboard] handleRejectEnrollment called');
+    console.log('  - enrollment:', enrollment);
+    console.log('  - user?.uid:', user?.uid);
+    
+    if (!user?.uid) {
+      console.warn('⚠️ [SubjectDashboard] No user UID, returning early');
+      return;
+    }
+    
     Alert.alert(
       'Reject Enrollment',
       `Are you sure you want to reject ${enrollment.studentName}?`,
@@ -117,7 +170,13 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           onPress: async () => {
             try {
               setActionLoading(true);
-              await rejectEnrollment(subject.id, enrollment.studentId);
+              console.log('📡 [SubjectDashboard] Calling rejectEnrollment with:', {
+                teacherId: user.uid,
+                subjectId: subject.id,
+                studentId: enrollment.studentId
+              });
+              
+              await rejectEnrollment(user.uid, subject.id, enrollment.studentId);
               
               // Update local state
               setEnrollments(enrollments.map(e =>
@@ -126,8 +185,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   : e
               ));
 
+              console.log('✅ [SubjectDashboard] Enrollment rejected successfully');
               Alert.alert('Success', 'Enrollment rejected');
             } catch (error: any) {
+              console.error('❌ [SubjectDashboard] Error rejecting enrollment:', error);
               Alert.alert('Error', error.message);
             } finally {
               setActionLoading(false);

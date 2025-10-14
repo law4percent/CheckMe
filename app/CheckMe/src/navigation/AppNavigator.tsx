@@ -44,7 +44,7 @@ const AppNavigator: React.FC = () => {
               component={SectionDashboardScreen}
               options={{
                 headerShown: true,
-                title: 'Section > Subjects',
+                title: 'Section Dashboard',
                 headerBackTitle: 'Back'
               }}
             />
