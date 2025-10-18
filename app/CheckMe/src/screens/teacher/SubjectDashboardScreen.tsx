@@ -17,12 +17,14 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  getSubjectEnrollments, 
-  approveEnrollment, 
+import {
+  getSubjectEnrollments,
+  approveEnrollment,
   rejectEnrollment,
-  Enrollment 
+  Enrollment
 } from '../../services/enrollmentService';
+import { createInviteCode } from '../../services/inviteCodeService';
+import { searchStudentByEmail, sendDirectInvite, StudentSearchResult } from '../../services/studentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDashboard'>;
 
@@ -45,6 +47,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [inviteStudentsModalVisible, setInviteStudentsModalVisible] = useState(false);
   const [inviteMethod, setInviteMethod] = useState<'code' | 'search' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<StudentSearchResult | null>(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     console.log('🔄 [SubjectDashboard] useEffect triggered');
@@ -162,34 +166,117 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     setInviteStudentsModalVisible(true);
   };
 
-  const handleGenerateInviteCode = () => {
-    // Generate a unique invite code for this subject
-    const inviteCode = `${subject.subjectCode || subject.id.substring(0, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    
-    Alert.alert(
-      'Invite Code Generated',
-      `Share this code with your students:\n\n${inviteCode}\n\nStudents can enter this code in their app to join this subject.`,
-      [
-        {
-          text: 'Copy Code',
-          onPress: () => {
-            Clipboard.setString(inviteCode);
-            Alert.alert('Copied!', 'Invite code copied to clipboard');
-          }
-        },
-        { text: 'Done' }
-      ]
-    );
+  const handleGenerateInviteCode = async () => {
+    if (!user?.uid) return;
+
+    try {
+      setActionLoading(true);
+      
+      // Get teacher name
+      const teacherName = user.role === 'teacher' ? user.fullName : 'Teacher';
+      
+      // Create invite code in Firebase
+      const inviteCode = await createInviteCode(
+        user.uid,
+        subject.id,
+        section.id,
+        subject.subjectName,
+        teacherName,
+        section.sectionName,
+        section.year
+      );
+      
+      setActionLoading(false);
+      
+      Alert.alert(
+        'Invite Code Generated',
+        `Share this code with your students:\n\n${inviteCode}\n\nStudents can enter this code in their app to join this subject.`,
+        [
+          {
+            text: 'Copy Code',
+            onPress: () => {
+              Clipboard.setString(inviteCode);
+              Alert.alert('Copied!', 'Invite code copied to clipboard');
+            }
+          },
+          { text: 'Done' }
+        ]
+      );
+    } catch (error: any) {
+      setActionLoading(false);
+      Alert.alert('Error', error.message);
+    }
   };
 
-  const handleSearchStudents = () => {
+  const handleSearchStudents = async () => {
     if (!searchQuery.trim()) {
-      Alert.alert('Error', 'Please enter a student name or email to search');
+      Alert.alert('Error', 'Please enter a student email to search');
       return;
     }
-    
-    // TODO: Implement searchStudents service function
-    Alert.alert('Coming Soon', 'Student search functionality will be available soon!');
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(searchQuery.trim())) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    try {
+      setSearching(true);
+      const result = await searchStudentByEmail(searchQuery.trim());
+      
+      setSearching(false);
+      
+      if (result) {
+        setSearchResults(result);
+      } else {
+        Alert.alert('Not Found', 'No student found with this email address');
+        setSearchResults(null);
+      }
+    } catch (error: any) {
+      setSearching(false);
+      Alert.alert('Error', error.message);
+    }
+  };
+
+  const handleSendInvite = async (student: StudentSearchResult) => {
+    if (!user?.uid) return;
+
+    Alert.alert(
+      'Send Invitation',
+      `Send invitation to ${student.fullName} (${student.email})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async () => {
+            try {
+              setActionLoading(true);
+
+              await sendDirectInvite(
+                user.uid,
+                subject.id,
+                student.uid,
+                student.fullName,
+                student.email
+              );
+
+              setActionLoading(false);
+              Alert.alert('Success', `Invitation sent to ${student.fullName}!`);
+              setSearchResults(null);
+              setSearchQuery('');
+              setInviteStudentsModalVisible(false);
+              
+              // Reload enrollments to show the new pending enrollment
+              await loadEnrollments();
+            } catch (error: any) {
+              setActionLoading(false);
+              Alert.alert('Error', error.message);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleApproveEnrollment = async (enrollment: Enrollment) => {
@@ -655,19 +742,43 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
               {inviteMethod === 'search' && (
                 <View style={styles.inviteMethodContent}>
                   <Text style={styles.inviteMethodContentText}>
-                    Search for students by their name or Gmail address:
+                    Search for students by their Gmail address:
                   </Text>
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Enter student name or email"
+                    placeholder="Enter student email (e.g., student@gmail.com)"
                     placeholderTextColor="#94a3b8"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     autoCapitalize="none"
+                    keyboardType="email-address"
+                    editable={!searching}
                   />
+                  
+                  {searchResults && (
+                    <View style={styles.searchResultCard}>
+                      <View style={styles.searchResultHeader}>
+                        <Text style={styles.searchResultIcon}>👤</Text>
+                        <View style={styles.searchResultInfo}>
+                          <Text style={styles.searchResultName}>{searchResults.fullName}</Text>
+                          <Text style={styles.searchResultEmail}>{searchResults.email}</Text>
+                          <Text style={styles.searchResultId}>Student ID: {searchResults.studentId}</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.inviteButton}
+                        onPress={() => handleSendInvite(searchResults)}
+                        disabled={actionLoading}
+                      >
+                        <Text style={styles.inviteButtonText}>Add</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  
                   <TouchableOpacity
                     style={styles.searchButton}
                     onPress={handleSearchStudents}
+                    disabled={searching}
                   >
                     <LinearGradient
                       colors={['#22c55e', '#16a34a']}
@@ -675,7 +786,11 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                       end={{ x: 1, y: 0 }}
                       style={styles.gradientButton}
                     >
-                      <Text style={styles.searchButtonText}>🔍 Search</Text>
+                      {searching ? (
+                        <ActivityIndicator color="#ffffff" />
+                      ) : (
+                        <Text style={styles.searchButtonText}>🔍 Search</Text>
+                      )}
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
@@ -1133,6 +1248,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#475569'
+  },
+  searchResultCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#22c55e'
+  },
+  searchResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  searchResultIcon: {
+    fontSize: 40,
+    marginRight: 12
+  },
+  searchResultInfo: {
+    flex: 1
+  },
+  searchResultName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 4
+  },
+  searchResultEmail: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 2
+  },
+  searchResultId: {
+    fontSize: 12,
+    color: '#94a3b8'
+  },
+  inviteButton: {
+    backgroundColor: '#dcfce7',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  inviteButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#16a34a'
   }
 });
 
