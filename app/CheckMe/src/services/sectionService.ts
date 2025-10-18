@@ -118,21 +118,43 @@ export const updateSection = async (
 };
 
 /**
- * Delete a section and all its associated subjects (cascade delete)
+ * Delete a section and cleanup all related data (cascade delete)
  */
 export const deleteSection = async (
   teacherId: string,
   sectionId: string
 ): Promise<void> => {
   try {
-    // First, delete all subjects associated with this section
-    const subjectsRef = ref(database, `subjects/${teacherId}/${sectionId}`);
-    await remove(subjectsRef);
+    console.log('🗑️ [deleteSection] Deleting section and related data');
     
-    // Then, delete the section itself
+    // Get all subjects in this section first
+    const subjectsRef = ref(database, `subjects/${teacherId}/${sectionId}`);
+    const subjectsSnapshot = await get(subjectsRef);
+    
+    if (subjectsSnapshot.exists()) {
+      const subjects = subjectsSnapshot.val();
+      const deletionPromises: Promise<void>[] = [];
+      
+      // Delete each subject (which will also clean up their invite codes and enrollments)
+      const { deleteSubject } = require('./subjectService');
+      Object.keys(subjects).forEach((subjectId) => {
+        deletionPromises.push(deleteSubject(teacherId, sectionId, subjectId));
+      });
+      
+      await Promise.all(deletionPromises);
+    }
+    
+    // Delete all remaining invite codes for this section (safety net)
+    const { deleteSectionInviteCodes } = require('./inviteCodeService');
+    await deleteSectionInviteCodes(teacherId, sectionId);
+    
+    // Delete the section itself
     const sectionRef = ref(database, `sections/${teacherId}/${sectionId}`);
     await remove(sectionRef);
+    
+    console.log('✅ [deleteSection] Section and related data deleted successfully');
   } catch (error: any) {
+    console.error('❌ [deleteSection] Error:', error);
     throw new Error(error.message || 'Failed to delete section');
   }
 };

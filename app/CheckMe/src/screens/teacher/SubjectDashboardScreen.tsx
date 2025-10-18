@@ -23,8 +23,7 @@ import {
   rejectEnrollment,
   Enrollment
 } from '../../services/enrollmentService';
-import { createInviteCode } from '../../services/inviteCodeService';
-import { searchStudentByEmail, sendDirectInvite, StudentSearchResult } from '../../services/studentService';
+import { getSubjectInviteCode } from '../../services/inviteCodeService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDashboard'>;
 
@@ -37,6 +36,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
 
   // Modal states
   const [createAssessmentModalVisible, setCreateAssessmentModalVisible] = useState(false);
@@ -44,11 +44,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [assessmentName, setAssessmentName] = useState('');
   const [enrolledStudentsModalVisible, setEnrolledStudentsModalVisible] = useState(false);
   const [isEditingEnrollments, setIsEditingEnrollments] = useState(false);
-  const [inviteStudentsModalVisible, setInviteStudentsModalVisible] = useState(false);
-  const [inviteMethod, setInviteMethod] = useState<'code' | 'search' | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<StudentSearchResult | null>(null);
-  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     console.log('🔄 [SubjectDashboard] useEffect triggered');
@@ -59,6 +54,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     
     if (subject.id) {
       loadEnrollments();
+      loadInviteCode();
     }
   }, [subject.id]);
 
@@ -95,9 +91,21 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
+  const loadInviteCode = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      const code = await getSubjectInviteCode(user.uid, subject.id);
+      setInviteCode(code);
+    } catch (error: any) {
+      console.error('❌ [SubjectDashboard] Error loading invite code:', error);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadEnrollments();
+    await loadInviteCode();
     setRefreshing(false);
   };
 
@@ -160,123 +168,14 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   };
 
-  const handleInviteStudents = () => {
-    setInviteMethod(null);
-    setSearchQuery('');
-    setInviteStudentsModalVisible(true);
-  };
-
-  const handleGenerateInviteCode = async () => {
-    if (!user?.uid) return;
-
-    try {
-      setActionLoading(true);
-      
-      // Get teacher name
-      const teacherName = user.role === 'teacher' ? user.fullName : 'Teacher';
-      
-      // Create invite code in Firebase
-      const inviteCode = await createInviteCode(
-        user.uid,
-        subject.id,
-        section.id,
-        subject.subjectName,
-        teacherName,
-        section.sectionName,
-        section.year
-      );
-      
-      setActionLoading(false);
-      
-      Alert.alert(
-        'Invite Code Generated',
-        `Share this code with your students:\n\n${inviteCode}\n\nStudents can enter this code in their app to join this subject.`,
-        [
-          {
-            text: 'Copy Code',
-            onPress: () => {
-              Clipboard.setString(inviteCode);
-              Alert.alert('Copied!', 'Invite code copied to clipboard');
-            }
-          },
-          { text: 'Done' }
-        ]
-      );
-    } catch (error: any) {
-      setActionLoading(false);
-      Alert.alert('Error', error.message);
-    }
-  };
-
-  const handleSearchStudents = async () => {
-    if (!searchQuery.trim()) {
-      Alert.alert('Error', 'Please enter a student email to search');
+  const handleCopyInviteCode = () => {
+    if (!inviteCode) {
+      Alert.alert('Error', 'No invite code available.');
       return;
     }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(searchQuery.trim())) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
-
-    try {
-      setSearching(true);
-      const result = await searchStudentByEmail(searchQuery.trim());
-      
-      setSearching(false);
-      
-      if (result) {
-        setSearchResults(result);
-      } else {
-        Alert.alert('Not Found', 'No student found with this email address');
-        setSearchResults(null);
-      }
-    } catch (error: any) {
-      setSearching(false);
-      Alert.alert('Error', error.message);
-    }
-  };
-
-  const handleSendInvite = async (student: StudentSearchResult) => {
-    if (!user?.uid) return;
-
-    Alert.alert(
-      'Send Invitation',
-      `Send invitation to ${student.fullName} (${student.email})?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send',
-          onPress: async () => {
-            try {
-              setActionLoading(true);
-
-              await sendDirectInvite(
-                user.uid,
-                subject.id,
-                student.uid,
-                student.fullName,
-                student.email
-              );
-
-              setActionLoading(false);
-              Alert.alert('Success', `Invitation sent to ${student.fullName}!`);
-              setSearchResults(null);
-              setSearchQuery('');
-              setInviteStudentsModalVisible(false);
-              
-              // Reload enrollments to show the new pending enrollment
-              await loadEnrollments();
-            } catch (error: any) {
-              setActionLoading(false);
-              Alert.alert('Error', error.message);
-            }
-          }
-        }
-      ]
-    );
+    
+    Clipboard.setString(inviteCode);
+    Alert.alert('Copied!', 'Invite code copied to clipboard');
   };
 
   const handleApproveEnrollment = async (enrollment: Enrollment) => {
@@ -395,12 +294,23 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             {section.year}-{section.sectionName}
           </Text>
           {subject.subjectCode && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.subjectCodeContainer}
               onPress={handleCopySubjectCode}
             >
               <Text style={styles.subjectCodeLabel}>Subject Code:</Text>
               <Text style={styles.subjectCode}>{subject.subjectCode}</Text>
+              <Text style={styles.copyIcon}>📋</Text>
+            </TouchableOpacity>
+          )}
+          
+          {inviteCode && (
+            <TouchableOpacity
+              style={styles.inviteCodeContainer}
+              onPress={handleCopyInviteCode}
+            >
+              <Text style={styles.inviteCodeLabel}>Invite Code:</Text>
+              <Text style={styles.inviteCodeText}>{inviteCode}</Text>
               <Text style={styles.copyIcon}>📋</Text>
             </TouchableOpacity>
           )}
@@ -428,20 +338,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleInviteStudents}
-            disabled={actionLoading}
-          >
-            <LinearGradient
-              colors={['#22c55e', '#16a34a']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.gradientButton}
-            >
-              <Text style={styles.actionButtonText}>👥 Invite Students</Text>
-            </LinearGradient>
-          </TouchableOpacity>
         </View>
 
         {/* Pending Enrollments */}
@@ -657,157 +553,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Invite Students Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={inviteStudentsModalVisible}
-        onRequestClose={() => setInviteStudentsModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Invite Students</Text>
-            </View>
-
-            <View style={styles.modalBody}>
-              <Text style={styles.modalLabel}>Choose Invitation Method:</Text>
-              
-              {/* Invite by Code */}
-              <TouchableOpacity
-                style={[
-                  styles.inviteMethodButton,
-                  inviteMethod === 'code' && styles.inviteMethodButtonSelected
-                ]}
-                onPress={() => setInviteMethod('code')}
-              >
-                <Text style={styles.inviteMethodIcon}>🔑</Text>
-                <View style={styles.inviteMethodTextContainer}>
-                  <Text style={[
-                    styles.inviteMethodTitle,
-                    inviteMethod === 'code' && styles.inviteMethodTitleSelected
-                  ]}>
-                    Invite by Code
-                  </Text>
-                  <Text style={styles.inviteMethodDescription}>
-                    Generate a code that students can enter to join
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Invite by Search */}
-              <TouchableOpacity
-                style={[
-                  styles.inviteMethodButton,
-                  inviteMethod === 'search' && styles.inviteMethodButtonSelected
-                ]}
-                onPress={() => setInviteMethod('search')}
-              >
-                <Text style={styles.inviteMethodIcon}>🔍</Text>
-                <View style={styles.inviteMethodTextContainer}>
-                  <Text style={[
-                    styles.inviteMethodTitle,
-                    inviteMethod === 'search' && styles.inviteMethodTitleSelected
-                  ]}>
-                    Search Students
-                  </Text>
-                  <Text style={styles.inviteMethodDescription}>
-                    Search by name or email to invite directly
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Show relevant content based on selected method */}
-              {inviteMethod === 'code' && (
-                <View style={styles.inviteMethodContent}>
-                  <Text style={styles.inviteMethodContentText}>
-                    Click "Generate Code" to create a unique code for this subject. Share this code with your students, and they can enter it in their app to request enrollment.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.generateCodeButton}
-                    onPress={handleGenerateInviteCode}
-                  >
-                    <LinearGradient
-                      colors={['#6366f1', '#8b5cf6']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.gradientButton}
-                    >
-                      <Text style={styles.generateCodeButtonText}>🔑 Generate Code</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {inviteMethod === 'search' && (
-                <View style={styles.inviteMethodContent}>
-                  <Text style={styles.inviteMethodContentText}>
-                    Search for students by their Gmail address:
-                  </Text>
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Enter student email (e.g., student@gmail.com)"
-                    placeholderTextColor="#94a3b8"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    editable={!searching}
-                  />
-                  
-                  {searchResults && (
-                    <View style={styles.searchResultCard}>
-                      <View style={styles.searchResultHeader}>
-                        <Text style={styles.searchResultIcon}>👤</Text>
-                        <View style={styles.searchResultInfo}>
-                          <Text style={styles.searchResultName}>{searchResults.fullName}</Text>
-                          <Text style={styles.searchResultEmail}>{searchResults.email}</Text>
-                          <Text style={styles.searchResultId}>Student ID: {searchResults.studentId}</Text>
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.inviteButton}
-                        onPress={() => handleSendInvite(searchResults)}
-                        disabled={actionLoading}
-                      >
-                        <Text style={styles.inviteButtonText}>Add</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                  
-                  <TouchableOpacity
-                    style={styles.searchButton}
-                    onPress={handleSearchStudents}
-                    disabled={searching}
-                  >
-                    <LinearGradient
-                      colors={['#22c55e', '#16a34a']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.gradientButton}
-                    >
-                      {searching ? (
-                        <ActivityIndicator color="#ffffff" />
-                      ) : (
-                        <Text style={styles.searchButtonText}>🔍 Search</Text>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.closeModalButton}
-                  onPress={() => setInviteStudentsModalVisible(false)}
-                >
-                  <Text style={styles.closeModalButtonText}>Close</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -1056,6 +801,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1e293b',
     marginBottom: 8
+  },
+  inviteCodeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start'
+  },
+  inviteCodeLabel: {
+    fontSize: 12,
+    color: '#ffffff',
+    marginRight: 8,
+    fontWeight: '600'
+  },
+  inviteCodeText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    fontFamily: 'monospace',
+    marginRight: 8,
+    letterSpacing: 2
   },
   modalScrollView: {
     maxHeight: '70%'

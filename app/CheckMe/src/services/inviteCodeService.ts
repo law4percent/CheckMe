@@ -1,5 +1,5 @@
 // src/services/inviteCodeService.ts
-import { ref, set, get, query, orderByChild, equalTo } from 'firebase/database';
+import { ref, set, get, query, orderByChild, equalTo, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 
 export interface InviteCode {
@@ -171,5 +171,107 @@ export const validateInviteCode = async (code: string): Promise<{
       valid: false,
       error: error.message || 'Failed to validate invite code'
     };
+  }
+};
+
+/**
+ * Delete all invite codes for a specific subject
+ */
+export const deleteSubjectInviteCodes = async (
+  teacherId: string,
+  subjectId: string
+): Promise<void> => {
+  try {
+    console.log('🗑️ [deleteSubjectInviteCodes] Deleting invite codes');
+    console.log('  - Teacher ID:', teacherId);
+    console.log('  - Subject ID:', subjectId);
+
+    const inviteCodesRef = ref(database, 'inviteCodes');
+    const snapshot = await get(inviteCodesRef);
+
+    if (!snapshot.exists()) {
+      console.log('  - No invite codes found');
+      return;
+    }
+
+    const allCodes = snapshot.val();
+    const deletionPromises: Promise<void>[] = [];
+
+    // Find and delete all codes for this subject
+    Object.entries(allCodes).forEach(([code, codeData]: [string, any]) => {
+      if (codeData.teacherId === teacherId && codeData.subjectId === subjectId) {
+        const codeRef = ref(database, `inviteCodes/${code}`);
+        deletionPromises.push(remove(codeRef));
+        console.log(`  - Deleting code: ${code}`);
+      }
+    });
+
+    await Promise.all(deletionPromises);
+    console.log(`✅ [deleteSubjectInviteCodes] Deleted ${deletionPromises.length} invite codes`);
+  } catch (error: any) {
+    console.error('❌ [deleteSubjectInviteCodes] Error:', error);
+    throw new Error(error.message || 'Failed to delete subject invite codes');
+  }
+};
+
+/**
+ * Delete all invite codes for a specific section
+ */
+export const deleteSectionInviteCodes = async (
+  teacherId: string,
+  sectionId: string
+): Promise<void> => {
+  try {
+    console.log('🗑️ [deleteSectionInviteCodes] Deleting invite codes');
+    console.log('  - Teacher ID:', teacherId);
+    console.log('  - Section ID:', sectionId);
+
+    const inviteCodesRef = ref(database, 'inviteCodes');
+    const snapshot = await get(inviteCodesRef);
+
+    if (!snapshot.exists()) {
+      console.log('  - No invite codes found');
+      return;
+    }
+
+    const allCodes = snapshot.val();
+    const deletionPromises: Promise<void>[] = [];
+
+    // Find and delete all codes for this section
+    Object.entries(allCodes).forEach(([code, codeData]: [string, any]) => {
+      if (codeData.teacherId === teacherId && codeData.sectionId === sectionId) {
+        const codeRef = ref(database, `inviteCodes/${code}`);
+        deletionPromises.push(remove(codeRef));
+        console.log(`  - Deleting code: ${code}`);
+      }
+    });
+
+    await Promise.all(deletionPromises);
+    console.log(`✅ [deleteSectionInviteCodes] Deleted ${deletionPromises.length} invite codes`);
+  } catch (error: any) {
+    console.error('❌ [deleteSectionInviteCodes] Error:', error);
+    throw new Error(error.message || 'Failed to delete section invite codes');
+  }
+};
+
+/**
+ * Get the invite code for a specific subject
+ */
+export const getSubjectInviteCode = async (
+  teacherId: string,
+  subjectId: string
+): Promise<string | null> => {
+  try {
+    const inviteCodes = await getSubjectInviteCodes(teacherId, subjectId);
+    
+    // Return the most recent code (first in the sorted array)
+    if (inviteCodes.length > 0) {
+      return inviteCodes[0].code;
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error('❌ [getSubjectInviteCode] Error:', error);
+    throw new Error(error.message || 'Failed to get subject invite code');
   }
 };
