@@ -35,7 +35,21 @@ export interface TeacherSignUpData {
   employeeId: string;
 }
 
+export interface StudentSignUpData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  username: string;
+  studentId: string;
+}
+
 export interface TeacherLoginData {
+  email: string;
+  password: string;
+}
+
+export interface StudentLoginData {
   email: string;
   password: string;
 }
@@ -52,6 +66,8 @@ export interface TeacherProfile {
 
 export interface StudentProfile {
   uid: string;
+  firstName: string;
+  lastName: string;
   fullName: string;
   email: string;
   username: string;
@@ -67,8 +83,8 @@ export type PortalType = 'teacher' | 'student';
 export interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
-  signUp: (data: TeacherSignUpData) => Promise<void>;
-  signIn: (data: TeacherLoginData) => Promise<void>;
+  signUp: (data: TeacherSignUpData | StudentSignUpData) => Promise<void>;
+  signIn: (data: TeacherLoginData | StudentLoginData) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -114,6 +130,9 @@ export type RootStackParamList = {
     subject: Subject;
     section: Section;
   };
+  StudentLogin: undefined;
+  StudentRegister: undefined;
+  StudentDashboard: undefined;
 };
 
 declare global {
