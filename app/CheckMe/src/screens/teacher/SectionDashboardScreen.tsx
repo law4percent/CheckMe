@@ -104,6 +104,8 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         subjectName: newSubjectName,
         teacherId: user.uid,
         sectionId: section.id,
+        teacherName: user.role === 'teacher' ? user.fullName : undefined,
+        sectionName: section.sectionName,
       });
 
       setSubjects([newSubject, ...subjects]);

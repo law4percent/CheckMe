@@ -27,18 +27,9 @@ export interface UpdateSubjectData {
 }
 
 /**
- * Generate a unique subject code
+ * Create a new subject with automatic invite code generation
  */
-const generateSubjectCode = (teacherUsername: string, sectionName: string): string => {
-  const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
-  const shortSection = sectionName.substring(0, 4).toUpperCase();
-  return `${teacherUsername}-${shortSection}-${randomString}`;
-};
-
-/**
- * Create a new subject
- */
-export const createSubject = async (data: CreateSubjectData & { teacherUsername?: string; sectionName?: string }): Promise<Subject> => {
+export const createSubject = async (data: CreateSubjectData & { sectionName?: string; teacherName?: string }): Promise<Subject> => {
   try {
     const path = `subjects/${data.teacherId}/${data.sectionId}`;
     console.log('📚 [createSubject] Creating subject');
@@ -50,18 +41,10 @@ export const createSubject = async (data: CreateSubjectData & { teacherUsername?
     
     console.log('  - New subject key:', newSubjectRef.key);
     
-    // Generate subject code if teacher username and section name are provided
-    const subjectCode = data.teacherUsername && data.sectionName
-      ? generateSubjectCode(data.teacherUsername, data.sectionName)
-      : null; // Changed from undefined to null to avoid Firebase error
-    
-    console.log('  - Generated subject code:', subjectCode);
-    
     const subject: Subject = {
       id: newSubjectRef.key!,
       year: data.year.trim(),
       subjectName: data.subjectName.trim(),
-      ...(subjectCode && { subjectCode }), // Only include subjectCode if it's not null
       studentCount: 0,
       teacherId: data.teacherId,
       sectionId: data.sectionId,
@@ -73,6 +56,26 @@ export const createSubject = async (data: CreateSubjectData & { teacherUsername?
     console.log('  - Writing to Firebase...');
     
     await set(newSubjectRef, subject);
+    
+    // Automatically generate invite code for this subject
+    if (data.teacherName && data.sectionName) {
+      try {
+        const { createInviteCode } = require('./inviteCodeService');
+        const inviteCode = await createInviteCode(
+          data.teacherId,
+          subject.id,
+          data.sectionId,
+          data.subjectName,
+          data.teacherName,
+          data.sectionName,
+          data.year
+        );
+        console.log('✅ [createSubject] Auto-generated invite code:', inviteCode);
+      } catch (codeError: any) {
+        console.error('⚠️ [createSubject] Failed to generate invite code:', codeError.message);
+        // Don't fail the subject creation if invite code generation fails
+      }
+    }
     
     console.log('✅ [createSubject] Subject created successfully');
     return subject;
@@ -154,13 +157,28 @@ export const updateSubject = async (
     if (updates.subjectName) updates.subjectName = updates.subjectName.trim();
 
     await update(subjectRef, updates);
+    
+    // Update invite code metadata if subject name or year changed
+    if (data.subjectName || data.year) {
+      const { updateSubjectInviteCode } = require('./inviteCodeService');
+      const inviteCodeUpdates: any = {};
+      if (data.subjectName) inviteCodeUpdates.subjectName = data.subjectName.trim();
+      if (data.year) inviteCodeUpdates.year = data.year.trim();
+      
+      try {
+        await updateSubjectInviteCode(teacherId, subjectId, inviteCodeUpdates);
+      } catch (error) {
+        console.warn('⚠️ [updateSubject] Failed to update invite code:', error);
+        // Don't fail the subject update if invite code update fails
+      }
+    }
   } catch (error: any) {
     throw new Error(error.message || 'Failed to update subject');
   }
 };
 
 /**
- * Delete a subject
+ * Delete a subject and cleanup related data
  */
 export const deleteSubject = async (
   teacherId: string,
@@ -168,9 +186,23 @@ export const deleteSubject = async (
   subjectId: string
 ): Promise<void> => {
   try {
+    console.log('🗑️ [deleteSubject] Deleting subject and related data');
+    
+    // Delete the subject
     const subjectRef = ref(database, `subjects/${teacherId}/${sectionId}/${subjectId}`);
     await remove(subjectRef);
+    
+    // Delete all invite codes for this subject
+    const { deleteSubjectInviteCodes } = require('./inviteCodeService');
+    await deleteSubjectInviteCodes(teacherId, subjectId);
+    
+    // Delete all enrollments for this subject
+    const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
+    await remove(enrollmentsRef);
+    
+    console.log('✅ [deleteSubject] Subject and related data deleted successfully');
   } catch (error: any) {
+    console.error('❌ [deleteSubject] Error:', error);
     throw new Error(error.message || 'Failed to delete subject');
   }
 };

@@ -9,13 +9,15 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
+import { joinSubjectWithCode, getStudentEnrollments } from '../../services/enrollmentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StudentDashboard'>;
 
@@ -45,6 +47,9 @@ const StudentDashboardScreen: React.FC<Props> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [joinSubjectModalVisible, setJoinSubjectModalVisible] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [joiningSubject, setJoiningSubject] = useState(false);
 
   useEffect(() => {
     if (user?.uid) {
@@ -53,12 +58,23 @@ const StudentDashboardScreen: React.FC<Props> = ({ navigation }) => {
   }, [user?.uid]);
 
   const loadEnrolledSubjects = async () => {
+    if (!user?.uid) return;
+    
     try {
       setLoading(true);
-      // TODO: Implement getStudentEnrollments service function
-      // Placeholder data for now
-      const mockSubjects: EnrolledSubject[] = [];
-      setEnrolledSubjects(mockSubjects);
+      const enrollments = await getStudentEnrollments(user.uid);
+      
+      // Map enrollments to EnrolledSubject format
+      const subjects: EnrolledSubject[] = enrollments.map(e => ({
+        id: e.subjectId,
+        subjectName: e.subjectName,
+        subjectCode: e.subjectCode,
+        teacherName: e.teacherName,
+        sectionName: e.sectionName,
+        year: e.year
+      }));
+      
+      setEnrolledSubjects(subjects);
     } catch (error: any) {
       Alert.alert('Error', error.message);
     } finally {
@@ -104,6 +120,53 @@ const StudentDashboardScreen: React.FC<Props> = ({ navigation }) => {
     setProfileModalVisible(false);
   };
 
+  const handleJoinSubject = () => {
+    setInviteCode('');
+    setJoinSubjectModalVisible(true);
+  };
+
+  const handleSubmitJoinCode = async () => {
+    if (!inviteCode.trim()) {
+      Alert.alert('Error', 'Please enter an invite code');
+      return;
+    }
+
+    if (!user?.uid) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    try {
+      setJoiningSubject(true);
+
+      const studentName = user.role === 'student'
+        ? `${user.firstName} ${user.lastName}`
+        : user.fullName || 'Student';
+      const studentEmail = user.email;
+
+      const result = await joinSubjectWithCode(
+        inviteCode.trim().toUpperCase(),
+        user.uid,
+        studentName,
+        studentEmail
+      );
+
+      setJoiningSubject(false);
+
+      if (result.success) {
+        setJoinSubjectModalVisible(false);
+        Alert.alert('Success', result.message);
+        // Reload subjects
+        await loadEnrolledSubjects();
+      } else {
+        Alert.alert('Error', result.message);
+      }
+    } catch (error: any) {
+      setJoiningSubject(false);
+      Alert.alert('Error', error.message);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -141,6 +204,23 @@ const StudentDashboardScreen: React.FC<Props> = ({ navigation }) => {
             onPress={handleSignOut}
           >
             <Text style={styles.signOutText}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Join Subject Button */}
+        <View style={styles.joinButtonSection}>
+          <TouchableOpacity
+            style={styles.joinSubjectButton}
+            onPress={handleJoinSubject}
+          >
+            <LinearGradient
+              colors={['#3b82f6', '#2563eb']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              <Text style={styles.joinButtonText}>📚 Join Subject</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -248,6 +328,65 @@ const StudentDashboardScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Join Subject Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={joinSubjectModalVisible}
+        onRequestClose={() => setJoinSubjectModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Join Subject</Text>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={() => setJoinSubjectModalVisible(false)}
+              >
+                <Text style={styles.iconButtonText}>✕ Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.joinModalDescription}>
+                Enter the invite code provided by your teacher to join their subject.
+              </Text>
+
+              <Text style={styles.inputLabel}>Invite Code</Text>
+              <TextInput
+                style={styles.codeInput}
+                placeholder="Enter 6-digit code"
+                placeholderTextColor="#94a3b8"
+                value={inviteCode}
+                onChangeText={(text) => setInviteCode(text.toUpperCase())}
+                autoCapitalize="characters"
+                maxLength={6}
+                editable={!joiningSubject}
+              />
+
+              <TouchableOpacity
+                style={styles.submitButton}
+                onPress={handleSubmitJoinCode}
+                disabled={joiningSubject}
+              >
+                <LinearGradient
+                  colors={['#22c55e', '#16a34a']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.gradientButton}
+                >
+                  {joiningSubject ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Join Subject</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -307,6 +446,25 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     fontWeight: '600',
     fontSize: 14
+  },
+  joinButtonSection: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12
+  },
+  joinSubjectButton: {
+    borderRadius: 12,
+    overflow: 'hidden'
+  },
+  gradientButton: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  joinButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff'
   },
   subjectsSection: {
     paddingHorizontal: 24,
@@ -450,6 +608,42 @@ const styles = StyleSheet.create({
   readOnlyValue: {
     color: '#64748b',
     fontStyle: 'italic'
+  },
+  joinModalDescription: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 20,
+    lineHeight: 20
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 8
+  },
+  codeInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 18,
+    color: '#1e293b',
+    fontFamily: 'monospace',
+    textAlign: 'center',
+    letterSpacing: 4,
+    fontWeight: 'bold',
+    marginBottom: 20
+  },
+  submitButton: {
+    borderRadius: 10,
+    overflow: 'hidden'
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff'
   }
 });
 

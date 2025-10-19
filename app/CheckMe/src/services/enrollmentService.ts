@@ -114,6 +114,47 @@ export const approveEnrollment = async (
     });
     
     console.log('  - Approval successful');
+    
+    // Update the subject's student count
+    // First, find the subject to get its sectionId
+    const subjectsRef = ref(database, `subjects/${teacherId}`);
+    const subjectsSnapshot = await get(subjectsRef);
+    
+    if (subjectsSnapshot.exists()) {
+      const sections = subjectsSnapshot.val();
+      let foundSectionId: string | null = null;
+      
+      // Find which section contains this subject
+      for (const sectionId in sections) {
+        if (sections[sectionId][subjectId]) {
+          foundSectionId = sectionId;
+          break;
+        }
+      }
+      
+      if (foundSectionId) {
+        // Count approved enrollments
+        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
+        const enrollmentsSnapshot = await get(enrollmentsRef);
+        
+        let approvedCount = 0;
+        if (enrollmentsSnapshot.exists()) {
+          const enrollments = enrollmentsSnapshot.val();
+          approvedCount = Object.values(enrollments).filter(
+            (e: any) => e.status === 'approved'
+          ).length;
+        }
+        
+        // Update subject's studentCount
+        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
+        await update(subjectRef, {
+          studentCount: approvedCount,
+          updatedAt: Date.now()
+        });
+        
+        console.log('  - Updated subject studentCount:', approvedCount);
+      }
+    }
   } catch (error: any) {
     console.error('❌ [approveEnrollment] Error:', error);
     console.error('  - Error code:', error.code);
@@ -145,6 +186,44 @@ export const rejectEnrollment = async (
     });
     
     console.log('  - Rejection successful');
+    
+    // Update the subject's student count (in case previously approved student is rejected)
+    // This ensures the count stays accurate
+    const subjectsRef = ref(database, `subjects/${teacherId}`);
+    const subjectsSnapshot = await get(subjectsRef);
+    
+    if (subjectsSnapshot.exists()) {
+      const sections = subjectsSnapshot.val();
+      let foundSectionId: string | null = null;
+      
+      for (const sectionId in sections) {
+        if (sections[sectionId][subjectId]) {
+          foundSectionId = sectionId;
+          break;
+        }
+      }
+      
+      if (foundSectionId) {
+        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
+        const enrollmentsSnapshot = await get(enrollmentsRef);
+        
+        let approvedCount = 0;
+        if (enrollmentsSnapshot.exists()) {
+          const enrollments = enrollmentsSnapshot.val();
+          approvedCount = Object.values(enrollments).filter(
+            (e: any) => e.status === 'approved'
+          ).length;
+        }
+        
+        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
+        await update(subjectRef, {
+          studentCount: approvedCount,
+          updatedAt: Date.now()
+        });
+        
+        console.log('  - Updated subject studentCount:', approvedCount);
+      }
+    }
   } catch (error: any) {
     console.error('❌ [rejectEnrollment] Error:', error);
     console.error('  - Error code:', error.code);
@@ -164,7 +243,45 @@ export const removeEnrollment = async (
   try {
     const enrollmentRef = ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`);
     await remove(enrollmentRef);
+    
+    // Update the subject's student count after removal
+    const subjectsRef = ref(database, `subjects/${teacherId}`);
+    const subjectsSnapshot = await get(subjectsRef);
+    
+    if (subjectsSnapshot.exists()) {
+      const sections = subjectsSnapshot.val();
+      let foundSectionId: string | null = null;
+      
+      for (const sectionId in sections) {
+        if (sections[sectionId][subjectId]) {
+          foundSectionId = sectionId;
+          break;
+        }
+      }
+      
+      if (foundSectionId) {
+        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
+        const enrollmentsSnapshot = await get(enrollmentsRef);
+        
+        let approvedCount = 0;
+        if (enrollmentsSnapshot.exists()) {
+          const enrollments = enrollmentsSnapshot.val();
+          approvedCount = Object.values(enrollments).filter(
+            (e: any) => e.status === 'approved'
+          ).length;
+        }
+        
+        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
+        await update(subjectRef, {
+          studentCount: approvedCount,
+          updatedAt: Date.now()
+        });
+        
+        console.log('✅ [removeEnrollment] Updated subject studentCount:', approvedCount);
+      }
+    }
   } catch (error: any) {
+    console.error('❌ [removeEnrollment] Error:', error);
     throw new Error(error.message || 'Failed to remove enrollment');
   }
 };
@@ -189,5 +306,177 @@ export const isStudentEnrolled = async (
     return enrollment.status === 'approved';
   } catch (error: any) {
     throw new Error(error.message || 'Failed to check enrollment status');
+  }
+};
+
+/**
+ * Join a subject using an invite code
+ */
+export const joinSubjectWithCode = async (
+  code: string,
+  studentId: string,
+  studentName: string,
+  studentEmail: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    // Validate the invite code
+    const { validateInviteCode } = require('./inviteCodeService');
+    const validation = await validateInviteCode(code);
+    
+    if (!validation.valid || !validation.inviteCode) {
+      return {
+        success: false,
+        message: validation.error || 'Invalid invite code'
+      };
+    }
+    
+    const inviteCode = validation.inviteCode;
+    
+    // Check if student is already enrolled
+    const alreadyEnrolled = await isStudentEnrolled(
+      inviteCode.teacherId,
+      inviteCode.subjectId,
+      studentId
+    );
+    
+    if (alreadyEnrolled) {
+      return {
+        success: false,
+        message: 'You are already enrolled in this subject'
+      };
+    }
+    
+    // Check if there's a pending enrollment
+    const enrollmentRef = ref(database, `enrollments/${inviteCode.teacherId}/${inviteCode.subjectId}/${studentId}`);
+    const snapshot = await get(enrollmentRef);
+    
+    if (snapshot.exists()) {
+      const enrollment = snapshot.val() as Enrollment;
+      if (enrollment.status === 'pending') {
+        return {
+          success: false,
+          message: 'Your enrollment request is pending approval'
+        };
+      } else if (enrollment.status === 'rejected') {
+        // Allow re-enrollment if previously rejected
+        await createEnrollment({
+          studentId,
+          subjectId: inviteCode.subjectId,
+          studentName,
+          studentEmail,
+          teacherId: inviteCode.teacherId
+        });
+        return {
+          success: true,
+          message: 'Enrollment request submitted successfully!'
+        };
+      }
+    }
+    
+    // Create enrollment
+    await createEnrollment({
+      studentId,
+      subjectId: inviteCode.subjectId,
+      studentName,
+      studentEmail,
+      teacherId: inviteCode.teacherId
+    });
+    
+    return {
+      success: true,
+      message: 'Enrollment request submitted successfully!'
+    };
+  } catch (error: any) {
+    console.error('❌ [joinSubjectWithCode] Error:', error);
+    throw new Error(error.message || 'Failed to join subject');
+  }
+};
+
+/**
+ * Get student enrollments across all subjects with full details
+ */
+export const getStudentEnrollments = async (studentId: string): Promise<Array<Enrollment & {
+  teacherName: string;
+  sectionName: string;
+  year: string;
+  subjectName: string;
+  subjectCode: string;
+}>> => {
+  try {
+    const enrollmentsRef = ref(database, 'enrollments');
+    const snapshot = await get(enrollmentsRef);
+    
+    if (!snapshot.exists()) {
+      return [];
+    }
+    
+    const allEnrollments: Array<Enrollment & {
+      teacherName: string;
+      sectionName: string;
+      year: string;
+      subjectName: string;
+      subjectCode: string;
+    }> = [];
+    
+    const enrollmentsData = snapshot.val();
+    
+    // Get all invite codes to find subject details
+    const inviteCodesRef = ref(database, 'inviteCodes');
+    const inviteCodesSnapshot = await get(inviteCodesRef);
+    const inviteCodes = inviteCodesSnapshot.exists() ? inviteCodesSnapshot.val() : {};
+    
+    // Create a map of subjectId to subject details
+    const subjectDetailsMap: { [key: string]: any } = {};
+    Object.values(inviteCodes).forEach((inviteCode: any) => {
+      if (!subjectDetailsMap[inviteCode.subjectId]) {
+        subjectDetailsMap[inviteCode.subjectId] = {
+          subjectName: inviteCode.subjectName,
+          teacherName: inviteCode.teacherName,
+          sectionName: inviteCode.sectionName,
+          year: inviteCode.year,
+          subjectCode: inviteCode.code
+        };
+      }
+    });
+    
+    // Iterate through all teachers
+    Object.keys(enrollmentsData).forEach((teacherId) => {
+      const teacherEnrollments = enrollmentsData[teacherId];
+      
+      // Iterate through all subjects
+      Object.keys(teacherEnrollments).forEach((subjectId) => {
+        const subjectEnrollments = teacherEnrollments[subjectId];
+        
+        // Check if student is enrolled in this subject
+        if (subjectEnrollments[studentId]) {
+          const enrollment = subjectEnrollments[studentId] as Enrollment;
+          
+          // Only include approved enrollments
+          if (enrollment.status === 'approved') {
+            const subjectDetails = subjectDetailsMap[subjectId] || {
+              subjectName: 'Unknown Subject',
+              teacherName: 'Unknown Teacher',
+              sectionName: 'Unknown Section',
+              year: '',
+              subjectCode: ''
+            };
+            
+            allEnrollments.push({
+              ...enrollment,
+              teacherName: subjectDetails.teacherName,
+              sectionName: subjectDetails.sectionName,
+              year: subjectDetails.year,
+              subjectName: subjectDetails.subjectName,
+              subjectCode: subjectDetails.subjectCode
+            });
+          }
+        }
+      });
+    });
+    
+    return allEnrollments.sort((a, b) => b.joinedAt - a.joinedAt);
+  } catch (error: any) {
+    console.error('❌ [getStudentEnrollments] Error:', error);
+    throw new Error(error.message || 'Failed to fetch student enrollments');
   }
 };

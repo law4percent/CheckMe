@@ -17,12 +17,14 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  getSubjectEnrollments, 
-  approveEnrollment, 
+import {
+  getSubjectEnrollments,
+  approveEnrollment,
   rejectEnrollment,
-  Enrollment 
+  removeEnrollment,
+  Enrollment
 } from '../../services/enrollmentService';
+import { getSubjectInviteCode } from '../../services/inviteCodeService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDashboard'>;
 
@@ -35,6 +37,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
 
   // Modal states
   const [createAssessmentModalVisible, setCreateAssessmentModalVisible] = useState(false);
@@ -42,9 +45,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [assessmentName, setAssessmentName] = useState('');
   const [enrolledStudentsModalVisible, setEnrolledStudentsModalVisible] = useState(false);
   const [isEditingEnrollments, setIsEditingEnrollments] = useState(false);
-  const [inviteStudentsModalVisible, setInviteStudentsModalVisible] = useState(false);
-  const [inviteMethod, setInviteMethod] = useState<'code' | 'search' | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [pendingEnrollmentsModalVisible, setPendingEnrollmentsModalVisible] = useState(false);
 
   useEffect(() => {
     console.log('🔄 [SubjectDashboard] useEffect triggered');
@@ -55,6 +56,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     
     if (subject.id) {
       loadEnrollments();
+      loadInviteCode();
     }
   }, [subject.id]);
 
@@ -91,18 +93,24 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
+  const loadInviteCode = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      const code = await getSubjectInviteCode(user.uid, subject.id);
+      setInviteCode(code);
+    } catch (error: any) {
+      console.error('❌ [SubjectDashboard] Error loading invite code:', error);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadEnrollments();
+    await loadInviteCode();
     setRefreshing(false);
   };
 
-  const handleCopySubjectCode = () => {
-    if (subject.subjectCode) {
-      Clipboard.setString(subject.subjectCode);
-      Alert.alert('Copied!', 'Subject code copied to clipboard');
-    }
-  };
 
   const handleCreateAssessment = () => {
     setSelectedAssessmentType(null);
@@ -130,6 +138,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     setEnrolledStudentsModalVisible(true);
   };
 
+  const handleViewPendingEnrollments = () => {
+    setPendingEnrollmentsModalVisible(true);
+  };
+
   const handleUnenrollStudent = async (studentId: string, studentName: string) => {
     Alert.alert(
       'Unenroll Student',
@@ -140,11 +152,21 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           text: 'Unenroll',
           style: 'destructive',
           onPress: async () => {
+            if (!user?.uid) return;
+            
             try {
               setActionLoading(true);
-              // TODO: Implement unenrollStudent service function
-              Alert.alert('Coming Soon', 'Unenroll functionality will be available soon!');
+              
+              // Remove the enrollment from database
+              await removeEnrollment(user.uid, subject.id, studentId);
+              
+              // Update local state
               setEnrollments(enrollments.filter(e => e.studentId !== studentId));
+              
+              // Reload enrollments to get fresh data and update counts
+              await loadEnrollments();
+              
+              Alert.alert('Success', `${studentName} has been unenrolled successfully!`);
             } catch (error: any) {
               Alert.alert('Error', error.message);
             } finally {
@@ -156,40 +178,14 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   };
 
-  const handleInviteStudents = () => {
-    setInviteMethod(null);
-    setSearchQuery('');
-    setInviteStudentsModalVisible(true);
-  };
-
-  const handleGenerateInviteCode = () => {
-    // Generate a unique invite code for this subject
-    const inviteCode = `${subject.subjectCode || subject.id.substring(0, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    
-    Alert.alert(
-      'Invite Code Generated',
-      `Share this code with your students:\n\n${inviteCode}\n\nStudents can enter this code in their app to join this subject.`,
-      [
-        {
-          text: 'Copy Code',
-          onPress: () => {
-            Clipboard.setString(inviteCode);
-            Alert.alert('Copied!', 'Invite code copied to clipboard');
-          }
-        },
-        { text: 'Done' }
-      ]
-    );
-  };
-
-  const handleSearchStudents = () => {
-    if (!searchQuery.trim()) {
-      Alert.alert('Error', 'Please enter a student name or email to search');
+  const handleCopyInviteCode = () => {
+    if (!inviteCode) {
+      Alert.alert('Error', 'No invite code available.');
       return;
     }
     
-    // TODO: Implement searchStudents service function
-    Alert.alert('Coming Soon', 'Student search functionality will be available soon!');
+    Clipboard.setString(inviteCode);
+    Alert.alert('Copied!', 'Invite code copied to clipboard');
   };
 
   const handleApproveEnrollment = async (enrollment: Enrollment) => {
@@ -307,13 +303,14 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           <Text style={styles.subjectInfoSubtitle}>
             {section.year}-{section.sectionName}
           </Text>
-          {subject.subjectCode && (
-            <TouchableOpacity 
-              style={styles.subjectCodeContainer}
-              onPress={handleCopySubjectCode}
+          
+          {inviteCode && (
+            <TouchableOpacity
+              style={styles.inviteCodeContainer}
+              onPress={handleCopyInviteCode}
             >
-              <Text style={styles.subjectCodeLabel}>Subject Code:</Text>
-              <Text style={styles.subjectCode}>{subject.subjectCode}</Text>
+              <Text style={styles.inviteCodeLabel}>Invite Code:</Text>
+              <Text style={styles.inviteCodeText}>{inviteCode}</Text>
               <Text style={styles.copyIcon}>📋</Text>
             </TouchableOpacity>
           )}
@@ -341,66 +338,27 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleInviteStudents}
-            disabled={actionLoading}
-          >
-            <LinearGradient
-              colors={['#22c55e', '#16a34a']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.gradientButton}
-            >
-              <Text style={styles.actionButtonText}>👥 Invite Students</Text>
-            </LinearGradient>
-          </TouchableOpacity>
         </View>
-
-        {/* Pending Enrollments */}
-        {pendingEnrollments.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pending Enrollments ({pendingEnrollments.length})</Text>
-            {pendingEnrollments.map((enrollment) => (
-              <View key={enrollment.studentId} style={styles.enrollmentCard}>
-                <View style={styles.enrollmentInfo}>
-                  <Text style={styles.studentName}>{enrollment.studentName}</Text>
-                  <Text style={styles.studentEmail}>{enrollment.studentEmail}</Text>
-                  <Text style={styles.enrollmentDate}>
-                    Requested: {new Date(enrollment.joinedAt).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.enrollmentActions}>
-                  <TouchableOpacity
-                    style={styles.approveButton}
-                    onPress={() => handleApproveEnrollment(enrollment)}
-                    disabled={actionLoading}
-                  >
-                    <Text style={styles.approveButtonText}>✓ Approve</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.rejectButton}
-                    onPress={() => handleRejectEnrollment(enrollment)}
-                    disabled={actionLoading}
-                  >
-                    <Text style={styles.rejectButtonText}>✕ Reject</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
 
         {/* Assessments Section */}
         <View style={styles.section}>
-          {/* Header with Assessments and Enrolled Students horizontally aligned */}
+          {/* Header with Assessments, Pending Enrollments, and Enrolled Students */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Assessments</Text>
-            <TouchableOpacity onPress={handleViewEnrolledStudents}>
-              <Text style={[styles.sectionTitle, styles.clickableTitle]}>
-                Enrolled Students ({approvedEnrollments.length}) 👁️
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.headerButtonsContainer}>
+              {pendingEnrollments.length > 0 && (
+                <TouchableOpacity onPress={handleViewPendingEnrollments}>
+                  <Text style={[styles.sectionTitle, styles.clickableTitle, styles.pendingBadge]}>
+                    Pending ({pendingEnrollments.length}) 🔔
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={handleViewEnrolledStudents}>
+                <Text style={[styles.sectionTitle, styles.clickableTitle]}>
+                  Enrolled ({approvedEnrollments.length}) 👁️
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           <View style={styles.emptyState}>
@@ -570,129 +528,70 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Invite Students Modal */}
+      {/* Pending Enrollments Modal */}
       <Modal
         animationType="slide"
         transparent={true}
-        visible={inviteStudentsModalVisible}
-        onRequestClose={() => setInviteStudentsModalVisible(false)}
+        visible={pendingEnrollmentsModalVisible}
+        onRequestClose={() => setPendingEnrollmentsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Invite Students</Text>
+              <Text style={styles.modalTitle}>Pending Enrollments ({pendingEnrollments.length})</Text>
             </View>
 
-            <View style={styles.modalBody}>
-              <Text style={styles.modalLabel}>Choose Invitation Method:</Text>
-              
-              {/* Invite by Code */}
-              <TouchableOpacity
-                style={[
-                  styles.inviteMethodButton,
-                  inviteMethod === 'code' && styles.inviteMethodButtonSelected
-                ]}
-                onPress={() => setInviteMethod('code')}
-              >
-                <Text style={styles.inviteMethodIcon}>🔑</Text>
-                <View style={styles.inviteMethodTextContainer}>
-                  <Text style={[
-                    styles.inviteMethodTitle,
-                    inviteMethod === 'code' && styles.inviteMethodTitleSelected
-                  ]}>
-                    Invite by Code
-                  </Text>
-                  <Text style={styles.inviteMethodDescription}>
-                    Generate a code that students can enter to join
-                  </Text>
-                </View>
-              </TouchableOpacity>
+            <ScrollView style={styles.modalScrollView}>
+              <View style={styles.modalBody}>
+                {pendingEnrollments.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateIcon}>✅</Text>
+                    <Text style={styles.emptyStateText}>No pending requests</Text>
+                  </View>
+                ) : (
+                  pendingEnrollments.map((enrollment) => (
+                    <View key={enrollment.studentId} style={styles.enrollmentCard}>
+                      <View style={styles.enrollmentInfo}>
+                        <Text style={styles.studentName}>{enrollment.studentName}</Text>
+                        <Text style={styles.studentEmail}>{enrollment.studentEmail}</Text>
+                        <Text style={styles.enrollmentDate}>
+                          Requested: {new Date(enrollment.joinedAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <View style={styles.enrollmentActions}>
+                        <TouchableOpacity
+                          style={styles.approveButton}
+                          onPress={() => handleApproveEnrollment(enrollment)}
+                          disabled={actionLoading}
+                        >
+                          <Text style={styles.approveButtonText}>✓ Approve</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.rejectButton}
+                          onPress={() => handleRejectEnrollment(enrollment)}
+                          disabled={actionLoading}
+                        >
+                          <Text style={styles.rejectButtonText}>✕ Reject</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
 
-              {/* Invite by Search */}
-              <TouchableOpacity
-                style={[
-                  styles.inviteMethodButton,
-                  inviteMethod === 'search' && styles.inviteMethodButtonSelected
-                ]}
-                onPress={() => setInviteMethod('search')}
-              >
-                <Text style={styles.inviteMethodIcon}>🔍</Text>
-                <View style={styles.inviteMethodTextContainer}>
-                  <Text style={[
-                    styles.inviteMethodTitle,
-                    inviteMethod === 'search' && styles.inviteMethodTitleSelected
-                  ]}>
-                    Search Students
-                  </Text>
-                  <Text style={styles.inviteMethodDescription}>
-                    Search by name or email to invite directly
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Show relevant content based on selected method */}
-              {inviteMethod === 'code' && (
-                <View style={styles.inviteMethodContent}>
-                  <Text style={styles.inviteMethodContentText}>
-                    Click "Generate Code" to create a unique code for this subject. Share this code with your students, and they can enter it in their app to request enrollment.
-                  </Text>
+                <View style={styles.modalActions}>
                   <TouchableOpacity
-                    style={styles.generateCodeButton}
-                    onPress={handleGenerateInviteCode}
+                    style={styles.closeButton}
+                    onPress={() => setPendingEnrollmentsModalVisible(false)}
                   >
-                    <LinearGradient
-                      colors={['#6366f1', '#8b5cf6']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.gradientButton}
-                    >
-                      <Text style={styles.generateCodeButtonText}>🔑 Generate Code</Text>
-                    </LinearGradient>
+                    <Text style={styles.closeButtonText}>Close</Text>
                   </TouchableOpacity>
                 </View>
-              )}
-
-              {inviteMethod === 'search' && (
-                <View style={styles.inviteMethodContent}>
-                  <Text style={styles.inviteMethodContentText}>
-                    Search for students by their name or Gmail address:
-                  </Text>
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Enter student name or email"
-                    placeholderTextColor="#94a3b8"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    style={styles.searchButton}
-                    onPress={handleSearchStudents}
-                  >
-                    <LinearGradient
-                      colors={['#22c55e', '#16a34a']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.gradientButton}
-                    >
-                      <Text style={styles.searchButtonText}>🔍 Search</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.closeModalButton}
-                  onPress={() => setInviteStudentsModalVisible(false)}
-                >
-                  <Text style={styles.closeModalButtonText}>Close</Text>
-                </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
+
     </SafeAreaView>
   );
 };
@@ -743,29 +642,17 @@ const styles = StyleSheet.create({
     color: '#cdd5df',
     marginBottom: 12
   },
-  subjectCodeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2060',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignSelf: 'flex-start'
-  },
-  subjectCodeLabel: {
-    fontSize: 12,
-    color: '#cdd5df',
-    marginRight: 8
-  },
-  subjectCode: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#22c55e',
-    fontFamily: 'monospace',
-    marginRight: 8
-  },
   copyIcon: {
     fontSize: 16
+  },
+  headerButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center'
+  },
+  pendingBadge: {
+    color: '#f59e0b',
+    marginRight: 8
   },
   actionSection: {
     paddingHorizontal: 24,
@@ -941,6 +828,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1e293b',
     marginBottom: 8
+  },
+  inviteCodeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start'
+  },
+  inviteCodeLabel: {
+    fontSize: 12,
+    color: '#ffffff',
+    marginRight: 8,
+    fontWeight: '600'
+  },
+  inviteCodeText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    fontFamily: 'monospace',
+    marginRight: 8,
+    letterSpacing: 2
   },
   modalScrollView: {
     maxHeight: '70%'
@@ -1133,6 +1044,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#475569'
+  },
+  searchResultCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#22c55e'
+  },
+  searchResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  searchResultIcon: {
+    fontSize: 40,
+    marginRight: 12
+  },
+  searchResultInfo: {
+    flex: 1
+  },
+  searchResultName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 4
+  },
+  searchResultEmail: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 2
+  },
+  searchResultId: {
+    fontSize: 12,
+    color: '#94a3b8'
+  },
+  inviteButton: {
+    backgroundColor: '#dcfce7',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  inviteButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#16a34a'
   }
 });
 
