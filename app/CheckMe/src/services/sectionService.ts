@@ -112,6 +112,43 @@ export const updateSection = async (
     if (updates.sectionName) updates.sectionName = updates.sectionName.trim();
 
     await update(sectionRef, updates);
+    
+    // Update invite codes for all subjects in this section if section name or year changed
+    if (data.sectionName || data.year) {
+      const { updateSectionInviteCodes } = require('./inviteCodeService');
+      const inviteCodeUpdates: any = {};
+      if (data.sectionName) inviteCodeUpdates.sectionName = data.sectionName.trim();
+      if (data.year) inviteCodeUpdates.year = data.year.trim();
+      
+      try {
+        await updateSectionInviteCodes(teacherId, sectionId, inviteCodeUpdates);
+      } catch (error) {
+        console.warn('⚠️ [updateSection] Failed to update invite codes:', error);
+        // Don't fail the section update if invite code update fails
+      }
+    }
+    
+    // Also update all subjects in this section if year changed
+    if (data.year) {
+      const { updateSectionSubjects } = require('./subjectService');
+      try {
+        // We need to fetch all subjects and update them
+        const subjectsRef = ref(database, `subjects/${teacherId}/${sectionId}`);
+        const subjectsSnapshot = await get(subjectsRef);
+        
+        if (subjectsSnapshot.exists()) {
+          const subjects = subjectsSnapshot.val();
+          const updatePromises = Object.keys(subjects).map((subjectId) => {
+            const subjectRef = ref(database, `subjects/${teacherId}/${sectionId}/${subjectId}`);
+            return update(subjectRef, { year: data.year!.trim(), updatedAt: Date.now() });
+          });
+          await Promise.all(updatePromises);
+        }
+      } catch (error) {
+        console.warn('⚠️ [updateSection] Failed to update subjects:', error);
+        // Don't fail the section update if subject update fails
+      }
+    }
   } catch (error: any) {
     throw new Error(error.message || 'Failed to update section');
   }

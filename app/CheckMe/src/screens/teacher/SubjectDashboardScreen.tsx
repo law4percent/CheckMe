@@ -21,6 +21,7 @@ import {
   getSubjectEnrollments,
   approveEnrollment,
   rejectEnrollment,
+  removeEnrollment,
   Enrollment
 } from '../../services/enrollmentService';
 import { getSubjectInviteCode } from '../../services/inviteCodeService';
@@ -44,6 +45,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [assessmentName, setAssessmentName] = useState('');
   const [enrolledStudentsModalVisible, setEnrolledStudentsModalVisible] = useState(false);
   const [isEditingEnrollments, setIsEditingEnrollments] = useState(false);
+  const [pendingEnrollmentsModalVisible, setPendingEnrollmentsModalVisible] = useState(false);
 
   useEffect(() => {
     console.log('🔄 [SubjectDashboard] useEffect triggered');
@@ -109,12 +111,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     setRefreshing(false);
   };
 
-  const handleCopySubjectCode = () => {
-    if (subject.subjectCode) {
-      Clipboard.setString(subject.subjectCode);
-      Alert.alert('Copied!', 'Subject code copied to clipboard');
-    }
-  };
 
   const handleCreateAssessment = () => {
     setSelectedAssessmentType(null);
@@ -142,6 +138,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     setEnrolledStudentsModalVisible(true);
   };
 
+  const handleViewPendingEnrollments = () => {
+    setPendingEnrollmentsModalVisible(true);
+  };
+
   const handleUnenrollStudent = async (studentId: string, studentName: string) => {
     Alert.alert(
       'Unenroll Student',
@@ -152,11 +152,21 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           text: 'Unenroll',
           style: 'destructive',
           onPress: async () => {
+            if (!user?.uid) return;
+            
             try {
               setActionLoading(true);
-              // TODO: Implement unenrollStudent service function
-              Alert.alert('Coming Soon', 'Unenroll functionality will be available soon!');
+              
+              // Remove the enrollment from database
+              await removeEnrollment(user.uid, subject.id, studentId);
+              
+              // Update local state
               setEnrollments(enrollments.filter(e => e.studentId !== studentId));
+              
+              // Reload enrollments to get fresh data and update counts
+              await loadEnrollments();
+              
+              Alert.alert('Success', `${studentName} has been unenrolled successfully!`);
             } catch (error: any) {
               Alert.alert('Error', error.message);
             } finally {
@@ -293,16 +303,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           <Text style={styles.subjectInfoSubtitle}>
             {section.year}-{section.sectionName}
           </Text>
-          {subject.subjectCode && (
-            <TouchableOpacity
-              style={styles.subjectCodeContainer}
-              onPress={handleCopySubjectCode}
-            >
-              <Text style={styles.subjectCodeLabel}>Subject Code:</Text>
-              <Text style={styles.subjectCode}>{subject.subjectCode}</Text>
-              <Text style={styles.copyIcon}>📋</Text>
-            </TouchableOpacity>
-          )}
           
           {inviteCode && (
             <TouchableOpacity
@@ -340,50 +340,25 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
         </View>
 
-        {/* Pending Enrollments */}
-        {pendingEnrollments.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pending Enrollments ({pendingEnrollments.length})</Text>
-            {pendingEnrollments.map((enrollment) => (
-              <View key={enrollment.studentId} style={styles.enrollmentCard}>
-                <View style={styles.enrollmentInfo}>
-                  <Text style={styles.studentName}>{enrollment.studentName}</Text>
-                  <Text style={styles.studentEmail}>{enrollment.studentEmail}</Text>
-                  <Text style={styles.enrollmentDate}>
-                    Requested: {new Date(enrollment.joinedAt).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.enrollmentActions}>
-                  <TouchableOpacity
-                    style={styles.approveButton}
-                    onPress={() => handleApproveEnrollment(enrollment)}
-                    disabled={actionLoading}
-                  >
-                    <Text style={styles.approveButtonText}>✓ Approve</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.rejectButton}
-                    onPress={() => handleRejectEnrollment(enrollment)}
-                    disabled={actionLoading}
-                  >
-                    <Text style={styles.rejectButtonText}>✕ Reject</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
         {/* Assessments Section */}
         <View style={styles.section}>
-          {/* Header with Assessments and Enrolled Students horizontally aligned */}
+          {/* Header with Assessments, Pending Enrollments, and Enrolled Students */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Assessments</Text>
-            <TouchableOpacity onPress={handleViewEnrolledStudents}>
-              <Text style={[styles.sectionTitle, styles.clickableTitle]}>
-                Enrolled Students ({approvedEnrollments.length}) 👁️
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.headerButtonsContainer}>
+              {pendingEnrollments.length > 0 && (
+                <TouchableOpacity onPress={handleViewPendingEnrollments}>
+                  <Text style={[styles.sectionTitle, styles.clickableTitle, styles.pendingBadge]}>
+                    Pending ({pendingEnrollments.length}) 🔔
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={handleViewEnrolledStudents}>
+                <Text style={[styles.sectionTitle, styles.clickableTitle]}>
+                  Enrolled ({approvedEnrollments.length}) 👁️
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           <View style={styles.emptyState}>
@@ -553,6 +528,70 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </Modal>
 
+      {/* Pending Enrollments Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={pendingEnrollmentsModalVisible}
+        onRequestClose={() => setPendingEnrollmentsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Pending Enrollments ({pendingEnrollments.length})</Text>
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              <View style={styles.modalBody}>
+                {pendingEnrollments.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateIcon}>✅</Text>
+                    <Text style={styles.emptyStateText}>No pending requests</Text>
+                  </View>
+                ) : (
+                  pendingEnrollments.map((enrollment) => (
+                    <View key={enrollment.studentId} style={styles.enrollmentCard}>
+                      <View style={styles.enrollmentInfo}>
+                        <Text style={styles.studentName}>{enrollment.studentName}</Text>
+                        <Text style={styles.studentEmail}>{enrollment.studentEmail}</Text>
+                        <Text style={styles.enrollmentDate}>
+                          Requested: {new Date(enrollment.joinedAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <View style={styles.enrollmentActions}>
+                        <TouchableOpacity
+                          style={styles.approveButton}
+                          onPress={() => handleApproveEnrollment(enrollment)}
+                          disabled={actionLoading}
+                        >
+                          <Text style={styles.approveButtonText}>✓ Approve</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.rejectButton}
+                          onPress={() => handleRejectEnrollment(enrollment)}
+                          disabled={actionLoading}
+                        >
+                          <Text style={styles.rejectButtonText}>✕ Reject</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.closeButton}
+                    onPress={() => setPendingEnrollmentsModalVisible(false)}
+                  >
+                    <Text style={styles.closeButtonText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 };
@@ -603,29 +642,17 @@ const styles = StyleSheet.create({
     color: '#cdd5df',
     marginBottom: 12
   },
-  subjectCodeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2060',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignSelf: 'flex-start'
-  },
-  subjectCodeLabel: {
-    fontSize: 12,
-    color: '#cdd5df',
-    marginRight: 8
-  },
-  subjectCode: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#22c55e',
-    fontFamily: 'monospace',
-    marginRight: 8
-  },
   copyIcon: {
     fontSize: 16
+  },
+  headerButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center'
+  },
+  pendingBadge: {
+    color: '#f59e0b',
+    marginRight: 8
   },
   actionSection: {
     paddingHorizontal: 24,

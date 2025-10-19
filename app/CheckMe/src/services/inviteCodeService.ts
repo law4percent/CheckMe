@@ -1,5 +1,5 @@
 // src/services/inviteCodeService.ts
-import { ref, set, get, query, orderByChild, equalTo, remove } from 'firebase/database';
+import { ref, set, get, query, orderByChild, equalTo, remove, update } from 'firebase/database';
 import { database } from '../config/firebase';
 
 export interface InviteCode {
@@ -171,6 +171,76 @@ export const validateInviteCode = async (code: string): Promise<{
       valid: false,
       error: error.message || 'Failed to validate invite code'
     };
+  }
+};
+
+/**
+ * Update invite code metadata when subject is updated
+ */
+export const updateSubjectInviteCode = async (
+  teacherId: string,
+  subjectId: string,
+  updates: {
+    subjectName?: string;
+    year?: string;
+  }
+): Promise<void> => {
+  try {
+    // Get the invite code for this subject
+    const code = await getSubjectInviteCode(teacherId, subjectId);
+    
+    if (!code) {
+      console.log('⚠️ [updateSubjectInviteCode] No invite code found for subject');
+      return;
+    }
+    
+    // Update the invite code metadata
+    const inviteCodeRef = ref(database, `inviteCodes/${code}`);
+    await update(inviteCodeRef, updates);
+    
+    console.log('✅ [updateSubjectInviteCode] Invite code metadata updated');
+  } catch (error: any) {
+    console.error('❌ [updateSubjectInviteCode] Error:', error);
+    throw new Error('Failed to update invite code metadata');
+  }
+};
+
+/**
+ * Update invite code metadata when section is updated
+ */
+export const updateSectionInviteCodes = async (
+  teacherId: string,
+  sectionId: string,
+  updates: {
+    sectionName?: string;
+    year?: string;
+  }
+): Promise<void> => {
+  try {
+    const inviteCodesRef = ref(database, 'inviteCodes');
+    const snapshot = await get(inviteCodesRef);
+    
+    if (!snapshot.exists()) {
+      return;
+    }
+    
+    const inviteCodes = snapshot.val();
+    const updatePromises: Promise<void>[] = [];
+    
+    // Find all invite codes for this section and update them
+    Object.keys(inviteCodes).forEach((code) => {
+      const inviteCode = inviteCodes[code];
+      if (inviteCode.teacherId === teacherId && inviteCode.sectionId === sectionId) {
+        const inviteCodeRef = ref(database, `inviteCodes/${code}`);
+        updatePromises.push(update(inviteCodeRef, updates));
+      }
+    });
+    
+    await Promise.all(updatePromises);
+    console.log('✅ [updateSectionInviteCodes] Updated invite codes for section');
+  } catch (error: any) {
+    console.error('❌ [updateSectionInviteCodes] Error:', error);
+    throw new Error('Failed to update section invite codes');
   }
 };
 

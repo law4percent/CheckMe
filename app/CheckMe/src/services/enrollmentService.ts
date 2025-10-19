@@ -114,6 +114,47 @@ export const approveEnrollment = async (
     });
     
     console.log('  - Approval successful');
+    
+    // Update the subject's student count
+    // First, find the subject to get its sectionId
+    const subjectsRef = ref(database, `subjects/${teacherId}`);
+    const subjectsSnapshot = await get(subjectsRef);
+    
+    if (subjectsSnapshot.exists()) {
+      const sections = subjectsSnapshot.val();
+      let foundSectionId: string | null = null;
+      
+      // Find which section contains this subject
+      for (const sectionId in sections) {
+        if (sections[sectionId][subjectId]) {
+          foundSectionId = sectionId;
+          break;
+        }
+      }
+      
+      if (foundSectionId) {
+        // Count approved enrollments
+        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
+        const enrollmentsSnapshot = await get(enrollmentsRef);
+        
+        let approvedCount = 0;
+        if (enrollmentsSnapshot.exists()) {
+          const enrollments = enrollmentsSnapshot.val();
+          approvedCount = Object.values(enrollments).filter(
+            (e: any) => e.status === 'approved'
+          ).length;
+        }
+        
+        // Update subject's studentCount
+        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
+        await update(subjectRef, {
+          studentCount: approvedCount,
+          updatedAt: Date.now()
+        });
+        
+        console.log('  - Updated subject studentCount:', approvedCount);
+      }
+    }
   } catch (error: any) {
     console.error('❌ [approveEnrollment] Error:', error);
     console.error('  - Error code:', error.code);
@@ -145,6 +186,44 @@ export const rejectEnrollment = async (
     });
     
     console.log('  - Rejection successful');
+    
+    // Update the subject's student count (in case previously approved student is rejected)
+    // This ensures the count stays accurate
+    const subjectsRef = ref(database, `subjects/${teacherId}`);
+    const subjectsSnapshot = await get(subjectsRef);
+    
+    if (subjectsSnapshot.exists()) {
+      const sections = subjectsSnapshot.val();
+      let foundSectionId: string | null = null;
+      
+      for (const sectionId in sections) {
+        if (sections[sectionId][subjectId]) {
+          foundSectionId = sectionId;
+          break;
+        }
+      }
+      
+      if (foundSectionId) {
+        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
+        const enrollmentsSnapshot = await get(enrollmentsRef);
+        
+        let approvedCount = 0;
+        if (enrollmentsSnapshot.exists()) {
+          const enrollments = enrollmentsSnapshot.val();
+          approvedCount = Object.values(enrollments).filter(
+            (e: any) => e.status === 'approved'
+          ).length;
+        }
+        
+        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
+        await update(subjectRef, {
+          studentCount: approvedCount,
+          updatedAt: Date.now()
+        });
+        
+        console.log('  - Updated subject studentCount:', approvedCount);
+      }
+    }
   } catch (error: any) {
     console.error('❌ [rejectEnrollment] Error:', error);
     console.error('  - Error code:', error.code);
@@ -164,7 +243,45 @@ export const removeEnrollment = async (
   try {
     const enrollmentRef = ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`);
     await remove(enrollmentRef);
+    
+    // Update the subject's student count after removal
+    const subjectsRef = ref(database, `subjects/${teacherId}`);
+    const subjectsSnapshot = await get(subjectsRef);
+    
+    if (subjectsSnapshot.exists()) {
+      const sections = subjectsSnapshot.val();
+      let foundSectionId: string | null = null;
+      
+      for (const sectionId in sections) {
+        if (sections[sectionId][subjectId]) {
+          foundSectionId = sectionId;
+          break;
+        }
+      }
+      
+      if (foundSectionId) {
+        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
+        const enrollmentsSnapshot = await get(enrollmentsRef);
+        
+        let approvedCount = 0;
+        if (enrollmentsSnapshot.exists()) {
+          const enrollments = enrollmentsSnapshot.val();
+          approvedCount = Object.values(enrollments).filter(
+            (e: any) => e.status === 'approved'
+          ).length;
+        }
+        
+        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
+        await update(subjectRef, {
+          studentCount: approvedCount,
+          updatedAt: Date.now()
+        });
+        
+        console.log('✅ [removeEnrollment] Updated subject studentCount:', approvedCount);
+      }
+    }
   } catch (error: any) {
+    console.error('❌ [removeEnrollment] Error:', error);
     throw new Error(error.message || 'Failed to remove enrollment');
   }
 };

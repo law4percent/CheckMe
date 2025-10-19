@@ -105,7 +105,6 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         teacherId: user.uid,
         sectionId: section.id,
         teacherName: user.role === 'teacher' ? user.fullName : undefined,
-        teacherUsername: user.role === 'teacher' ? user.username : undefined,
         sectionName: section.sectionName,
       });
 
