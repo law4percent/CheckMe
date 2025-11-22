@@ -1,3 +1,22 @@
+## **Overview Goal**
+
+```
+    [User scans Answer Key] 
+            ↓
+    [Raspberry Pi captures image → converts to Base64] 
+            ↓
+    [Send Base64 + system instruction → Gemini AI] 
+            ↓
+    [Gemini AI returns JSON answer key] 
+            ↓
+    [User scans Student Answer Sheet → convert to Base64] 
+            ↓
+    [Send to Gemini AI → returns JSON student answers] 
+            ↓
+    [Compare student answers JSON vs answer key JSON → generate score/result]
+```
+
+
 ## **Phase 1: Answer Key Process**
 
 | **Step** | **Action** | **Critical Improvement** |
