@@ -1,23 +1,102 @@
 ## **Overview Goal**
 
 ```
-    [User scans Answer Key] 
-            ↓
-    [Raspberry Pi captures image → converts to Base64] 
-            ↓
-    [Send Base64 + system instruction → Gemini AI] 
-            ↓
-    [Gemini AI returns JSON answer key] 
-            ↓
-    [User scans Student Answer Sheet → convert to Base64] 
-            ↓
-    [Send to Gemini AI → returns JSON student answers] 
-            ↓
-    [Compare student answers JSON vs answer key JSON → generate score/result]
+[User scans Answer Key] 
+        ↓
+[Raspberry Pi captures image → converts to Base64] 
+        ↓
+[Send Base64 + system instruction → Gemini AI] 
+        ↓
+[Gemini AI returns JSON answer key] 
+        ↓
+[User scans Student Answer Sheet → convert to Base64] 
+        ↓
+[Send to Gemini AI → returns JSON student answers] 
+        ↓
+[Compare student answers JSON vs answer key JSON → generate score/result]
 ```
 
 
-## **Phase 1: Answer Key Process**
+## **Two separate AI instructions**
+
+```bash
+AI_INSTRUCTION_for_answer_key = """
+You are an OCR system that extracts the official Answer Key from a test paper image.
+
+The image contains ONLY the teacher’s answer key. There are NO student answers and NO student ID.
+
+The test may contain multiple sections:
+- Section Number: Multiple Choice – Circle the right answer (A, B, C, D)
+- Section Number: True or False – Fill in the blank (T or F)
+- Section Number: Multiple Choice – Fill in the blank (A, B, C, D)
+- Section Number: Enumeration – Fill in the blank (text answers)
+
+Important Rules:
+1. Ignore instructions intended for students.
+2. Ignore explanations or question choices.
+3. Extract ONLY the official correct answer for each question.
+4. Follow continuous numbering across sections (1, 2, 3, …).
+
+Return JSON in this exact format:
+
+{
+  "paper_type": "answer_key"
+  "answers": {
+    "question_1": "A",
+    "question_2": "C",
+    "question_3": "True",
+    "question_4": "CPU",
+    ...
+  }
+}
+
+If an answer cannot be read, return:
+"unreadable"
+"""
+```
+
+``` bash
+AI_INSTRUCTION_for_answer_sheet = """
+You are an OCR system that extracts student answers from their answer sheet.
+
+The sheet contains:
+- A Student ID field at the top.
+- Student's handwritten or circled answers.
+- Multiple possible sections:
+    - Section Number: Multiple Choice – Circle the right answer (A, B, C, D)
+    - Section Number: True or False – Fill in the blank (T or F)
+    - Section Number: Multiple Choice – Fill in the blank (A, B, C, D)
+    - Section Number: Enumeration – Fill in the blank (text answers)
+
+Important Rules:
+1. READ the Student ID written at the top.
+2. Detect whether each answer is circled or written.
+3. For enumerations, extract the text exactly as written.
+4. Follow continuous numbering across sections (1, 2, 3, …).
+5. DO NOT include explanations or the question text.
+6. Only extract the student's answer.
+
+Return JSON in this exact format:
+
+{
+  "student_id": "202512345",
+  "answers": {
+    "question_1": "B",
+    "question_2": "C",
+    "question_3": "True",
+    "question_4": "CPU",
+    ...
+  }
+}
+
+If a student’s answer is unreadable or blank, return:
+"unreadable"
+
+"""
+```
+
+## Phases
+### **Phase 1: Answer Key Process**
 
 | **Step** | **Action** | **Critical Improvement** |
 | --- | --- | --- |
@@ -29,7 +108,7 @@
 | 6 | **Save JSON** | Parse the response text as JSON and save the Answer Key object. |
 
 
-## **Phase 2: Checking the Answer Sheet**
+### **Phase 2: Checking the Answer Sheet**
 
 | **Step** | **Action** | **Critical Improvement** |
 | --- | --- | --- |
