@@ -1,16 +1,23 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
+raspi_code/test/gemini_test.py
+raspi_code/venv
+
 # Environment variables
 .env
 .env.local
 .env.production
 .env.example
+app/CheckMe/.env
+raspi_code/.env
 
 # dependencies
 node_modules/
+app/CheckMe/node_modules
 
 # Expo
 .expo/
+app/CheckMe/.expo
 dist/
 web-build/
 expo-env.d.ts
