@@ -16,6 +16,29 @@
 [Compare student answers JSON vs answer key JSON → generate score/result]
 ```
 
+```
+Procedure A
+1. Capture image
+2. Send image to Gen AI
+3. Tell procedure B about fetching data for the image by sharing the image ID. The ID will be saved to the local database
+4. Repeat from step 1 to capture a new image
+
+Procedure B
+1. Wait for procedure A to provide the image ID in the local database
+2. If there is an ID in the local database, then get the image DATA via the ID
+3. If step 2 is true, then send the image data to Gen AI
+4. Wait to fetch JSON data from Gen AI
+5. Tell procedure C about fetching data for the image via image ID. The image will be saved to the local database
+6. Repeat from step 1
+
+Procedure C
+1. Wait for procedure C to provide the image ID in the local database
+2. If there is an ID in the local database, then get the image DATA via the ID
+3. If step 2 is True, then fetch JSON data from Gen AI
+4. then send the JSON data to RTDB so app can use it
+5. Repeat step 1
+```
+
 
 ## **Two separate AI instructions**
 
