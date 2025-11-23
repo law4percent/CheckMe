@@ -144,7 +144,7 @@ hostname -I
 Example output: `192.168.1.23`
 Keep the IP to connect.
 
-User Tailscale to connect remotetly (This can be find to the top)
+Use the Tailscale to connect remotetly ([This can be find to the top](step-3--find-your-pis-tailscale-ip))
 
 
 
