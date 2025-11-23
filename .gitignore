@@ -1,6 +1,8 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-raspi_code/test/gemini_test.py
+raspi_code/lib/processes/__pycache__
+raspi_code/lib/services/__pycache__
+raspi_code/test
 raspi_code/venv
 
 # Environment variables
