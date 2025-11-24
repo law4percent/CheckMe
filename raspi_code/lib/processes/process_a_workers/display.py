@@ -48,9 +48,9 @@ def handle_display(key: str, current_stage: int, module_name: str) -> list:
         return [current_stage, current_display_options]
     
     if module_name == "scan_answer_key":
-        if key == ScanAnswerKeyAgreement.YES.value:
+        if key == ScanAnswerKeyOption.PRINT.value:
             pass
-        elif key == ScanAnswerKeyAgreement.NO.value:
+        elif key == ScanAnswerKeyOption.EXIT.value:
             pass
 
 
