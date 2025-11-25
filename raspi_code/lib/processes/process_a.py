@@ -2,6 +2,7 @@ from multiprocessing import Queue
 import time
 from process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown, hardware, display
 from enum import Enum
+import os
 
 class Options(Enum):
     SCAN_ANSWER_KEY     = '1'
@@ -10,19 +11,33 @@ class Options(Enum):
     SHUTDOWN            = '4'
     
 
+def check_point(answer_key_path: str, answer_sheets_path: str):
+    if not os.path.exists(answer_key_path):
+        os.makedirs(answer_key_path)
+        print(f"Folder '{answer_key_path}' created.")
+
+    if not os.path.exists(answer_sheets_path):
+        os.makedirs(answer_sheets_path)
+        print(f"Folder '{answer_sheets_path}' created.")
+
+
 def process_a(process_A_args: str, queue_frame: Queue):
     print(f"{task_name} is now Running ✅")
 
-    task_name   = process_A_args["task_name"]
-    pc_mode     = process_A_args["pc_mode"]
-    save_logs   = process_A_args["save_logs"]
+    task_name       = process_A_args["task_name"]
+    pc_mode         = process_A_args["pc_mode"]
+    save_logs       = process_A_args["save_logs"]
+    camera_index    = process_A_args["camera_index"]
+    show_windows    = process_A_args["show_windows"]
 
     ROW_PINS = [5, 6, 13, 19]    # R1 R2 R3 R4
     COL_PINS = [12, 16, 20]      # C1 C2 C3
     rows, cols = hardware.setup_keypad_pins(pc_mode, ROW_PINS, COL_PINS)
 
     current_stage, current_display_options = display.initialize_display(module_name="process_a")
-
+    answer_key_path     = "image/answer_keys"
+    answer_sheets_path  = 'image/answer_sheets'
+    check_point(answer_key_path, answer_sheets_path)
 
     while True:
         if pc_mode:
@@ -40,7 +55,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
                 current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="process_a")
             else:
                 if key == Options.SCAN_ANSWER_KEY.value:
-                    scan_answer_key.run(rows, cols)
+                    scan_answer_key.run(rows, cols, camera_index, save_logs, show_windows, answer_key_path)
                 elif key ==  Options.SCAN_ANSWER_SHEET.value:
                     scan_answer_sheet.run()
                 elif key ==  Options.SETTINGS.value:

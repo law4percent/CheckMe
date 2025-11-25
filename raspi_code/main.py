@@ -43,6 +43,8 @@ if __name__ == "__main__":
             "task_name"     : "Process A",
             "pc_mode"       : pc_mode,
             "save_logs"     : save_logs,
+            "camera_index"  : 0,
+            "show_windows"  : True
         },
         process_B_args = {
             "task_name"     : "Process B",

@@ -1,6 +1,12 @@
 from multiprocessing import Queue
 import time
 
+# Process C will handle:
+    # - checking if there is a gemini_done = False
+    # - Then if the step 1 is true, overwrite the the student answer sheet with the real answer
+    # - Then upload to the Google Drive
+    # - Repeat the process
+
 def process_c(process_C_args: str):
     task_name   = process_C_args["task_name"]
     pc_mode     = process_C_args["pc_mode"]

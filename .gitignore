@@ -4,6 +4,9 @@ raspi_code/lib/processes/__pycache__
 raspi_code/lib/services/__pycache__
 raspi_code/test
 raspi_code/venv
+raspi_code/credentials/.env
+raspi_code/credentials/*.txt
+raspi_code/database/checkme.db
 
 # Environment variables
 .env

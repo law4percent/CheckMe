@@ -1,32 +1,65 @@
+import cv2
 import time
 import hardware
 import display
-from enum import Enum
+from datetime import datetime
 
-def run(rows: any, cols: any) -> None:
+def save_scan_answer_key(frame: any, img_path: str) -> None:
+    # Process A will handle:
+    # save the image file detail into RTDB
+    # save to local storage ✅
+    # every answer key, once scanned, this will generate new .txt file in credentials folder (assessmentUid.txt)
+    
+    # Sample
+    # userUid: gbRaC4u7MSRWWRi9LerDQyjVzg22
+    # sectionUid: -Obx0gVoVCxQ6QLqOluh
+    # subjectUid: -Obx0hwuEsEGlfYboxrN
+    # assessmentUid: -1234567890qwertyuiop
+
+    # collectedStudentId:
+    # - 4201400
+    # - 4201403
+    # - 3204423
+    # - 2444223
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    img_name = f"{img_path}/captured_{timestamp}.jpg"
+    cv2.imwrite(img_name, frame)
+    print(f"Image saved as {img_name}")
+    time.sleep(1)
+
+
+def run(rows: any, cols: any, camera_index: int, save_logs: bool, show_windows: bool, answer_key_path: str) -> None:
     print("Ready to scan the answer key")
-    current_stage, current_display_options = display.initialize_display(module_name="scan_answer_key")
+    capture = cv2.VideoCapture(camera_index)
 
-    # while True:
-    #     key = hardware.read_keypad(rows, cols)
-        
-    #     print("=== Option ===\n", current_display_options)
+    if not capture.isOpened():
+        print("Error - Cannot open camera")
+        exit()
 
-    #     if key != None:
-    #         if key == display.ScanAnswerKeyAgreement.YES.value or key == display.ScanAnswerKeyAgreement.NO.value:
-    #             current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="scan_answer_key")
-         
-                # add loop here
     while True:
         time.sleep(0.1)
+        ret, frame = capture.read()
+        
+        display.display_the_options()
+        
         key = hardware.read_keypad(rows, cols)
         
-        print("=== Option ===")
-        print("[1] PRINT")
-        print("[2] EXIT")
-
         if key != None:
-            if key == display.ScanAnswerKeyOption.PRINT.value:
-                break
+            if key == display.ScanAnswerKeyOption.SCAN.value:
+                save_scan_answer_key(frame, answer_key_path)
             elif key == display.ScanAnswerKeyOption.EXIT.value:
                 return
+        
+        if not ret:
+            print("Error - Check the camera")
+            continue
+        
+        if show_windows:
+            cv2.imshow("CheckMe-ScanAnswerSheet", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    
+    capture.release()
+    if show_windows:
+        cv2.destroyAllWindows()
