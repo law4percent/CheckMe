@@ -22,7 +22,7 @@ class ProcessMainDirection(Enum):
 
 class ScanAnswerKeyOption(Enum):
     SCAN = '1'
-    EXIT  = '0'
+    EXIT  = '2'
 
 
 def display_the_options():

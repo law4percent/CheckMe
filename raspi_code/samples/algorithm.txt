@@ -1,0 +1,14 @@
+1. Load all images
+2. Pre-resize each input image to a standard size
+3. Try different grid layouts:
+    - 1×N (horizontal)
+    - 2×2
+    - 3×3
+    - 4×4
+4. For each layout:
+    a. Build a grid preview
+    b. Compute per-image resolution
+    c. If width < 300px → reject layout
+5. Choose the best grid (largest pages → highest accuracy)
+6. Compress final grid until size < target (ex. 1.5 MB)
+7. Convert to base64 → ready for Gemini API

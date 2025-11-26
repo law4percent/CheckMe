@@ -7,6 +7,8 @@ raspi_code/venv
 raspi_code/credentials/.env
 raspi_code/credentials/*.txt
 raspi_code/database/checkme.db
+raspi_code/images/asnwer_keys/*
+raspi_code/images/asnwer_sheets/*
 
 # Environment variables
 .env
