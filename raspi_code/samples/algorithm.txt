@@ -12,3 +12,40 @@
 5. Choose the best grid (largest pages → highest accuracy)
 6. Compress final grid until size < target (ex. 1.5 MB)
 7. Convert to base64 → ready for Gemini API
+
+
+
+
+Teacher procedure towards the system (Answer Key Procedure)
+Turn on the system
+The system will ask the user about the number of pages 
+The system will ask the user if there is an essay.
+Scan/Capture the answer key. (One-by-One) [Put the first page, second page, …, n page]
+If the number of pages is greater than 1 THEN
+Combine all the images (Applying the combination algorithm)
+The system will save the combined images
+The system will send the image to Gemini with a prompt (make sure to include in the prompt if there is an essay in the sheet, because if there is, we will apply another algorithm)
+
+
+Solution 1: Combine all the images into one (Just like iLovePDF)
+The system will ask the user about the number of pages
+If the number of pages is greater than 1 THEN
+Combine all the images
+Convert the combined images into base64
+Send the base64 to Gemini with the prompt (You are the converter that will analyze the answer key, then convert it into JSON Format)
+Get the JSON Format
+
+Solution 2: Adding a page number in the sheet
+{
+    “Student_name”: “LAWRENCE ROBLE”,
+    “Student_id”: “4201400”,
+
+    “Q1”: “A”,
+    “Q2”: “D”,
+    .
+    .
+    .
+    “Qn”: “C”,
+
+    “Page”: 1
+}

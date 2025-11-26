@@ -56,14 +56,15 @@ def smart_grid_auto(image_paths, tile_width=400):
 
 
 images = [
-    "page1.jpg",
-    "page2.jpg",
-    "page3.jpg",
-    "page4.jpg",
-    "page5.jpg"
+    "images/asnwer_keys/img1.jpg",
+    "images/asnwer_keys/img2.jpg",
+    "images/asnwer_keys/img3.jpg",
+    "images/asnwer_keys/img1.jpg",
+    "images/asnwer_keys/img2.jpg",
+    "images/asnwer_keys/img3.jpg",
 ]
 
-combined_img, combined_base64 = smart_grid_auto(images, tile_width=400)
+combined_img, combined_base64 = smart_grid_auto(images, tile_width=600)
 
 # Save result
 cv2.imwrite("combined_grid.jpg", combined_img)
