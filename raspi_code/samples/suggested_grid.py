@@ -57,11 +57,16 @@ def smart_grid_auto(image_paths, tile_width=400):
 
 images = [
     "images/asnwer_keys/img1.jpg",
-    "images/asnwer_keys/img2.jpg",
     "images/asnwer_keys/img3.jpg",
-    "images/asnwer_keys/img1.jpg",
     "images/asnwer_keys/img2.jpg",
-    "images/asnwer_keys/img3.jpg",
+
+    "images/asnwer_keys/img4.jpg",
+    "images/asnwer_keys/img6.jpg",
+    "images/asnwer_keys/img5.jpg",
+
+    "images/asnwer_keys/img7.jpg",
+    "images/asnwer_keys/img9.jpg",
+    "images/asnwer_keys/img8.jpg",
 ]
 
 combined_img, combined_base64 = smart_grid_auto(images, tile_width=600)
