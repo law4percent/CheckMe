@@ -68,9 +68,9 @@ def combine_images_into_grid(collected_images: list, tile_width: int = 600) -> N
 
 def save_scan_answer_key(frame: any, img_path: str) -> str:
     # Process A will handle:
-    # save the image file detail into RTDB
-    # save to local storage ✅
-    # every answer key, once scanned, this will generate new .txt file in credentials folder (assessmentUid.txt)
+    # - save to local storage ✅
+    # - save the image file detail into RTDB
+    # - every answer key, once scanned, this will generate new .txt file in credentials folder (assessmentUid.txt)
     
     # Sample
     # userUid: gbRaC4u7MSRWWRi9LerDQyjVzg22
@@ -85,11 +85,11 @@ def save_scan_answer_key(frame: any, img_path: str) -> str:
     # - 2444223
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    img_name = f"{img_path}/captured_{timestamp}.jpg"
-    cv2.imwrite(img_name, frame)
-    print(f"Image saved as {img_name}")
+    img_full_path = f"{img_path}/captured_{timestamp}.jpg"
+    cv2.imwrite(img_full_path, frame)
+    print(f"Image saved as {img_full_path}")
     time.sleep(0.5)
-    return img_name
+    return img_full_path
 
 
 def run(rows: any, cols: any, camera_index: int, save_logs: bool, show_windows: bool, answer_key_path: str) -> None:
@@ -153,8 +153,8 @@ def run(rows: any, cols: any, camera_index: int, save_logs: bool, show_windows: 
 
             if key != None:
                 if key == display.ScanAnswerKeyOption.SCAN.value:
-                    image_name = save_scan_answer_key(frame, answer_key_path)
-                    collected_image_names.append(image_name)
+                    img_full_path = save_scan_answer_key(frame, answer_key_path)
+                    collected_image_names.append(img_full_path)
                     print(f"Scan {count_sheet}{extension} page done.")
                     
                     if count_sheet == number_of_sheets:
