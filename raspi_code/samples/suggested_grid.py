@@ -49,10 +49,10 @@ def smart_grid_auto(image_paths, tile_width=400):
     combined_image = np.vstack(row_list)
 
     # Convert to base64
-    _, buffer = cv2.imencode('.jpg', combined_image)
-    base64_string = base64.b64encode(buffer).decode('utf-8')
+    # _, buffer = cv2.imencode('.jpg', combined_image)
+    # base64_string = base64.b64encode(buffer).decode('utf-8')
 
-    return combined_image, base64_string
+    return combined_image #, base64_string
 
 
 images = [
@@ -69,11 +69,12 @@ images = [
     "images/asnwer_keys/img8.jpg",
 ]
 
-combined_img, combined_base64 = smart_grid_auto(images, tile_width=600)
+# combined_img, combined_base64 = smart_grid_auto(images, tile_width=600)
+combined_img = smart_grid_auto(images, tile_width=600)
 
 # Save result
 cv2.imwrite("combined_grid.jpg", combined_img)
 
 # Print size info
 print("Number of images:", len(images))
-print("Base64 string length:", len(combined_base64))
+# print("Base64 string length:", len(combined_base64))

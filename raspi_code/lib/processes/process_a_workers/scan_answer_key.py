@@ -3,6 +3,8 @@ import time
 import hardware
 import display
 from datetime import datetime
+import math
+import numpy as np
 
 """
     1. Start (Answer Key option)
@@ -15,20 +17,53 @@ from datetime import datetime
     8. The system will send the image to Gemini with a prompt (make sure to include in the prompt if there is an essay in the sheet, because if there is, we will apply another algorithm)
 """
 
-def combine_now(images_names: list) -> None:
-    """
-        Best grid
-        1 pic   = 1x1
-        2 pics  = 1x2
-        3 pics  = 2x2 (blank image for the 4th)
-        4 pics  = 2x2
-        5 pics  = 2x3 (blank image for the 6th)
-        6 pics  = 2x3
-        7 pics  = 3x3 (blank images for the 8th and 9th)
-        8 pics  = 3x3 (blank images for the 9th)
-        9 pics  = 3x3
-    """
-    pass
+def smart_grid_auto(collected_images: list, tile_width: int):
+    # 1. Load images
+    imgs = [cv2.imread(p) for p in collected_images] # Check the path first and its existence
+    imgs = [img for img in imgs if img is not None]
+    n = len(imgs)
+    
+    if n == 0:
+        raise ValueError("No valid images provided.")
+    
+    # 2. Compute grid size
+    grid_size = math.ceil(math.sqrt(n))
+    rows = grid_size
+    cols = grid_size
+
+    # 3. Compute tile size
+    tile_height = int(tile_width * 1.4)
+    tile_size = (tile_width, tile_height)
+
+    # 4. Resize images
+    resized_imgs = []
+    for img in imgs:
+        resized_imgs.append(cv2.resize(img, tile_size))
+
+    # 5. Fill empty slots with white images
+    total_slots = rows * cols
+    while len(resized_imgs) < total_slots:
+        blank = np.full((tile_height, tile_width, 3), 255, dtype=np.uint8)
+        resized_imgs.append(blank)
+
+    # 6. Build grid row by row
+    row_list = []
+    for r in range(rows):
+        start = r * cols
+        end = start + cols
+        row_imgs = resized_imgs[start:end]
+        row_list.append(np.hstack(row_imgs))
+
+    # 7. Combine rows vertically
+    combined_image = np.vstack(row_list)
+    return combined_image
+
+
+def combine_images_into_grid(collected_images: list, tile_width: int = 600) -> None:
+    combined_image = smart_grid_auto(collected_images, tile_width)
+    cv2.imwrite("combined_grid.jpg", combined_image)
+
+    return combined_image
 
 
 def save_scan_answer_key(frame: any, img_path: str) -> str:
@@ -124,7 +159,7 @@ def run(rows: any, cols: any, camera_index: int, save_logs: bool, show_windows: 
                     
                     if count_sheet == number_of_sheets:
                         print(f"Combining all the {count_sheet} images.. please wait this takes few minutes.")
-                        combine_now(collected_image_names)
+                        combine_images_into_grid(collected_image_names)
                         print(f"Successfully combine all the {count_sheet} images.")
                         return
                     
