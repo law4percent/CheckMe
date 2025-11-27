@@ -105,12 +105,6 @@ def run(rows: any, cols: any, camera_index: int, save_logs: bool, show_windows: 
                 elif key == display.ScanAnswerKeyOption.EXIT.value:
                     return
         elif number_of_sheets > 1:
-            if count_sheet == number_of_sheets:
-                print(f"Combining all the {count_sheet} images.. please wait this takes few minutes.")
-                combine_now(collected_image_names)
-                print(f"Successfully combine all the {count_sheet} images.")
-                return
-            
             extension = ''
             if count_sheet > 3:
                 extension = 'th'
@@ -120,13 +114,20 @@ def run(rows: any, cols: any, camera_index: int, save_logs: bool, show_windows: 
                 extension = 'nd'
             elif count_sheet == 1:
                 extension = 'st'
-            print(f"Put the {count_sheet}{extension} sheet")
+            print(f"Put the {count_sheet}{extension} page.")
 
             if key != None:
                 if key == display.ScanAnswerKeyOption.SCAN.value:
                     image_name = save_scan_answer_key(frame, answer_key_path)
                     collected_image_names.append(image_name)
                     print(f"Scan {count_sheet}{extension} page done.")
+                    
+                    if count_sheet == number_of_sheets:
+                        print(f"Combining all the {count_sheet} images.. please wait this takes few minutes.")
+                        combine_now(collected_image_names)
+                        print(f"Successfully combine all the {count_sheet} images.")
+                        return
+                    
                     count_sheet += 1
                 elif key == display.ScanAnswerKeyOption.EXIT.value:
                     print(f"Error - This part becomes true, therefore the combination {number_of_sheets} was failed!")
