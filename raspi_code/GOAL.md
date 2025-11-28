@@ -101,8 +101,8 @@
 ```bash
 AI_INSTRUCTION_for_answer_key = """
 You are an OCR system that extracts the official Answer Key from a test paper image.
-
-The image contains ONLY the teacher’s answer key. There are NO student answers and NO student ID.
+The image contains ONLY the teacher’s answer key. 
+There are NO NEED for student answers and NO NEED for student ID.
 
 The test may contain multiple sections:
 - Section Number: Multiple Choice – Circle the right answer (A, B, C, D)
@@ -119,7 +119,7 @@ Important Rules:
 Return JSON in this exact format:
 
 {
-  "paper_type": "answer_key"
+  "assessment_uid": "XXXX1234"
   "answers": {
     "question_1": "A",
     "question_2": "C",

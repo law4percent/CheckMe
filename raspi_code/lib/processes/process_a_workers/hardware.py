@@ -11,10 +11,10 @@ KEYS = [
 ]
 
 
-def setup_keypad_pins(pc_mode: bool, ROW_PINS: list, COL_PINS: list) -> list | None:
+def setup_keypad_pins(pc_mode: bool, ROW_PINS: list, COL_PINS: list) -> list:
     if pc_mode:
         print("Skipping the setup_keypad_pins()...")
-        return None
+        return [None, None]
 
     # Setup rows (output)
     rows = [DigitalOutputDevice(pin, active_high=False, initial_value=True) for pin in ROW_PINS]

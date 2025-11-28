@@ -1,101 +1,402 @@
-"""Gemini Service - Integration with Google Gemini API"""
+#!/usr/bin/env python3
+"""
+Complete Gemini OCR System for Answer Keys and Student Sheets
+Extracts answer keys and grades student answer sheets.
+"""
 
 import os
-import google.generativeai as genai
+import time
+import random
+import base64
+import json
 import logging
+from typing import Dict, Optional
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-
-client = genai.Client()
-
-response = client.models.generate_content(
-    model="gemini-3-pro-preview",
-    contents="Explain how AI works in a few words",
-)
-
-print(response.text)
-
-exit()
+# Try SDK first
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    import requests
 
 
+class GeminiOCREngine:
+    """Main OCR engine for extracting answer keys and student answers."""
 
+    TEACHER_INSTRUCTION = """
+You are an OCR system that extracts the official Answer Key from a test paper image.
+The image contains ONLY the teacher's answer key.
 
+Test may contain:
+- Multiple Choice (A, B, C, D)
+- True or False (T/F or True/False)
+- Enumeration (text answers)
 
+Rules:
+1. Ignore instructions for students.
+2. Ignore explanations or choices.
+3. Extract ONLY the correct answer.
+4. Keep continuous numbering: 1, 2, 3...
+5. If there's essay, set `"essay": "True"`.
+6. If unreadable, return `"unreadable"`.
 
-class GeminiService:
-    """Service for interacting with Google Gemini API"""
-    
+Return JSON EXACTLY like this:
+
+{
+  "assessment_uid": "XXXX1234",
+  "answers": {
+    "question_1": "A",
+    "question_2": "CPU",
+    "essay": "True"
+  }
+}
+"""
+
+    STUDENT_INSTRUCTION = """
+You are an OCR system that checks student answers from their answer sheet. 
+The sheet contains:
+- A Student ID field at the top
+- Student's handwritten or circled answers
+- Multiple possible sections:
+  - Section Number: Multiple Choice – Circle the right answer (A, B, C, D)
+  - Section Number: True or False – Fill in the blank (T or F)
+  - Section Number: Multiple Choice – Fill in the blank (A, B, C, D)
+  - Section Number: Enumeration – Fill in the blank (text answers)
+
+Important Rules:
+1. READ the Student ID written at the top.
+2. Detect whether each answer is circled or written.
+3. For enumerations, extract the text exactly as written.
+4. Follow continuous numbering across sections (1, 2, 3, …).
+5. DO NOT include explanations or the question text.
+6. Only extract the student's answer.
+7. If a student's answer is unreadable, blank, or missing, return "NO_ANSWER".
+
+Return JSON in this exact format:
+{
+  "student_id": "202512345",
+  "answers": {
+    "question_1": "A",
+    "question_2": "CPU",
+    "question_3": "NO_ANSWER",
+    ...
+  }
+}
+"""
+
     def __init__(self):
-        """Initialize Gemini client with API key from environment"""
-        self.api_key = os.getenv('GEMINI_API_KEY')
-        self.model_name = os.getenv('GEMINI_MODEL')
-        self.max_tokens = int(os.getenv('GEMINI_MAX_TOKENS', '1000'))
-        self.temperature = float(os.getenv('GEMINI_TEMPERATURE', '0.3'))
-        
+        self.api_key = os.getenv("GEMINI_API_KEY")
+
+        if GENAI_AVAILABLE and self.api_key:
+            genai.configure(api_key=self.api_key)
+
+            self.model = genai.GenerativeModel(
+                "gemini-2.0-flash",
+                generation_config={
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "max_output_tokens": 1024,
+                },
+                safety_settings={
+                    "HARASSMENT": "BLOCK_NONE",
+                    "HATE_SPEECH": "BLOCK_NONE",
+                    "SEXUAL": "BLOCK_NONE",
+                    "DANGEROUS_CONTENT": "BLOCK_NONE"
+                }
+            )
+
+            logger.info("Using google-generativeai SDK for OCR")
+        else:
+            self.model = None
+            logger.info("Using REST API fallback for OCR")
+
+    # ============================================================
+    # ANSWER KEY EXTRACTION
+    # ============================================================
+
+    def extract_answer_key(self, image_path: str) -> Dict:
+        """Extract teacher's answer key from image."""
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY must be set in environment variables")
-        
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(self.model_name)
-        
-        logger.info(f"Initialized Gemini service with model: {self.model_name}")
-    
-    
-    def health_check(self) -> bool:
-        """Check if Gemini API is accessible
-        
-        Returns:
-            True if accessible, False otherwise
+            raise RuntimeError("GEMINI_API_KEY not set in environment")
+
+        image_base64 = self._encode_image(image_path)
+
+        if GENAI_AVAILABLE and self.model:
+            response_text = self._call_gemini_sdk(image_base64, self.TEACHER_INSTRUCTION)
+        else:
+            response_text = self._call_gemini_rest(image_base64, self.TEACHER_INSTRUCTION)
+
+        return self._safe_parse_json(response_text)
+
+    # ============================================================
+    # STUDENT ANSWER EXTRACTION
+    # ============================================================
+
+    def extract_student_answers(self, image_path: str) -> Dict:
+        """Extract student answers from answer sheet image."""
+        if not self.api_key:
+            raise RuntimeError("GEMINI_API_KEY not set in environment")
+
+        image_base64 = self._encode_image(image_path)
+
+        if GENAI_AVAILABLE and self.model:
+            response_text = self._call_gemini_sdk(image_base64, self.STUDENT_INSTRUCTION)
+        else:
+            response_text = self._call_gemini_rest(image_base64, self.STUDENT_INSTRUCTION)
+
+        return self._safe_parse_json(response_text)
+
+    # ============================================================
+    # GRADING LOGIC
+    # ============================================================
+
+    def grade_student_sheet(
+        self,
+        student_answers: Dict,
+        answer_key: Dict,
+        treat_essay_as_partial: bool = True
+    ) -> Dict:
         """
-        try:
-            # Just check if API key is configured and model is initialized
-            # Don't make actual API call to save RPD quota
-            return self.model is not None and self.api_key is not None
-        except Exception as e:
-            logger.error(f"Gemini health check failed: {e}")
-            return False
-    
-    
-    
-    def _create_formatting_prompt(self, ticket_number: str, title: str, 
-                                   background: str, expected_behavior: str,
-                                   function: str, description: str) -> str:
-        """Create the prompt for Gemini to format the ticket
+        Compare student answers against answer key.
         
         Args:
-            ticket_number: Jira ticket number
-            title: Ticket title
-            background: Background information
-            expected_behavior: Expected behavior
-            function: Function details
-            description: Ticket description
-            
+            student_answers: Extracted student answers dict
+            answer_key: Teacher's answer key dict
+            treat_essay_as_partial: If True, mark essays as partial (⚠️)
+        
         Returns:
-            Formatted prompt string
+            Graded results with scores
         """
-        prompt = f"""You are a technical documentation assistant helping to format Jira release tickets for Slack.
 
-Given the following Jira ticket information, please reformat it into three clear sections following this exact format:
+        student_id = student_answers.get("student_id", "UNKNOWN")
+        student_ans = student_answers.get("answers", {})
+        key_ans = answer_key.get("answers", {})
 
-*Ticket Overview:*
-[Provide a concise summary of what this ticket is about, combining the title and background]
+        graded = {}
+        correct = 0
+        partial = 0
+        incorrect = 0
 
-*Target Functionality:*
-[Describe the expected behavior and functionality that will be implemented, based on the expected behavior and function fields]
+        # Determine if there's an essay question
+        has_essay = key_ans.get("essay") == "True"
 
-*Potential Risks:*
-[Identify any potential technical risks or areas that need review. If no specific risks can be determined from the ticket, use: "To be confirmed by reviewers (Sakamoto-san, Park-san)"]
+        # Get max question number
+        max_q_num = 0
+        for key in list(student_ans.keys()) + list(key_ans.keys()):
+            if key.startswith("question_"):
+                try:
+                    num = int(key.replace("question_", ""))
+                    max_q_num = max(max_q_num, num)
+                except ValueError:
+                    pass
 
-Here is the ticket information:
+        # Grade each question
+        for i in range(1, max_q_num + 1):
+            q_key = f"question_{i}"
+            student_ans_val = student_ans.get(q_key, "NO_ANSWER")
+            key_ans_val = key_ans.get(q_key)
 
-Ticket: {ticket_number}
-Title: {title}
-Background: {background or description}
-Expected Behavior: {expected_behavior}
-Function: {function}
+            # Handle essay/partial scoring (last question)
+            if i == max_q_num and has_essay and treat_essay_as_partial:
+                if student_ans_val == "NO_ANSWER":
+                    graded[q_key] = "❌"
+                    incorrect += 1
+                else:
+                    graded[q_key] = "⚠️"  # Partial - teacher will score
+                    partial += 1
+            else:
+                # Standard grading
+                if student_ans_val == "NO_ANSWER":
+                    graded[q_key] = "❌"
+                    incorrect += 1
+                elif self._normalize_answer(student_ans_val) == self._normalize_answer(key_ans_val):
+                    graded[q_key] = "✅"
+                    correct += 1
+                else:
+                    graded[q_key] = "❌"
+                    incorrect += 1
 
-Please provide the formatted output in the exact format shown above, keeping it professional and concise. Use clear, technical language appropriate for a development team.
-"""
-        return prompt
-    
+        # Calculate score
+        total_questions = correct + partial + incorrect
+        percentage = (correct / (total_questions - partial) * 100) if (total_questions - partial) > 0 else 0
+
+        return {
+            "student_id": student_id,
+            "assessment_uid": answer_key.get("assessment_uid", "UNKNOWN"),
+            "graded_answers": graded,
+            "summary": {
+                "correct": correct,
+                "partial": partial,
+                "incorrect": incorrect,
+                "total": total_questions,
+                "scorable_total": total_questions - partial,
+                "percentage": round(percentage, 2)
+            },
+            "has_essay": has_essay
+        }
+
+    def complete_grading_pipeline(
+        self,
+        student_sheet_path: str,
+        answer_key_path: str
+    ) -> Dict:
+        """
+        Complete pipeline: Extract key, extract student answers, and grade.
+        
+        Args:
+            student_sheet_path: Path to student answer sheet image
+            answer_key_path: Path to answer key image
+        
+        Returns:
+            Complete grading result
+        """
+        # Extract answer key
+        logger.info(f"Extracting answer key from {answer_key_path}")
+        answer_key = self.extract_answer_key(answer_key_path)
+
+        # Extract student answers
+        logger.info(f"Extracting student answers from {student_sheet_path}")
+        student_answers = self.extract_student_answers(student_sheet_path)
+
+        # Grade
+        logger.info(f"Grading student {student_answers.get('student_id', 'UNKNOWN')}")
+        graded_result = self.grade_student_sheet(student_answers, answer_key)
+
+        return graded_result
+
+    # ============================================================
+    # HELPER METHODS
+    # ============================================================
+
+    def _encode_image(self, path: str) -> str:
+        """Encode image to base64."""
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+
+    def _call_gemini_sdk(self, image_b64: str, instruction: str) -> str:
+        """Call Gemini API using SDK with retry logic."""
+        contents = [
+            instruction,
+            {
+                "mime_type": "image/jpeg",
+                "data": image_b64
+            }
+        ]
+
+        for attempt in range(3):
+            try:
+                response = self.model.generate_content(
+                    contents=contents,
+                    generation_config={"temperature": 0.2}
+                )
+
+                if not response.text.strip():
+                    raise ValueError("Empty response from Gemini")
+
+                return response.text
+
+            except Exception as e:
+                logger.error(f"Gemini SDK error (attempt {attempt+1}/3): {e}")
+
+                if "429" in str(e).lower():
+                    wait = 8 + random.randint(2, 10)
+                    logger.warning(f"Rate limit hit. Waiting {wait}s")
+                    time.sleep(wait)
+                    continue
+
+                time.sleep(2)
+
+        return '{"error": "Gemini SDK failed after retries"}'
+
+    def _call_gemini_rest(self, image_b64: str, instruction: str) -> str:
+        """Call Gemini API using REST endpoint."""
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [
+                {"parts": [{"text": instruction}]},
+                {
+                    "parts": [{
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": image_b64
+                        }
+                    }]
+                }
+            ]
+        }
+
+        response = requests.post(url, params={"key": self.api_key},
+                                 json=payload, headers=headers, timeout=30)
+
+        response.raise_for_status()
+
+        try:
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except:
+            return json.dumps({"error": "Bad REST response format"})
+
+    @staticmethod
+    def _normalize_answer(answer: str) -> str:
+        """Normalize answer for comparison (case-insensitive, stripped)."""
+        if answer is None:
+            return ""
+        return answer.strip().upper()
+
+    @staticmethod
+    def _safe_parse_json(text: str) -> Dict:
+        """Safely parse JSON response from Gemini."""
+        try:
+            cleaned = text.strip("```json").strip("```").strip()
+            return json.loads(cleaned)
+        except Exception as e:
+            logger.error(f"Failed to parse JSON: {e}")
+            return {"error": "JSON parsing failed", "raw_response": text[:200]}
+
+
+# ============================================================
+# EXAMPLE USAGE
+# ============================================================
+
+if __name__ == "__main__":
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
+
+    # Initialize OCR engine
+    ocr = GeminiOCREngine()
+
+    # Example 1: Extract answer key only
+    print("=" * 60)
+    print("EXTRACTING ANSWER KEY")
+    print("=" * 60)
+    answer_key = ocr.extract_answer_key("answer_key.jpg")
+    print(json.dumps(answer_key, indent=2))
+
+    # Example 2: Extract student answers only
+    print("\n" + "=" * 60)
+    print("EXTRACTING STUDENT ANSWERS")
+    print("=" * 60)
+    student_answers = ocr.extract_student_answers("student_sheet.jpg")
+    print(json.dumps(student_answers, indent=2))
+
+    # Example 3: Grade student sheet
+    print("\n" + "=" * 60)
+    print("GRADING RESULTS")
+    print("=" * 60)
+    graded_result = ocr.grade_student_sheet(student_answers, answer_key)
+    print(json.dumps(graded_result, indent=2))
+
+    # Example 4: Complete pipeline
+    print("\n" + "=" * 60)
+    print("COMPLETE PIPELINE")
+    print("=" * 60)
+    # final_result = ocr.complete_grading_pipeline("student_sheet.jpg", "answer_key.jpg")
+    # print(json.dumps(final_result, indent=2))

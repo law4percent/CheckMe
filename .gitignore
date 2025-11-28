@@ -7,8 +7,11 @@ raspi_code/venv
 raspi_code/credentials/.env
 raspi_code/credentials/*.txt
 raspi_code/database/checkme.db
-raspi_code/images/asnwer_keys/*
-raspi_code/images/asnwer_sheets/*
+raspi_code/asnwer_keys/images/*
+raspi_code/asnwer_keys/txt/*
+raspi_code/asnwer_sheets/images/*
+raspi_code/asnwer_sheets/txt/*
+raspi_code/lib/processes/process_a_workers/__pycache__
 
 # Environment variables
 .env

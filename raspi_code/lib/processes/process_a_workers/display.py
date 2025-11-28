@@ -31,7 +31,7 @@ def display_the_options():
     print("[2] EXIT")
 
 
-def handle_display(key: str, current_stage: int, module_name: str) -> list:
+def handle_display(key: str, current_stage: int) -> list:
     current_display_options = []
 
     if key == ProcessMainDirection.UP.value:
@@ -55,7 +55,7 @@ def handle_display(key: str, current_stage: int, module_name: str) -> list:
     return [current_stage, current_display_options]
 
 
-def initialize_display(module_name: str, current_stage: int = 1) -> list:
+def initialize_display(current_stage: int = 1) -> list:
     current_stage           = current_stage
     current_display_options = ProcessMainStage.STAGE_1.value
     return [current_stage, current_display_options]
