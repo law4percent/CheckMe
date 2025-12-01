@@ -34,22 +34,18 @@ class GeminiOCREngine:
 You are an OCR system that extracts the official Answer Key from a test paper image.
 The image contains ONLY the teacher's answer key.
 
-IMPORTANT: You MUST extract the Assessment UID/ID from the paper header or top section.
-
 Test may contain:
 - Multiple Choice (A, B, C, D)
 - True or False (T/F or True/False)
 - Enumeration (text answers)
-- Essay questions
 
 Rules:
-1. READ and extract the Assessment UID/ID from the paper (check header, top, or labeled field)
-2. Ignore instructions for students.
-3. Ignore explanations or choices.
-4. Extract ONLY the correct answer for each question.
-5. Keep continuous numbering: 1, 2, 3...
-6. If there's essay question, set `"essay": "True"`.
-7. If unreadable, return `"unreadable"`.
+1. Ignore instructions for students.
+2. Ignore explanations or choices.
+3. Extract ONLY the correct answer.
+4. Keep continuous numbering: 1, 2, 3...
+5. If there's essay, set `"essay": "True"`.
+6. If unreadable, return `"unreadable"`.
 
 Return JSON EXACTLY like this:
 
@@ -58,12 +54,9 @@ Return JSON EXACTLY like this:
   "answers": {
     "question_1": "A",
     "question_2": "CPU",
-    "question_3": "True",
     "essay": "True"
   }
 }
-
-CRITICAL: The "assessment_uid" field MUST contain the value read from the paper.
 """
 
     STUDENT_INSTRUCTION = """
@@ -105,18 +98,12 @@ Return JSON in this exact format:
             genai.configure(api_key=self.api_key)
 
             self.model = genai.GenerativeModel(
-                "gemini-2.0-flash",
-                generation_config={
+                "gemini-2.5-flash",
+                generation_config   = {
                     "temperature": 0.2,
                     "top_p": 0.9,
                     "max_output_tokens": 1024,
                 },
-                safety_settings={
-                    "HARASSMENT": "BLOCK_NONE",
-                    "HATE_SPEECH": "BLOCK_NONE",
-                    "SEXUAL": "BLOCK_NONE",
-                    "DANGEROUS_CONTENT": "BLOCK_NONE"
-                }
             )
 
             logger.info("Using google-generativeai SDK for OCR")
@@ -324,7 +311,8 @@ Return JSON in this exact format:
 
     def _call_gemini_rest(self, image_b64: str, instruction: str) -> str:
         """Call Gemini API using REST endpoint."""
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        # Use v1 stable endpoint instead of v1beta
+        url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent"
 
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -341,15 +329,30 @@ Return JSON in this exact format:
             ]
         }
 
-        response = requests.post(url, params={"key": self.api_key},
-                                 json=payload, headers=headers, timeout=30)
+        for attempt in range(3):
+            try:
+                response = requests.post(
+                    url, 
+                    params={"key": self.api_key},
+                    json=payload, 
+                    headers=headers, 
+                    timeout=30
+                )
 
-        response.raise_for_status()
+                response.raise_for_status()
 
-        try:
-            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        except:
-            return json.dumps({"error": "Bad REST response format"})
+                try:
+                    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Bad REST response format: {e}")
+                    return json.dumps({"error": "Bad REST response format"})
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"REST API error (attempt {attempt+1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(2 + random.randint(1, 3))
+                    continue
+                return json.dumps({"error": f"REST API failed: {str(e)}"})
 
     @staticmethod
     def _normalize_answer(answer: str) -> str:

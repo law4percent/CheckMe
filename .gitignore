@@ -9,7 +9,7 @@ raspi_code/credentials/*.txt
 raspi_code/database/checkme.db
 raspi_code/lib/processes/process_a_workers/__pycache__
 raspi_code/answer_keys
-raspi_code/answer_keys
+raspi_code/answer_sheets
 
 # Environment variables
 .env
