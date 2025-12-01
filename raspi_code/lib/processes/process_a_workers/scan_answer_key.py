@@ -128,11 +128,11 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     """
         Generate image filename with timestamp and page number.
         
-        Format: {img_path}/{timestamp}_img{current_count}.jpeg
+        Format: {img_path}/{timestamp}_img{current_count}.jpg
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     # os.makedirs(img_path, exist_ok=True) <- Need to investigate
-    return f"{img_path}/{now}_img{current_count}.jpeg"
+    return f"{img_path}/{now}_img{current_count}.jpg"
 
 
 def run(
@@ -186,7 +186,7 @@ def run(
         if not is_answered_number_of_sheets:
             print("How many pages? [1-9]")
             if key and key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-                number_of_sheets                = int(key)
+                number_of_sheets                = int('2')#key)
                 is_answered_number_of_sheets    = True
                 continue
             continue
@@ -303,11 +303,11 @@ def run(
                         print(f"Combining {count_page} pages... please wait")
                         
                         # Combine images
-                        combined_image = _combine_images_into_grid(collected_image_names)
+                        combined_image = _combine_images_into_grid(["answer_keys/images/answer_key.docx_page-0001.jpg", "answer_keys/images/answer_key.docx_page-0002.jpg"]) # collected_image_names)
                         now = datetime.now().strftime("%Y%m%d_%H%M%S")
                         combined_path = os.path.join(answer_key_path, f"{now}_combined_grid.jpg")
                         _save_image_file(frame=combined_image, img_full_path=combined_path)
-                        print("✅ Pages combined successfully")
+                        print(f"✅ Pages combined successfully {combined_path}")
                         
                         # Extract answer key from combined image (includes assessment_uid from paper)
                         print("Extracting answer key with Gemini OCR...")
