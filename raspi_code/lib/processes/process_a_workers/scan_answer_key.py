@@ -26,8 +26,8 @@ def _smart_grid_auto(collected_images: list, tile_width: int):
     imgs = [img for img in imgs if img is not None]
     n = len(imgs)
     
-    if n == 0:
-        raise ValueError("No valid images provided.")
+    # if n == 0: <==== for investigation
+    #     raise ValueError("No valid images provided.")
     
     # Compute grid dimensions
     grid_size = math.ceil(math.sqrt(n))
@@ -175,7 +175,7 @@ def run(
 
     if not capture.isOpened():
         print("Error - Cannot open camera")
-        return {"error": "Camera not accessible"}
+        return {"error": "Camera not accessible", "status": "error"}
 
     while True:
         time.sleep(3)
@@ -244,7 +244,7 @@ def run(
                             capture.release()
                             if show_windows:
                                 cv2.destroyAllWindows()
-                            return {"error": "assessment_uid not found on paper"}
+                            return {"error": "assessment_uid not found on paper", "status": "error"}
                         
                         # Add essay flag
                         answer_key["has_essay"] = essay_existence
@@ -263,17 +263,18 @@ def run(
                             return {
                                 "status"            : "success",
                                 "assessment_uid"    : assessment_uid,
+                                "pages"             : number_of_sheets,
                                 "answer_key"        : answer_key,
                                 "saved_path"        : json_path
                             }
                         else:
-                            return {"error": "Failed to save answer key JSON"}
+                            return {"error": "Failed to save answer key JSON", "status": "error"}
                     else:
                         print(f"❌ Extraction failed: {answer_key.get('error')}")
                         capture.release()
                         if show_windows:
                             cv2.destroyAllWindows()
-                        return {"error": answer_key.get('error')}
+                        return {"error": answer_key.get('error'), "status": "error"}
                 
                 elif key == display.ScanAnswerKeyOption.EXIT.value:
                     capture.release()
@@ -321,7 +322,7 @@ def run(
                                 capture.release()
                                 if show_windows:
                                     cv2.destroyAllWindows()
-                                return {"error": "assessment_uid not found on paper"}
+                                return {"error": "assessment_uid not found on paper", "status": "error"}
                             
                             # Add metadata
                             answer_key["has_essay"]     = essay_existence
@@ -346,13 +347,13 @@ def run(
                                     "saved_path"        : json_path
                                 }
                             else:
-                                return {"error": "Failed to save answer key JSON"}
+                                return {"error": "Failed to save answer key JSON", "status": "error"}
                         else:
                             print(f"❌ Extraction failed: {answer_key.get('error')}")
                             capture.release()
                             if show_windows:
                                 cv2.destroyAllWindows()
-                            return {"error": answer_key.get('error')}
+                            return {"error": answer_key.get('error'), "status": "error"}
                     
                     count_page += 1
                 
@@ -362,9 +363,3 @@ def run(
                     if show_windows:
                         cv2.destroyAllWindows()
                     return {"status": "cancelled"}
-    
-    capture.release()
-    if show_windows:
-        cv2.destroyAllWindows()
-    
-    return {"status": "exited"}

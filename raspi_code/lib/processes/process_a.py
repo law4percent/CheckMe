@@ -81,7 +81,31 @@ def process_a(process_A_args: str, queue_frame: Queue):
                 current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="process_a")
             else:
                 if pc_key == '1':
-                    scan_answer_key.run([rows, cols], camera_index, save_logs, show_windows, answer_key_image_path, test_mode)
+                    answer_key_data = scan_answer_key.run(
+                        task_name               = task_name,
+                        keypad_rows_and_cols    = [rows, cols], 
+                        camera_index            = camera_index, 
+                        save_logs               = save_logs, 
+                        show_windows            = show_windows, 
+                        answer_key_path         = answer_key_image_path, 
+                        answer_key_json_path    = answer_key_json_path,
+                        pc_mode                 = pc_mode
+                    )
+
+                    if answer_key_data["status"] == "success":
+                        # save the json path and answer key UID into SQLite
+                        # answer_key_data {
+                        #             "status"            : "success",
+                        #             "assessment_uid"    : assessment_uid,
+                        #             "pages"             : number_of_sheets,
+                        #             "answer_key"        : answer_key,
+                        #             "saved_path"        : json_path
+                        #         }
+                        pass
+                    elif answer_key_data["status"] == "error":
+                        print(f"{task_name} - Error: {answer_key_data["error"]}")
+                    else:
+                        print(f"{task_name} - {answer_key_data["status"]}")
                 elif pc_key == '2':
                     scan_answer_sheet.run()
                 elif pc_key == '3':
