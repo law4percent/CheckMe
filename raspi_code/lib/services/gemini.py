@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# lib/services/gemini.py
 """
 Complete Gemini OCR System for Answer Keys and Student Sheets
 Extracts answer keys and grades student answer sheets.
