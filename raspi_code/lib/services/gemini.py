@@ -34,18 +34,21 @@ class GeminiOCREngine:
 You are an OCR system that extracts the official Answer Key from a test paper image.
 The image contains ONLY the teacher's answer key.
 
+IMPORTANT: You MUST extract the Assessment UID/ID from the paper header or top section.
+
 Test may contain:
 - Multiple Choice (A, B, C, D)
 - True or False (T/F or True/False)
 - Enumeration (text answers)
 
 Rules:
-1. Ignore instructions for students.
-2. Ignore explanations or choices.
-3. Extract ONLY the correct answer.
-4. Keep continuous numbering: 1, 2, 3...
-5. If there's essay, set `"essay": "True"`.
-6. If unreadable, return `"unreadable"`.
+1. READ and extract the Assessment UID/ID from the paper (check header, top, or labeled field)
+2. Ignore instructions for students.
+3. Ignore explanations or choices.
+4. Extract ONLY the correct answer for each question.
+5. Keep continuous numbering: 1, 2, 3...
+6. If there's essay question, set `"essay": "True"`.
+7. If unreadable, return `"unreadable"`.
 
 Return JSON EXACTLY like this:
 
@@ -54,9 +57,12 @@ Return JSON EXACTLY like this:
   "answers": {
     "question_1": "A",
     "question_2": "CPU",
+    "question_3": "True",
     "essay": "True"
   }
 }
+
+CRITICAL: The "assessment_uid" field MUST contain the value read from the paper.
 """
 
     STUDENT_INSTRUCTION = """
