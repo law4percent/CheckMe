@@ -92,11 +92,11 @@ def get_JSON_of_answer_key(image_path: str):
 
 def save_image_file(frame, img_full_path: str):
     """Save image frame to disk."""
-    os.makedirs(os.path.dirname(img_full_path), exist_ok=True)
+    # os.makedirs(os.path.dirname(img_full_path), exist_ok=True) <- Need to investigate
     cv2.imwrite(img_full_path, frame)
 
 
-def save_answer_key_json(answer_key_data: dict, credentials_path: str):
+def save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
     """
         Save extracted answer key as JSON file.
         Uses assessment_uid from the extracted data.
@@ -114,8 +114,8 @@ def save_answer_key_json(answer_key_data: dict, credentials_path: str):
         print("❌ Error: assessment_uid not found in extracted data")
         return None
     
-    os.makedirs(credentials_path, exist_ok=True)
-    json_path = os.path.join(credentials_path, f"{assessment_uid}.json")
+    # os.makedirs(answer_key_json_path, exist_ok=True) <- Need to investigate
+    json_path = os.path.join(answer_key_json_path, f"{assessment_uid}.json")
     
     with open(json_path, 'w') as f:
         json.dump(answer_key_data, f, indent=2)
@@ -142,7 +142,7 @@ def run(
         save_logs: bool, 
         show_windows: bool, 
         answer_key_path: str,
-        credentials_path: str,
+        answer_key_json_path: str,
         pc_mode: bool = False
     ) -> dict:
 
@@ -251,8 +251,8 @@ def run(
                         
                         # Save JSON result
                         json_path = save_answer_key_json(
-                            answer_key_data     = answer_key,
-                            credentials_path    = credentials_path
+                            answer_key_data         = answer_key,
+                            answer_key_json_path    = answer_key_json_path
                         )
                         
                         if json_path:
@@ -261,10 +261,10 @@ def run(
                             if show_windows:
                                 cv2.destroyAllWindows()
                             return {
-                                "status"        : "success",
-                                "assessment_uid": assessment_uid,
-                                "answer_key"    : answer_key,
-                                "saved_path"    : json_path
+                                "status"            : "success",
+                                "assessment_uid"    : assessment_uid,
+                                "answer_key"        : answer_key,
+                                "saved_path"        : json_path
                             }
                         else:
                             return {"error": "Failed to save answer key JSON"}
@@ -330,7 +330,7 @@ def run(
                             # Save JSON result
                             json_path = save_answer_key_json(
                                 answer_key_data     = answer_key,
-                                credentials_path    = credentials_path
+                                answer_key_json_path    = answer_key_json_path
                             )
                             
                             if json_path:

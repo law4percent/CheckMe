@@ -40,6 +40,7 @@ Test may contain:
 - Multiple Choice (A, B, C, D)
 - True or False (T/F or True/False)
 - Enumeration (text answers)
+- Essay questions
 
 Rules:
 1. READ and extract the Assessment UID/ID from the paper (check header, top, or labeled field)

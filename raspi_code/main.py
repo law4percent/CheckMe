@@ -48,8 +48,8 @@ if __name__ == "__main__":
             "keypad_pins"       : { "ROWS": [5, 6, 13, 19], "COLS": [12, 16, 20]},
             "answer_key_image_path"     : "answer_keys/images",
             "answer_sheets_image_path"  : "answer_sheets/images",
-            "answer_key_txt_path"       : "answer_keys/txt",
-            "answer_sheets_txt_path"    : "answer_sheets/txt",
+            "answer_key_txt_path"       : "answer_keys/json",
+            "answer_sheets_txt_path"    : "answer_sheets/json",
         },
         process_B_args = {
             "task_name"     : "Process B",
