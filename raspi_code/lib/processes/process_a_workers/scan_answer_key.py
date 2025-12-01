@@ -180,13 +180,13 @@ def run(
     while True:
         time.sleep(3)
 
-        key = '1' # hardware.read_keypad(rows=rows, cols=cols)
+        key = hardware.read_keypad(rows=rows, cols=cols)
 
         # Step 1: Ask for number of sheets
         if not is_answered_number_of_sheets:
             print("How many pages? [1-9]")
             if key and key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-                number_of_sheets                = int('2')#key)
+                number_of_sheets                = int(key)
                 is_answered_number_of_sheets    = True
                 continue
             continue
@@ -234,7 +234,7 @@ def run(
                     
                     # Extract answer key using Gemini (includes assessment_uid from paper)
                     print("Extracting answer key with Gemini OCR...")
-                    answer_key = _get_JSON_of_answer_key(image_path="answer_keys/images/answer_key.docx_page-0001.jpg") #img_full_path)
+                    answer_key = _get_JSON_of_answer_key(image_path=img_full_path)
                     
                     if "error" not in answer_key:
                         # Verify assessment_uid was extracted
@@ -303,7 +303,7 @@ def run(
                         print(f"Combining {count_page} pages... please wait")
                         
                         # Combine images
-                        combined_image = _combine_images_into_grid(["answer_keys/images/answer_key.docx_page-0001.jpg", "answer_keys/images/answer_key.docx_page-0002.jpg"]) # collected_image_names)
+                        combined_image = _combine_images_into_grid(collected_image_names)
                         now = datetime.now().strftime("%Y%m%d_%H%M%S")
                         combined_path = os.path.join(answer_key_path, f"{now}_combined_grid.jpg")
                         _save_image_file(frame=combined_image, img_full_path=combined_path)
