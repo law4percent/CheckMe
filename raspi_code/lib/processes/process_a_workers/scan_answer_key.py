@@ -5,7 +5,7 @@ import json
 import os
 from . import hardware
 from . import display
-from services.gemini import GeminiOCREngine
+from lib.services.gemini import GeminiOCREngine
 import math
 import numpy as np
 from datetime import datetime
@@ -20,7 +20,7 @@ from datetime import datetime
     6. Save extracted answer key as JSON
 """
 
-def smart_grid_auto(collected_images: list, tile_width: int):
+def _smart_grid_auto(collected_images: list, tile_width: int):
     """Arrange multiple images into a grid layout."""
     imgs = [cv2.imread(p) for p in collected_images]
     imgs = [img for img in imgs if img is not None]
@@ -62,13 +62,13 @@ def smart_grid_auto(collected_images: list, tile_width: int):
     return combined_image
 
 
-def combine_images_into_grid(collected_images: list, tile_width: int = 600):
+def _combine_images_into_grid(collected_images: list, tile_width: int = 600):
     """Combine multiple page images into a single grid image."""
-    combined_image = smart_grid_auto(collected_images, tile_width)
+    combined_image = _smart_grid_auto(collected_images, tile_width)
     return combined_image
 
 
-def get_JSON_of_answer_key(image_path: str):
+def _get_JSON_of_answer_key(image_path: str):
     """
         Send image to Gemini API for OCR extraction of answer key.
         Gemini reads the assessment UID directly from the paper.
@@ -90,13 +90,13 @@ def get_JSON_of_answer_key(image_path: str):
         return {"error": str(e)}
 
 
-def save_image_file(frame, img_full_path: str):
+def _save_image_file(frame, img_full_path: str):
     """Save image frame to disk."""
     # os.makedirs(os.path.dirname(img_full_path), exist_ok=True) <- Need to investigate
     cv2.imwrite(img_full_path, frame)
 
 
-def save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
+def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
     """
         Save extracted answer key as JSON file.
         Uses assessment_uid from the extracted data.
@@ -124,15 +124,15 @@ def save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
     return json_path
 
 
-def naming_the_file(img_path: str, current_count: int) -> str:
+def _naming_the_file(img_path: str, current_count: int) -> str:
     """
         Generate image filename with timestamp and page number.
         
-        Format: {img_path}/{timestamp}_img{current_count}.png
+        Format: {img_path}/{timestamp}_img{current_count}.jpeg
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs(img_path, exist_ok=True)
-    return f"{img_path}/{now}_img{current_count}.png"
+    # os.makedirs(img_path, exist_ok=True) <- Need to investigate
+    return f"{img_path}/{now}_img{current_count}.jpeg"
 
 
 def run(
@@ -178,9 +178,9 @@ def run(
         return {"error": "Camera not accessible"}
 
     while True:
-        time.sleep(0.1)
+        time.sleep(3)
 
-        key = hardware.read_keypad(rows=rows, cols=cols)
+        key = '1' # hardware.read_keypad(rows=rows, cols=cols)
 
         # Step 1: Ask for number of sheets
         if not is_answered_number_of_sheets:
@@ -225,16 +225,16 @@ def run(
         if number_of_sheets == 1:
             if key and key in ['1', '2']:
                 if key == display.ScanAnswerKeyOption.SCAN.value:
-                    img_full_path = naming_the_file(
+                    img_full_path = _naming_the_file(
                         img_path        = answer_key_path,
                         current_count   = count_page
                     )
-                    save_image_file(frame=frame, img_full_path=img_full_path)
+                    _save_image_file(frame=frame, img_full_path=img_full_path)
                     print(f"✅ Scanned single page: {img_full_path}")
                     
                     # Extract answer key using Gemini (includes assessment_uid from paper)
                     print("Extracting answer key with Gemini OCR...")
-                    answer_key = get_JSON_of_answer_key(image_path=img_full_path)
+                    answer_key = _get_JSON_of_answer_key(image_path="answer_keys/images/answer_key.docx_page-0001.jpg") #img_full_path)
                     
                     if "error" not in answer_key:
                         # Verify assessment_uid was extracted
@@ -250,7 +250,7 @@ def run(
                         answer_key["has_essay"] = essay_existence
                         
                         # Save JSON result
-                        json_path = save_answer_key_json(
+                        json_path = _save_answer_key_json(
                             answer_key_data         = answer_key,
                             answer_key_json_path    = answer_key_json_path
                         )
@@ -290,12 +290,12 @@ def run(
 
             if key and key in ['1', '2']:
                 if key == display.ScanAnswerKeyOption.SCAN.value:
-                    img_full_path = naming_the_file(
+                    img_full_path = _naming_the_file(
                         img_path        = answer_key_path,
                         current_count   = count_page
                     )
                     collected_image_names.append(img_full_path)
-                    save_image_file(frame=frame, img_full_path=img_full_path)
+                    _save_image_file(frame=frame, img_full_path=img_full_path)
                     print(f"✅ Scanned {count_page}{extension} page at {img_full_path}")
                     
                     # Check if all pages collected
@@ -303,15 +303,15 @@ def run(
                         print(f"Combining {count_page} pages... please wait")
                         
                         # Combine images
-                        combined_image = combine_images_into_grid(collected_image_names)
+                        combined_image = _combine_images_into_grid(collected_image_names)
                         now = datetime.now().strftime("%Y%m%d_%H%M%S")
                         combined_path = os.path.join(answer_key_path, f"{now}_combined_grid.jpg")
-                        save_image_file(frame=combined_image, img_full_path=combined_path)
+                        _save_image_file(frame=combined_image, img_full_path=combined_path)
                         print("✅ Pages combined successfully")
                         
                         # Extract answer key from combined image (includes assessment_uid from paper)
                         print("Extracting answer key with Gemini OCR...")
-                        answer_key = get_JSON_of_answer_key(image_path=combined_path)
+                        answer_key = _get_JSON_of_answer_key(image_path=combined_path)
                         
                         if "error" not in answer_key:
                             # Verify assessment_uid was extracted
@@ -328,7 +328,7 @@ def run(
                             answer_key["total_pages"]   = number_of_sheets
                             
                             # Save JSON result
-                            json_path = save_answer_key_json(
+                            json_path = _save_answer_key_json(
                                 answer_key_data     = answer_key,
                                 answer_key_json_path    = answer_key_json_path
                             )

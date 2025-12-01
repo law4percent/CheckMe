@@ -34,18 +34,18 @@ class GeminiOCREngine:
 You are an OCR system that extracts the official Answer Key from a test paper image.
 The image contains ONLY the teacher's answer key.
 
-Test may contain:
+The sheet contains:
 - Multiple Choice (A, B, C, D)
 - True or False (T/F or True/False)
 - Enumeration (text answers)
 
-Rules:
+Important Rules:
 1. Ignore instructions for students.
 2. Ignore explanations or choices.
 3. Extract ONLY the correct answer.
-4. Keep continuous numbering: 1, 2, 3...
-5. If there's essay, set `"essay": "True"`.
-6. If unreadable, return `"unreadable"`.
+4. Keep continuous numbering: 1, 2, 3...N Exacltly as in the test.
+5. If unreadable, return `"unreadable"`
+6. At the top, there is a unique Assessment UID code (alphanumeric).
 
 Return JSON EXACTLY like this:
 
@@ -54,13 +54,16 @@ Return JSON EXACTLY like this:
   "answers": {
     "question_1": "A",
     "question_2": "CPU",
-    "essay": "True"
+    "question_3": "unreadable",
+    ...
+    question_N": "True",
   }
 }
 """
 
     STUDENT_INSTRUCTION = """
 You are an OCR system that checks student answers from their answer sheet. 
+
 The sheet contains:
 - A Student ID field at the top
 - Student's handwritten or circled answers
@@ -77,7 +80,8 @@ Important Rules:
 4. Follow continuous numbering across sections (1, 2, 3, …).
 5. DO NOT include explanations or the question text.
 6. Only extract the student's answer.
-7. If a student's answer is unreadable, blank, or missing, return "NO_ANSWER".
+7. If a student's answer is unreadable, return "unreadable".
+8. If a student's answer blank, or missing, return "no_answer".
 
 Return JSON in this exact format:
 {
@@ -85,8 +89,9 @@ Return JSON in this exact format:
   "answers": {
     "question_1": "A",
     "question_2": "CPU",
-    "question_3": "NO_ANSWER",
+    "question_3": "unreadable",
     ...
+    question_N": "no_answer",
   }
 }
 """

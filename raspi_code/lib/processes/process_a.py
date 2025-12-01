@@ -65,6 +65,8 @@ def process_a(process_A_args: str, queue_frame: Queue):
                             answer_key_json_path    = answer_key_json_path,
                             pc_mode                 = pc_mode
                         )
+                        print("scan_answer_key.run() <============")
+                        exit()
                     elif pc_key == '2':
                         scan_answer_sheet.run()
                     elif pc_key == '3':
