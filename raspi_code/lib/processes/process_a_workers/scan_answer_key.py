@@ -11,13 +11,13 @@ import numpy as np
 from datetime import datetime
 
 """
-Complete Answer Key Scanning Pipeline:
-1. Ask user for number of pages
-2. Ask user if there's an essay
-3. Scan/capture answer key pages one-by-one
-4. If multiple pages, combine them using smart grid algorithm
-5. Send combined image to Gemini for OCR extraction
-6. Save extracted answer key as JSON
+    Complete Answer Key Scanning Pipeline:
+    1. Ask user for number of pages
+    2. Ask user if there's an essay
+    3. Scan/capture answer key pages one-by-one
+    4. If multiple pages, combine them using smart grid algorithm
+    5. Send combined image to Gemini for OCR extraction (includes reading assessment UID from paper)
+    6. Save extracted answer key as JSON
 """
 
 def smart_grid_auto(collected_images: list, tile_width: int):
@@ -68,24 +68,20 @@ def combine_images_into_grid(collected_images: list, tile_width: int = 600):
     return combined_image
 
 
-def get_JSON_of_answer_key(image_path: str, assessment_uid: str = None):
+def get_JSON_of_answer_key(image_path: str):
     """
-    Send image to Gemini API for OCR extraction of answer key.
-    
-    Args:
-        image_path: Path to answer key image
-        assessment_uid: Optional assessment UID to include in result
-    
-    Returns:
-        Extracted answer key as dictionary
+        Send image to Gemini API for OCR extraction of answer key.
+        Gemini reads the assessment UID directly from the paper.
+        
+        Args:
+            image_path: Path to answer key image
+        
+        Returns:
+            Extracted answer key as dictionary (includes assessment_uid read from paper)
     """
     try:
         gemini_engine = GeminiOCREngine()
         answer_key = gemini_engine.extract_answer_key(image_path)
-        
-        # Add assessment UID if provided
-        if assessment_uid:
-            answer_key["assessment_uid"] = assessment_uid
         
         return answer_key
     
@@ -100,18 +96,24 @@ def save_image_file(frame, img_full_path: str):
     cv2.imwrite(img_full_path, frame)
 
 
-def save_answer_key_json(answer_key_data: dict, assessment_uid: str, credentials_path: str):
+def save_answer_key_json(answer_key_data: dict, credentials_path: str):
     """
-    Save extracted answer key as JSON file.
-    
-    Args:
-        answer_key_data: Extracted answer key dictionary
-        assessment_uid: Assessment identifier
-        credentials_path: Path to credentials folder
-    
-    Returns:
-        Path to saved JSON file
+        Save extracted answer key as JSON file.
+        Uses assessment_uid from the extracted data.
+        
+        Args:
+            answer_key_data: Extracted answer key dictionary (contains assessment_uid)
+            credentials_path: Path to credentials folder
+        
+        Returns:
+            Path to saved JSON file or None if assessment_uid not found
     """
+    assessment_uid = answer_key_data.get("assessment_uid")
+    
+    if not assessment_uid:
+        print("❌ Error: assessment_uid not found in extracted data")
+        return None
+    
     os.makedirs(credentials_path, exist_ok=True)
     json_path = os.path.join(credentials_path, f"{assessment_uid}.json")
     
@@ -124,9 +126,9 @@ def save_answer_key_json(answer_key_data: dict, assessment_uid: str, credentials
 
 def naming_the_file(img_path: str, current_count: int) -> str:
     """
-        Generate image filename with page number.
+        Generate image filename with timestamp and page number.
         
-        Format: {img_path}/img{current_count}.png
+        Format: {img_path}/{timestamp}_img{current_count}.png
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(img_path, exist_ok=True)
@@ -141,12 +143,12 @@ def run(
         show_windows: bool, 
         answer_key_path: str,
         credentials_path: str,
-        assessment_uid: str,
         pc_mode: bool = False
     ) -> dict:
 
     """
         Main scanning workflow for answer key.
+        Assessment UID is read from the paper by Gemini.
         
         Args:
             task_name: Name of the task
@@ -156,16 +158,11 @@ def run(
             show_windows: Whether to display camera feed
             answer_key_path: Path to save scanned images
             credentials_path: Path to save JSON results
-            assessment_uid: Unique identifier for assessment
             pc_mode: Testing mode for development
         
         Returns:
             Dictionary with extraction results or error status
     """
-
-    # ========= TEST KEYS (for PC mode) =========
-    pc_key = '2'  # number of sheets and essay option
-    # ==========================================
 
     rows, cols                      = keypad_rows_and_cols
     capture                         = cv2.VideoCapture(camera_index)
@@ -182,10 +179,6 @@ def run(
 
     while True:
         time.sleep(0.1)
-
-        # if pc_mode:
-        #     # Skip for testing purposes
-        #     continue
 
         key = hardware.read_keypad(rows=rows, cols=cols)
 
@@ -237,37 +230,49 @@ def run(
                         current_count   = count_page
                     )
                     save_image_file(frame=frame, img_full_path=img_full_path)
-                    print(f"Scanned single page: {img_full_path}")
+                    print(f"✅ Scanned single page: {img_full_path}")
                     
-                    # Extract answer key using Gemini
+                    # Extract answer key using Gemini (includes assessment_uid from paper)
                     print("Extracting answer key with Gemini OCR...")
-                    answer_key = get_JSON_of_answer_key(
-                        image_path      = img_full_path,
-                        assessment_uid  = assessment_uid
-                    )
+                    answer_key = get_JSON_of_answer_key(image_path=img_full_path)
                     
                     if "error" not in answer_key:
+                        # Verify assessment_uid was extracted
+                        assessment_uid = answer_key.get("assessment_uid")
+                        if not assessment_uid:
+                            print("❌ Extraction failed: assessment_uid not found on paper")
+                            capture.release()
+                            if show_windows:
+                                cv2.destroyAllWindows()
+                            return {"error": "assessment_uid not found on paper"}
+                        
                         # Add essay flag
                         answer_key["has_essay"] = essay_existence
                         
                         # Save JSON result
-                        save_answer_key_json(
+                        json_path = save_answer_key_json(
                             answer_key_data     = answer_key,
-                            assessment_uid      = assessment_uid,
                             credentials_path    = credentials_path
                         )
-                        print("✅ Successfully scanned and extracted answer key!")
                         
+                        if json_path:
+                            print("✅ Successfully scanned and extracted answer key!")
+                            capture.release()
+                            if show_windows:
+                                cv2.destroyAllWindows()
+                            return {
+                                "status"        : "success",
+                                "assessment_uid": assessment_uid,
+                                "answer_key"    : answer_key,
+                                "saved_path"    : json_path
+                            }
+                        else:
+                            return {"error": "Failed to save answer key JSON"}
+                    else:
+                        print(f"❌ Extraction failed: {answer_key.get('error')}")
                         capture.release()
                         if show_windows:
                             cv2.destroyAllWindows()
-                        return {
-                            "status"        : "success",
-                            "assessment_uid": assessment_uid,
-                            "answer_key"    : answer_key
-                        }
-                    else:
-                        print(f"❌ Extraction failed: {answer_key.get('error')}")
                         return {"error": answer_key.get('error')}
                 
                 elif key == display.ScanAnswerKeyOption.EXIT.value:
@@ -296,7 +301,6 @@ def run(
                     # Check if all pages collected
                     if count_page == number_of_sheets:
                         print(f"Combining {count_page} pages... please wait")
-                        print(f"Images: {collected_image_names}")
                         
                         # Combine images
                         combined_image = combine_images_into_grid(collected_image_names)
@@ -305,37 +309,49 @@ def run(
                         save_image_file(frame=combined_image, img_full_path=combined_path)
                         print("✅ Pages combined successfully")
                         
-                        # Extract answer key from combined image
+                        # Extract answer key from combined image (includes assessment_uid from paper)
                         print("Extracting answer key with Gemini OCR...")
-                        answer_key = get_JSON_of_answer_key(
-                            image_path      = combined_path,
-                            assessment_uid  = assessment_uid
-                        )
+                        answer_key = get_JSON_of_answer_key(image_path=combined_path)
                         
                         if "error" not in answer_key:
+                            # Verify assessment_uid was extracted
+                            assessment_uid = answer_key.get("assessment_uid")
+                            if not assessment_uid:
+                                print("❌ Extraction failed: assessment_uid not found on paper")
+                                capture.release()
+                                if show_windows:
+                                    cv2.destroyAllWindows()
+                                return {"error": "assessment_uid not found on paper"}
+                            
                             # Add metadata
                             answer_key["has_essay"]     = essay_existence
                             answer_key["total_pages"]   = number_of_sheets
                             
                             # Save JSON result
-                            save_answer_key_json(
+                            json_path = save_answer_key_json(
                                 answer_key_data     = answer_key,
-                                assessment_uid      = assessment_uid,
                                 credentials_path    = credentials_path
                             )
-                            print("✅ Successfully scanned and extracted answer key!")
                             
+                            if json_path:
+                                print("✅ Successfully scanned and extracted answer key!")
+                                capture.release()
+                                if show_windows:
+                                    cv2.destroyAllWindows()
+                                return {
+                                    "status"            : "success",
+                                    "assessment_uid"    : assessment_uid,
+                                    "pages"             : number_of_sheets,
+                                    "answer_key"        : answer_key,
+                                    "saved_path"        : json_path
+                                }
+                            else:
+                                return {"error": "Failed to save answer key JSON"}
+                        else:
+                            print(f"❌ Extraction failed: {answer_key.get('error')}")
                             capture.release()
                             if show_windows:
                                 cv2.destroyAllWindows()
-                            return {
-                                "status"            : "success",
-                                "assessment_uid"    : assessment_uid,
-                                "pages"             : number_of_sheets,
-                                "answer_key"        : answer_key
-                            }
-                        else:
-                            print(f"❌ Extraction failed: {answer_key.get('error')}")
                             return {"error": answer_key.get('error')}
                     
                     count_page += 1
