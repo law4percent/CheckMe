@@ -25,13 +25,13 @@ def process_a(process_A_args: str, queue_frame: Queue):
     camera_index    = process_A_args["camera_index"]
     show_windows    = process_A_args["show_windows"]
     keypad_pins     = process_A_args["keypad_pins"]
-    answer_key_image_path     = process_A_args["answer_key_image_path"]
-    answer_sheets_image_path  = process_A_args["answer_sheets_image_path"]
-    answer_key_txt_path     = process_A_args["answer_key_txt_path"]
-    answer_sheets_txt_path  = process_A_args["answer_sheets_txt_path"]
+    answer_key_image_path       = process_A_args["answer_key_image_path"]
+    answer_sheets_image_path    = process_A_args["answer_sheets_image_path"]
+    answer_key_json_path        = process_A_args["answer_key_json_path"]
+    answer_sheets_json_path     = process_A_args["answer_sheets_json_path"]
 
     print(f"{task_name} is now Running ✅")
-    check_point(answer_key_image_path, answer_sheets_image_path, answer_key_txt_path, answer_sheets_txt_path)
+    check_point(answer_key_image_path, answer_sheets_image_path, answer_key_json_path, answer_sheets_json_path)
     current_stage, current_display_options = display.initialize_display()
     rows, cols = hardware.setup_keypad_pins(
                     pc_mode, 
@@ -62,6 +62,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
                             save_logs               = save_logs, 
                             show_windows            = show_windows, 
                             answer_key_path         = answer_key_image_path, 
+                            answer_key_json_path    = answer_key_json_path,
                             pc_mode                 = pc_mode
                         )
                     elif pc_key == '2':
