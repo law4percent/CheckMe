@@ -135,6 +135,177 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
+def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool) -> int:
+    if not is_answered_number_of_sheets:
+        return [0, False]
+    
+    print("How many pages? [1-9]")
+    if key and key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+        number_of_sheets = int(key)
+        return [number_of_sheets, True]
+    
+    return [0, False]
+
+
+def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool) -> bool:
+    if not is_answered_essay_existence:
+        return [False, False]
+    
+    print("Is there an essay? [1]Y/[2]N")
+    if key and key in ['1', '2']:
+        essay_existence = (key == '1')
+        return [essay_existence, True]
+    
+    return [False, False]
+
+
+def _handle_single_page_workflow(
+        key: str,
+        frame: any,
+        answer_key_path: str,
+        answer_key_json_path: str,
+        essay_existence: bool,
+        count_page: int
+    ) -> dict:
+    if key is None:
+        return {"status": "waiting"}
+
+    if key and not key in ['1', '2']:
+        print("Invalid key. Please press [1] to SCAN or [2] to EXIT.")
+        return {"status": "waiting"} 
+    
+    if key == display.ScanAnswerKeyOption.EXIT.value:
+        return {"status": "cancelled"} 
+
+    img_full_path = _naming_the_file(
+        img_path        = answer_key_path,
+        current_count   = count_page
+    )
+    _save_image_file(
+        frame           = frame, 
+        img_full_path   = img_full_path
+    )
+    answer_key = _get_JSON_of_answer_key(image_path=img_full_path)
+    
+    if "error" in answer_key:
+        print(f"❌ Extraction failed: {answer_key.get('error')}")
+        return {
+            "error"     : answer_key.get('error'), 
+            "status"    : "error"
+        }
+
+    assessment_uid = answer_key.get("assessment_uid")
+    if not assessment_uid:
+        print("❌ Extraction failed: assessment_uid not found on paper")
+        return {
+            "error"     : "assessment_uid not found on paper", 
+            "status"    : "error"
+        }
+    
+    # Add essay flag
+    answer_key["has_essay"] = essay_existence
+    
+    # Save JSON result
+    json_path = _save_answer_key_json(
+        answer_key_data         = answer_key,
+        answer_key_json_path    = answer_key_json_path
+    )
+    
+    print("✅ Successfully scanned and extracted answer key!")
+    return {
+        "status"            : "success",
+        "assessment_uid"    : assessment_uid,
+        "pages"             : 1,
+        "answer_key"        : answer_key,
+        "saved_path"        : json_path
+    }
+
+
+def _handle_multiple_pages_workflow(
+        key: str,
+        frame: any,
+        answer_key_path: str,
+        answer_key_json_path: str,
+        essay_existence: bool,
+        count_page: int,
+        number_of_sheets: int,
+        collected_image_names: list
+    ) -> dict:
+
+    # Generate ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+    ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
+    extension = ordinal_map.get(count_page, 'th')
+    print(f"Put the {count_page}{extension} page.")
+
+    if key is None:
+        return {"status": "waiting"}
+
+    if key and not key in ['1', '2']:
+        print("Invalid key. Please press [1] to SCAN or [2] to EXIT.")
+        return {"status": "waiting"}
+
+    if key == display.ScanAnswerKeyOption.EXIT.value:
+        print(f"❌ Scanning cancelled at page {count_page}/{number_of_sheets}")
+        return {"status": "cancelled"}
+
+    img_full_path = _naming_the_file(
+        img_path        = answer_key_path,
+        current_count   = count_page
+    )
+    collected_image_names.append(img_full_path)
+    _save_image_file(
+        frame           = frame, 
+        img_full_path   = img_full_path
+    )
+    
+    if count_page == number_of_sheets:
+        print(f"Combining {count_page} pages... please wait")
+        
+        # Combine images
+        combined_image  = _combine_images_into_grid(collected_image_names)
+        now             = datetime.now().strftime("%Y%m%d_%H%M%S")
+        combined_path   = os.path.join(answer_key_path, f"{now}_combined_img.jpg")
+        _save_image_file(
+            frame           = combined_image, 
+            img_full_path   = combined_path
+        )
+        answer_key = _get_JSON_of_answer_key(image_path=combined_path)
+        
+        if "error" in answer_key:
+            print(f"❌ Extraction failed: {answer_key.get('error')}")
+            return {
+                "error"     : answer_key.get('error'), 
+                "status"    : "error"
+            }
+
+        assessment_uid = answer_key.get("assessment_uid")
+        if not assessment_uid:
+            print("❌ Extraction failed: assessment_uid not found on paper")
+            return {
+                "error"     : "assessment_uid not found on paper", 
+                "status"    : "error"
+            }
+        
+        answer_key["has_essay"]     = essay_existence
+        answer_key["total_pages"]   = number_of_sheets
+        
+        json_path = _save_answer_key_json(
+            answer_key_data         = answer_key,
+            answer_key_json_path    = answer_key_json_path
+        )
+        
+        print("✅ Successfully scanned and extracted answer key!")
+        return {
+            "status"            : "success",
+            "assessment_uid"    : assessment_uid,
+            "pages"             : number_of_sheets,
+            "answer_key"        : answer_key,
+            "saved_path"        : json_path
+        }
+
+    return {"status": "waiting"}
+
+
 def run(
         task_name: str,
         keypad_rows_and_cols: list,
@@ -172,6 +343,7 @@ def run(
     is_answered_number_of_sheets    = False
     essay_existence                 = False
     is_answered_essay_existence     = False
+    result                          = {"status": "waiting"}
 
     if not capture.isOpened():
         print("Error - Cannot open camera")
@@ -183,34 +355,24 @@ def run(
         key = hardware.read_keypad(rows=rows, cols=cols)
 
         # Step 1: Ask for number of sheets
+        number_of_sheets, is_answered_number_of_sheets = _ask_for_number_of_sheets(key, is_answered_number_of_sheets)
         if not is_answered_number_of_sheets:
-            print("How many pages? [1-9]")
-            if key and key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-                number_of_sheets                = int(key)
-                is_answered_number_of_sheets    = True
-                continue
             continue
 
         # Step 2: Ask for essay existence
+        essay_existence, is_answered_essay_existence = _ask_for_essay_existence(key, is_answered_essay_existence)
         if not is_answered_essay_existence:
-            print("Is there an essay? [1]Y/[2]N")
-            if key and key in ['1', '2']:
-                essay_existence             = (key == '1')
-                is_answered_essay_existence = True
-                print("================")
-                print("Analyzing data...")
-                print(f"Number of pages: {number_of_sheets}")
-                print(f"Has essay: {essay_existence}")
-                print("================")
-                time.sleep(2)
-                continue
             continue
     
         # Capture frame from camera
         ret, frame = capture.read()
         if not ret:
             print("Error - Check the camera")
-            continue
+            result = {
+                "error"     : "Failed to capture image", 
+                "status"    : "error"
+            }
+            break
 
         # Display menu
         print("[1] SCAN")
@@ -218,148 +380,37 @@ def run(
 
         if show_windows:
             cv2.imshow("CheckMe-ScanAnswerSheet", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
 
+        # Step 3: Process according to number of sheets
         # ========== SINGLE PAGE WORKFLOW ==========
         if number_of_sheets == 1:
-            if key and key in ['1', '2']:
-                if key == display.ScanAnswerKeyOption.SCAN.value:
-                    img_full_path = _naming_the_file(
-                        img_path        = answer_key_path,
-                        current_count   = count_page
-                    )
-                    _save_image_file(frame=frame, img_full_path=img_full_path)
-                    print(f"✅ Scanned single page: {img_full_path}")
-                    
-                    # Extract answer key using Gemini (includes assessment_uid from paper)
-                    print("Extracting answer key with Gemini OCR...")
-                    answer_key = _get_JSON_of_answer_key(image_path=img_full_path)
-                    
-                    if "error" not in answer_key:
-                        # Verify assessment_uid was extracted
-                        assessment_uid = answer_key.get("assessment_uid")
-                        if not assessment_uid:
-                            print("❌ Extraction failed: assessment_uid not found on paper")
-                            capture.release()
-                            if show_windows:
-                                cv2.destroyAllWindows()
-                            return {"error": "assessment_uid not found on paper", "status": "error"}
-                        
-                        # Add essay flag
-                        answer_key["has_essay"] = essay_existence
-                        
-                        # Save JSON result
-                        json_path = _save_answer_key_json(
-                            answer_key_data         = answer_key,
-                            answer_key_json_path    = answer_key_json_path
-                        )
-                        
-                        if json_path:
-                            print("✅ Successfully scanned and extracted answer key!")
-                            capture.release()
-                            if show_windows:
-                                cv2.destroyAllWindows()
-                            return {
-                                "status"            : "success",
-                                "assessment_uid"    : assessment_uid,
-                                "pages"             : number_of_sheets,
-                                "answer_key"        : answer_key,
-                                "saved_path"        : json_path
-                            }
-                        else:
-                            return {"error": "Failed to save answer key JSON", "status": "error"}
-                    else:
-                        print(f"❌ Extraction failed: {answer_key.get('error')}")
-                        capture.release()
-                        if show_windows:
-                            cv2.destroyAllWindows()
-                        return {"error": answer_key.get('error'), "status": "error"}
-                
-                elif key == display.ScanAnswerKeyOption.EXIT.value:
-                    capture.release()
-                    if show_windows:
-                        cv2.destroyAllWindows()
-                    return {"status": "cancelled"}
+            result = _handle_single_page_workflow(
+                key                     = key,
+                frame                   = frame,
+                answer_key_path         = answer_key_path,
+                answer_key_json_path    = answer_key_json_path,
+                essay_existence         = essay_existence,
+                count_page              = count_page
+            )
         
         # ========== MULTIPLE PAGES WORKFLOW ==========
         elif number_of_sheets > 1:
-            # Generate ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
-            ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
-            extension = ordinal_map.get(count_page, 'th')
-            print(f"Put the {count_page}{extension} page.")
+            result = _handle_multiple_pages_workflow(
+                key                     = key,
+                frame                   = frame,
+                answer_key_path         = answer_key_path,
+                answer_key_json_path    = answer_key_json_path,
+                essay_existence         = essay_existence,
+                count_page              = count_page,
+                number_of_sheets        = number_of_sheets,
+                collected_image_names   = collected_image_names
+            )
+            count_page += 1
 
-            if key and key in ['1', '2']:
-                if key == display.ScanAnswerKeyOption.SCAN.value:
-                    img_full_path = _naming_the_file(
-                        img_path        = answer_key_path,
-                        current_count   = count_page
-                    )
-                    collected_image_names.append(img_full_path)
-                    _save_image_file(frame=frame, img_full_path=img_full_path)
-                    print(f"✅ Scanned {count_page}{extension} page at {img_full_path}")
-                    
-                    # Check if all pages collected
-                    if count_page == number_of_sheets:
-                        print(f"Combining {count_page} pages... please wait")
-                        
-                        # Combine images
-                        combined_image = _combine_images_into_grid(collected_image_names)
-                        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        combined_path = os.path.join(answer_key_path, f"{now}_combined_grid.jpg")
-                        _save_image_file(frame=combined_image, img_full_path=combined_path)
-                        print(f"✅ Pages combined successfully {combined_path}")
-                        
-                        # Extract answer key from combined image (includes assessment_uid from paper)
-                        print("Extracting answer key with Gemini OCR...")
-                        answer_key = _get_JSON_of_answer_key(image_path=combined_path)
-                        
-                        if "error" not in answer_key:
-                            # Verify assessment_uid was extracted
-                            assessment_uid = answer_key.get("assessment_uid")
-                            if not assessment_uid:
-                                print("❌ Extraction failed: assessment_uid not found on paper")
-                                capture.release()
-                                if show_windows:
-                                    cv2.destroyAllWindows()
-                                return {"error": "assessment_uid not found on paper", "status": "error"}
-                            
-                            # Add metadata
-                            answer_key["has_essay"]     = essay_existence
-                            answer_key["total_pages"]   = number_of_sheets
-                            
-                            # Save JSON result
-                            json_path = _save_answer_key_json(
-                                answer_key_data     = answer_key,
-                                answer_key_json_path    = answer_key_json_path
-                            )
-                            
-                            if json_path:
-                                print("✅ Successfully scanned and extracted answer key!")
-                                capture.release()
-                                if show_windows:
-                                    cv2.destroyAllWindows()
-                                return {
-                                    "status"            : "success",
-                                    "assessment_uid"    : assessment_uid,
-                                    "pages"             : number_of_sheets,
-                                    "answer_key"        : answer_key,
-                                    "saved_path"        : json_path
-                                }
-                            else:
-                                return {"error": "Failed to save answer key JSON", "status": "error"}
-                        else:
-                            print(f"❌ Extraction failed: {answer_key.get('error')}")
-                            capture.release()
-                            if show_windows:
-                                cv2.destroyAllWindows()
-                            return {"error": answer_key.get('error'), "status": "error"}
-                    
-                    count_page += 1
-                
-                elif key == display.ScanAnswerKeyOption.EXIT.value:
-                    print(f"❌ Scanning cancelled at page {count_page}/{number_of_sheets}")
-                    capture.release()
-                    if show_windows:
-                        cv2.destroyAllWindows()
-                    return {"status": "cancelled"}
+        if result.get("status") != "waiting":
+            break
+
+    capture.release()
+    if show_windows:
+        cv2.destroyAllWindows()
+    return result
