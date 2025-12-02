@@ -39,48 +39,18 @@ def process_a(process_A_args: str, queue_frame: Queue):
                     COL_PINS = keypad_pins["COLS"]
                 )
     
-    # ========= TEST KEYS =========
-    pc_key = '1' # REMOVE LATER
-    # =============================
-    
     while True:
         time.sleep(1.5)
 
         print(f"{current_display_options[0]}{current_display_options[1]}")
         print("[*]UP or [#]DOWN")
         
-        if pc_mode:
-            if pc_key != None and pc_key in ['*', '#', '1', '2', '3', '4']:
-                if pc_key in ['*', '#']:
-                    current_stage, current_display_options = display.handle_display(key=pc_key, current_stage=current_stage)
-                else:
-                    if pc_key == '1':
-                        scan_answer_key.run(
-                            task_name               = task_name,
-                            keypad_rows_and_cols    = [rows, cols], 
-                            camera_index            = camera_index, 
-                            save_logs               = save_logs, 
-                            show_windows            = show_windows, 
-                            answer_key_path         = answer_key_image_path, 
-                            answer_key_json_path    = answer_key_json_path,
-                            pc_mode                 = pc_mode
-                        )
-                        print("scan_answer_key.run() <============")
-                        exit()
-                    elif pc_key == '2':
-                        scan_answer_sheet.run()
-                    elif pc_key == '3':
-                        settings.run()
-                    elif pc_key == '4':
-                        shutdown.run()
-                continue
-
         key = hardware.read_keypad(rows = rows, cols = cols)
-        if key != None and key in ['*', '#', '1', '2', '3', '4']:
+        if key != None:
             if key in ['*', '#']:
                 current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="process_a")
             else:
-                if pc_key == '1':
+                if key == '1':
                     answer_key_data = scan_answer_key.run(
                         task_name               = task_name,
                         keypad_rows_and_cols    = [rows, cols], 
@@ -102,14 +72,39 @@ def process_a(process_A_args: str, queue_frame: Queue):
                         #             "saved_path"        : json_path
                         #         }
                         pass
+                    
                     elif answer_key_data["status"] == "error":
                         print(f"{task_name} - Error: {answer_key_data["error"]}")
-                    else:
+
+                    elif answer_key_data["status"] == "cancelled": 
                         print(f"{task_name} - {answer_key_data["status"]}")
-                elif pc_key == '2':
-                    scan_answer_sheet.run()
-                elif pc_key == '3':
+                
+                
+                elif key == '2':
+                    answer_sheets_data = scan_answer_sheet.run(
+                        task_name               = task_name,
+                        keypad_rows_and_cols    = [rows, cols], 
+                        camera_index            = camera_index, 
+                        save_logs               = save_logs, 
+                        show_windows            = show_windows, 
+                        answer_key_path         = answer_key_image_path, 
+                        answer_key_json_path    = answer_key_json_path,
+                        pc_mode                 = pc_mode
+                    )
+
+                    if answer_sheets_data["status"] == "success":
+                        pass
+
+                    elif answer_sheets_data["status"] == "error":
+                        print(f"{task_name} - Error: {answer_sheets_data["error"]}")
+
+                    elif answer_sheets_data["status"] == "cancelled": 
+                        print(f"{task_name} - {answer_sheets_data["status"]}")
+                
+
+                elif key == '3':
                     settings.run()
-                elif pc_key == '4':
+                    
+                elif key == '4':
                     shutdown.run()
             
