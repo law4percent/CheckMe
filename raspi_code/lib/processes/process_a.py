@@ -46,65 +46,70 @@ def process_a(process_A_args: str, queue_frame: Queue):
         print("[*]UP or [#]DOWN")
         
         key = hardware.read_keypad(rows = rows, cols = cols)
-        if key != None:
-            if key in ['*', '#']:
-                current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="process_a")
-            else:
-                if key == '1':
-                    answer_key_data = scan_answer_key.run(
-                        task_name               = task_name,
-                        keypad_rows_and_cols    = [rows, cols], 
-                        camera_index            = camera_index, 
-                        save_logs               = save_logs, 
-                        show_windows            = show_windows, 
-                        answer_key_path         = answer_key_image_path, 
-                        answer_key_json_path    = answer_key_json_path,
-                        pc_mode                 = pc_mode
-                    )
+        if key == None:
+            continue
 
-                    if answer_key_data["status"] == "success":
-                        # save the json path and answer key UID into SQLite
-                        # answer_key_data {
-                        #             "status"            : "success",
-                        #             "assessment_uid"    : assessment_uid,
-                        #             "pages"             : number_of_sheets,
-                        #             "answer_key"        : answer_key,
-                        #             "saved_path"        : json_path
-                        #         }
-                        pass
-                    
-                    elif answer_key_data["status"] == "error":
-                        print(f"{task_name} - Error: {answer_key_data["error"]}")
+        if key in ['*', '#']:
+            current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="process_a")
+            continue
+        
+        
+        if key == '1':
+            answer_key_data = scan_answer_key.run(
+                task_name               = task_name,
+                keypad_rows_and_cols    = [rows, cols], 
+                camera_index            = camera_index, 
+                save_logs               = save_logs, 
+                show_windows            = show_windows, 
+                answer_key_path         = answer_key_image_path, 
+                answer_key_json_path    = answer_key_json_path,
+                pc_mode                 = pc_mode
+            )
 
-                    elif answer_key_data["status"] == "cancelled": 
-                        print(f"{task_name} - {answer_key_data["status"]}")
-                
-                
-                elif key == '2':
-                    answer_sheets_data = scan_answer_sheet.run(
-                        task_name               = task_name,
-                        keypad_rows_and_cols    = [rows, cols], 
-                        camera_index            = camera_index, 
-                        save_logs               = save_logs, 
-                        show_windows            = show_windows, 
-                        answer_key_path         = answer_key_image_path, 
-                        answer_key_json_path    = answer_key_json_path,
-                        pc_mode                 = pc_mode
-                    )
+            if answer_key_data["status"] == "success":
+                # save the json path and answer key UID into SQLite
+                # answer_key_data {
+                #             "status"            : "success",
+                #             "assessment_uid"    : assessment_uid,
+                #             "pages"             : number_of_sheets,
+                #             "answer_key"        : answer_key,
+                #             "saved_path"        : json_path
+                #         }
+                pass
+            
+            elif answer_key_data["status"] == "error":
+                print(f"{task_name} - Error: {answer_key_data["error"]}")
 
-                    if answer_sheets_data["status"] == "success":
-                        pass
+            elif answer_key_data["status"] == "cancelled": 
+                print(f"{task_name} - {answer_key_data["status"]}")
+        
+        
+        elif key == '2':
+            answer_sheets_data = scan_answer_sheet.run(
+                task_name               = task_name,
+                keypad_rows_and_cols    = [rows, cols], 
+                camera_index            = camera_index, 
+                save_logs               = save_logs, 
+                show_windows            = show_windows, 
+                answer_key_path         = answer_key_image_path, 
+                answer_key_json_path    = answer_key_json_path,
+                pc_mode                 = pc_mode
+            )
 
-                    elif answer_sheets_data["status"] == "error":
-                        print(f"{task_name} - Error: {answer_sheets_data["error"]}")
+            if answer_sheets_data["status"] == "success":
+                pass
 
-                    elif answer_sheets_data["status"] == "cancelled": 
-                        print(f"{task_name} - {answer_sheets_data["status"]}")
-                
+            elif answer_sheets_data["status"] == "error":
+                print(f"{task_name} - Error: {answer_sheets_data["error"]}")
 
-                elif key == '3':
-                    settings.run()
-                    
-                elif key == '4':
-                    shutdown.run()
+            elif answer_sheets_data["status"] == "cancelled": 
+                print(f"{task_name} - {answer_sheets_data["status"]}")
+        
+
+        elif key == '3':
+            settings.run()
+            
+
+        elif key == '4':
+            shutdown.run()
             
