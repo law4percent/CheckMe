@@ -135,28 +135,28 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
-def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool) -> int:
-    if not is_answered_number_of_sheets:
-        return [0, False]
-    
-    print("How many pages? [1-9]")
-    if key and key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-        number_of_sheets = int(key)
+def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, number_of_sheets: int) -> int:
+    if is_answered_number_of_sheets:
         return [number_of_sheets, True]
     
-    return [0, False]
-
-
-def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool) -> bool:
-    if not is_answered_essay_existence:
-        return [False, False]
+    print("How many pages? [1-9]")
+    if not key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+        return [1, False]
     
-    print("Is there an essay? [1]Y/[2]N")
-    if key and key in ['1', '2']:
-        essay_existence = (key == '1')
+    number_of_sheets = int(key)
+    return [number_of_sheets, True]
+
+
+def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool, essay_existence: bool) -> bool:
+    if is_answered_essay_existence:
         return [essay_existence, True]
     
-    return [False, False]
+    print("Is there an essay? [1]Y/[2]N")
+    if not key in ['1', '2']:
+        return [False, False]
+    
+    essay_existence = (key == '1')
+    return [essay_existence, True]
 
 
 def _handle_single_page_workflow(
@@ -354,13 +354,16 @@ def run(
 
         key = hardware.read_keypad(rows=rows, cols=cols)
 
+        if key is None:
+            continue
+
         # Step 1: Ask for number of sheets
-        number_of_sheets, is_answered_number_of_sheets = _ask_for_number_of_sheets(key, is_answered_number_of_sheets)
+        number_of_sheets, is_answered_number_of_sheets = _ask_for_number_of_sheets(key, is_answered_number_of_sheets, number_of_sheets)
         if not is_answered_number_of_sheets:
             continue
 
         # Step 2: Ask for essay existence
-        essay_existence, is_answered_essay_existence = _ask_for_essay_existence(key, is_answered_essay_existence)
+        essay_existence, is_answered_essay_existence = _ask_for_essay_existence(key, is_answered_essay_existence, essay_existence)
         if not is_answered_essay_existence:
             continue
     
