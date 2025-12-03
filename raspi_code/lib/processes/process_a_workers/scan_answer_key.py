@@ -139,7 +139,7 @@ def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, numb
     if is_answered_number_of_sheets:
         return [number_of_sheets, True]
     
-    print("How many pages? [1-9]")
+    print("How many pages the answer key? [1-9]")
     if not key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
         return [1, False]
     
