@@ -162,7 +162,7 @@ def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool, essay_
 def _handle_single_page_workflow(
         key: str,
         frame: any,
-        answer_key_path: str,
+        answer_key_image_path: str,
         answer_key_json_path: str,
         essay_existence: bool,
         count_page: int
@@ -178,7 +178,7 @@ def _handle_single_page_workflow(
         return {"status": "cancelled"} 
 
     img_full_path = _naming_the_file(
-        img_path        = answer_key_path,
+        img_path        = answer_key_image_path,
         current_count   = count_page
     )
     _save_image_file(
@@ -224,7 +224,7 @@ def _handle_single_page_workflow(
 def _handle_multiple_pages_workflow(
         key: str,
         frame: any,
-        answer_key_path: str,
+        answer_key_image_path: str,
         answer_key_json_path: str,
         essay_existence: bool,
         count_page: int,
@@ -249,7 +249,7 @@ def _handle_multiple_pages_workflow(
         return {"status": "cancelled"}
 
     img_full_path = _naming_the_file(
-        img_path        = answer_key_path,
+        img_path        = answer_key_image_path,
         current_count   = count_page
     )
     collected_image_names.append(img_full_path)
@@ -264,7 +264,7 @@ def _handle_multiple_pages_workflow(
         # Combine images
         combined_image  = _combine_images_into_grid(collected_image_names)
         now             = datetime.now().strftime("%Y%m%d_%H%M%S")
-        combined_path   = os.path.join(answer_key_path, f"{now}_combined_img.jpg")
+        combined_path   = os.path.join(answer_key_image_path, f"{now}_combined_img.jpg")
         _save_image_file(
             frame           = combined_image, 
             img_full_path   = combined_path
@@ -312,7 +312,7 @@ def run(
         camera_index: int, 
         save_logs: bool, 
         show_windows: bool, 
-        answer_key_path: str,
+        answer_key_image_path: str,
         answer_key_json_path: str,
         pc_mode: bool = False
     ) -> dict:
@@ -390,7 +390,7 @@ def run(
             result = _handle_single_page_workflow(
                 key                     = key,
                 frame                   = frame,
-                answer_key_path         = answer_key_path,
+                answer_key_image_path         = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
                 count_page              = count_page
@@ -401,7 +401,7 @@ def run(
             result = _handle_multiple_pages_workflow(
                 key                     = key,
                 frame                   = frame,
-                answer_key_path         = answer_key_path,
+                answer_key_image_path         = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
                 count_page              = count_page,

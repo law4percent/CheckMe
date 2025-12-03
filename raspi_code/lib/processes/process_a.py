@@ -26,12 +26,12 @@ def process_a(process_A_args: str, queue_frame: Queue):
     show_windows    = process_A_args["show_windows"]
     keypad_pins     = process_A_args["keypad_pins"]
     answer_key_image_path       = process_A_args["answer_key_image_path"]
-    answer_sheets_image_path    = process_A_args["answer_sheets_image_path"]
     answer_key_json_path        = process_A_args["answer_key_json_path"]
-    answer_sheets_json_path     = process_A_args["answer_sheets_json_path"]
+    answer_sheet_images_path    = process_A_args["answer_sheet_images_path"]
+    answer_sheet_jsons_path     = process_A_args["answer_sheet_jsons_path"]
 
     print(f"{task_name} is now Running ✅")
-    _check_point(answer_key_image_path, answer_sheets_image_path, answer_key_json_path, answer_sheets_json_path)
+    _check_point(answer_key_image_path, answer_sheet_images_path, answer_key_json_path, answer_sheet_jsons_path)
     current_stage, current_display_options = display.initialize_display()
     rows, cols = hardware.setup_keypad_pins(
                     pc_mode, 
@@ -60,7 +60,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
                 camera_index            = camera_index, 
                 save_logs               = save_logs, 
                 show_windows            = show_windows, 
-                answer_key_path         = answer_key_image_path, 
+                answer_key_image_path   = answer_key_image_path, 
                 answer_key_json_path    = answer_key_json_path,
                 pc_mode                 = pc_mode
             )
@@ -68,6 +68,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
             if answer_key_data["status"] == "success":
                 # save the json path and answer key UID into SQLite
                 # answer_key_data {
+                #          | Column's Name        |  Row's Value |
                 #             "status"            : "success",
                 #             "assessment_uid"    : assessment_uid,
                 #             "pages"             : number_of_sheets,
@@ -85,14 +86,14 @@ def process_a(process_A_args: str, queue_frame: Queue):
         
         elif key == '2':
             answer_sheets_data = scan_answer_sheet.run(
-                task_name               = task_name,
-                keypad_rows_and_cols    = [rows, cols], 
-                camera_index            = camera_index, 
-                save_logs               = save_logs, 
-                show_windows            = show_windows, 
-                answer_key_path         = answer_key_image_path, 
-                answer_key_json_path    = answer_key_json_path,
-                pc_mode                 = pc_mode
+                task_name                   = task_name,
+                keypad_rows_and_cols        = [rows, cols], 
+                camera_index                = camera_index, 
+                save_logs                   = save_logs, 
+                show_windows                = show_windows, 
+                answer_sheet_images_path    = answer_sheet_images_path, 
+                answer_sheets_json_path     = answer_sheet_jsons_path,
+                pc_mode                     = pc_mode
             )
 
             if answer_sheets_data["status"] == "success":
