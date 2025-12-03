@@ -185,16 +185,16 @@ def _handle_single_page_workflow(
         frame           = frame, 
         img_full_path   = img_full_path
     )
-    answer_key = _get_JSON_of_answer_key(image_path=img_full_path)
+    answer_key_data = _get_JSON_of_answer_key(image_path=img_full_path)
     
-    if "error" in answer_key:
-        print(f"❌ Extraction failed: {answer_key.get('error')}")
+    if "error" in answer_key_data:
+        print(f"❌ Extraction failed: {answer_key_data.get('error')}")
         return {
-            "error"     : answer_key.get('error'), 
+            "error"     : answer_key_data.get('error'), 
             "status"    : "error"
         }
 
-    assessment_uid = answer_key.get("assessment_uid")
+    assessment_uid = answer_key_data.get("assessment_uid")
     if not assessment_uid:
         print("❌ Extraction failed: assessment_uid not found on paper")
         return {
@@ -203,21 +203,21 @@ def _handle_single_page_workflow(
         }
     
     # Add essay flag
-    answer_key["has_essay"] = essay_existence
+    answer_key_data["has_essay"] = essay_existence
     
     # Save JSON result
     json_path = _save_answer_key_json(
-        answer_key_data         = answer_key,
+        answer_key_data         = answer_key_data,
         answer_key_json_path    = answer_key_json_path
     )
     
     print("✅ Successfully scanned and extracted answer key!")
     return {
-        "status"            : "success",
-        "assessment_uid"    : assessment_uid,
-        "pages"             : 1,
-        "answer_key"        : answer_key,
-        "saved_path"        : json_path
+        "status"                : "success",
+        "assessment_uid"        : assessment_uid,
+        "pages"                 : 1,
+        "answer_key_data"       : answer_key_data,
+        "answer_key_json_path"  : json_path
     }
 
 
@@ -269,16 +269,16 @@ def _handle_multiple_pages_workflow(
             frame           = combined_image, 
             img_full_path   = combined_path
         )
-        answer_key = _get_JSON_of_answer_key(image_path=combined_path)
+        answer_key_data = _get_JSON_of_answer_key(image_path=combined_path)
         
-        if "error" in answer_key:
-            print(f"❌ Extraction failed: {answer_key.get('error')}")
+        if "error" in answer_key_data:
+            print(f"❌ Extraction failed: {answer_key_data.get('error')}")
             return {
-                "error"     : answer_key.get('error'), 
+                "error"     : answer_key_data.get('error'), 
                 "status"    : "error"
             }
 
-        assessment_uid = answer_key.get("assessment_uid")
+        assessment_uid = answer_key_data.get("assessment_uid")
         if not assessment_uid:
             print("❌ Extraction failed: assessment_uid not found on paper")
             return {
@@ -286,21 +286,21 @@ def _handle_multiple_pages_workflow(
                 "status"    : "error"
             }
         
-        answer_key["has_essay"]     = essay_existence
-        answer_key["total_pages"]   = number_of_pages
+        answer_key_data["has_essay"]     = essay_existence
+        answer_key_data["total_pages"]   = number_of_pages
         
         json_path = _save_answer_key_json(
-            answer_key_data         = answer_key,
+            answer_key_data         = answer_key_data,
             answer_key_json_path    = answer_key_json_path
         )
         
         print("✅ Successfully scanned and extracted answer key!")
         return {
-            "status"            : "success",
-            "assessment_uid"    : assessment_uid,
-            "pages"             : number_of_pages,
-            "answer_key"        : answer_key,
-            "saved_path"        : json_path
+            "status"                : "success",
+            "assessment_uid"        : assessment_uid,
+            "pages"                 : number_of_pages,
+            "answer_key_data"       : answer_key_data,
+            "answer_key_json_path"  : json_path
         }
 
     return {"status": "waiting"}
