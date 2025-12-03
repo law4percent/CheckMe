@@ -135,16 +135,16 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
-def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, number_of_sheets: int) -> int:
-    if is_answered_number_of_sheets:
-        return [number_of_sheets, True]
+def _ask_for_number_of_pages(key: str, is_answered_number_of_pages: bool, number_of_pages: int) -> int:
+    if is_answered_number_of_pages:
+        return [number_of_pages, True]
     
     print("How many pages the answer key? [1-9]")
     if not key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
         return [1, False]
     
-    number_of_sheets = int(key)
-    return [number_of_sheets, True]
+    number_of_pages = int(key)
+    return [number_of_pages, True]
 
 
 def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool, essay_existence: bool) -> bool:
@@ -228,7 +228,7 @@ def _handle_multiple_pages_workflow(
         answer_key_json_path: str,
         essay_existence: bool,
         count_page: int,
-        number_of_sheets: int,
+        number_of_pages: int,
         collected_image_names: list
     ) -> dict:
 
@@ -245,7 +245,7 @@ def _handle_multiple_pages_workflow(
         return {"status": "waiting"}
 
     if key == display.ScanAnswerKeyOption.EXIT.value:
-        print(f"❌ Scanning cancelled at page {count_page}/{number_of_sheets}")
+        print(f"❌ Scanning cancelled at page {count_page}/{number_of_pages}")
         return {"status": "cancelled"}
 
     img_full_path = _naming_the_file(
@@ -258,7 +258,7 @@ def _handle_multiple_pages_workflow(
         img_full_path   = img_full_path
     )
     
-    if count_page == number_of_sheets:
+    if count_page == number_of_pages:
         print(f"Combining {count_page} pages... please wait")
         
         # Combine images
@@ -287,7 +287,7 @@ def _handle_multiple_pages_workflow(
             }
         
         answer_key["has_essay"]     = essay_existence
-        answer_key["total_pages"]   = number_of_sheets
+        answer_key["total_pages"]   = number_of_pages
         
         json_path = _save_answer_key_json(
             answer_key_data         = answer_key,
@@ -298,7 +298,7 @@ def _handle_multiple_pages_workflow(
         return {
             "status"            : "success",
             "assessment_uid"    : assessment_uid,
-            "pages"             : number_of_sheets,
+            "pages"             : number_of_pages,
             "answer_key"        : answer_key,
             "saved_path"        : json_path
         }
@@ -338,9 +338,9 @@ def run(
     rows, cols                      = keypad_rows_and_cols
     capture                         = cv2.VideoCapture(camera_index)
     collected_image_names           = []
-    number_of_sheets                = 1
+    number_of_pages                 = 1
     count_page                      = 1
-    is_answered_number_of_sheets    = False
+    is_answered_number_of_pages     = False
     essay_existence                 = False
     is_answered_essay_existence     = False
     result                          = {"status": "waiting"}
@@ -357,9 +357,9 @@ def run(
         if key is None:
             continue
 
-        # Step 1: Ask for number of sheets
-        number_of_sheets, is_answered_number_of_sheets = _ask_for_number_of_sheets(key, is_answered_number_of_sheets, number_of_sheets)
-        if not is_answered_number_of_sheets:
+        # Step 1: Ask for number of pages
+        number_of_pages, is_answered_number_of_pages = _ask_for_number_of_pages(key, is_answered_number_of_pages, number_of_pages)
+        if not is_answered_number_of_pages:
             continue
 
         # Step 2: Ask for essay existence
@@ -384,9 +384,9 @@ def run(
         if show_windows:
             cv2.imshow("CheckMe-ScanAnswerSheet", frame)
 
-        # Step 3: Process according to number of sheets
+        # Step 3: Process according to number of pages
         # ========== SINGLE PAGE WORKFLOW ==========
-        if number_of_sheets == 1:
+        if number_of_pages == 1:
             result = _handle_single_page_workflow(
                 key                     = key,
                 frame                   = frame,
@@ -397,7 +397,7 @@ def run(
             )
         
         # ========== MULTIPLE PAGES WORKFLOW ==========
-        elif number_of_sheets > 1:
+        elif number_of_pages > 1:
             result = _handle_multiple_pages_workflow(
                 key                     = key,
                 frame                   = frame,
@@ -405,7 +405,7 @@ def run(
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
                 count_page              = count_page,
-                number_of_sheets        = number_of_sheets,
+                number_of_pages        = number_of_pages,
                 collected_image_names   = collected_image_names
             )
             count_page += 1
