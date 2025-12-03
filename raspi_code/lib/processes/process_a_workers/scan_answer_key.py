@@ -151,11 +151,11 @@ def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool, essay_
     if is_answered_essay_existence:
         return [essay_existence, True]
     
-    print("Is there an essay? [1]Y/[2]N")
-    if not key in ['1', '2']:
+    print("Is there an essay? [*]Y or [#]N")
+    if not key in ['*', '#']:
         return [False, False]
     
-    essay_existence = (key == '1')
+    essay_existence = (key == '*')
     return [essay_existence, True]
 
 
@@ -397,7 +397,7 @@ def run(
             )
         
         # ========== MULTIPLE PAGES WORKFLOW ==========
-        elif number_of_pages > 1:
+        else:
             result = _handle_multiple_pages_workflow(
                 key                     = key,
                 frame                   = frame,
