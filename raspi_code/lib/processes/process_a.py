@@ -17,6 +17,7 @@ def _check_point(*paths) -> None:
             os.makedirs(path)
             print(f"Folder '{path}' created.")
 
+
 def process_a(process_A_args: str, queue_frame: Queue):
 
     task_name       = process_A_args["task_name"]
@@ -40,7 +41,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
                 )
     
     while True:
-        time.sleep(1.5)
+        time.sleep(0.1)
 
         print(f"{current_display_options[0]}{current_display_options[1]}")
         print("[*]UP or [#]DOWN")
@@ -54,6 +55,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
             continue
         
         if key == '1':
+            # Step 1: Scan answer key
             answer_key_data = scan_answer_key.run(
                 task_name               = task_name,
                 keypad_rows_and_cols    = [rows, cols], 
@@ -65,16 +67,16 @@ def process_a(process_A_args: str, queue_frame: Queue):
                 pc_mode                 = pc_mode
             )
 
+            # Step 2: Save results to database
             if answer_key_data["status"] == "success":
                 # save the json path and answer key UID into SQLite
                 # answer_key_data {
-                #          | Column's Name        |  Row's Value |
-                #             "status"            : "success",
-                #             "assessment_uid"    : assessment_uid,
-                #             "pages"             : number_of_sheets,
-                #             "answer_key"        : answer_key,
-                #             "saved_path"        : json_path
-                #         }
+                #     "status"                : "success",
+                #     "assessment_uid"        : assessment_uid,
+                #     "pages"                 : number_of_pages,
+                #     "answer_key_data"       : answer_key_data, <= Optional to save in DB
+                #     "answer_key_json_path"  : json_path
+                # }
                 pass
             
             elif answer_key_data["status"] == "error":
@@ -85,6 +87,12 @@ def process_a(process_A_args: str, queue_frame: Queue):
         
         
         elif key == '2':
+            # Step 1: Choose answer key from database via assessment_uid
+            #   Step 1.1: Fetch answer key data from database
+            #   Step 1.2: Load answer key data into memory
+            #   Step 1.3: Display answer key summary on screen
+
+            # Step 2: Scan answer sheets
             answer_sheets_data = scan_answer_sheet.run(
                 task_name                   = task_name,
                 keypad_rows_and_cols        = [rows, cols], 
@@ -92,11 +100,20 @@ def process_a(process_A_args: str, queue_frame: Queue):
                 save_logs                   = save_logs, 
                 show_windows                = show_windows, 
                 answer_sheet_images_path    = answer_sheet_images_path, 
-                answer_sheets_json_path     = answer_sheet_jsons_path,
+                answer_sheet_json_path      = answer_sheet_jsons_path,
                 pc_mode                     = pc_mode
             )
 
+            # Step 3: Save results to database
             if answer_sheets_data["status"] == "success":
+                # answer_sheets_data {
+                #     "status"                : "success",
+                #     "assessment_uid"        : assessment_uid,
+                #     "pages"                 : number_of_pages,
+                #     "total_pages"           : number_of_pages,
+                #     "answer_key_data"       : answer_key_data,
+                #     "answer_key_json_path"  : json_path
+                # }
                 pass
 
             elif answer_sheets_data["status"] == "error":
@@ -104,7 +121,6 @@ def process_a(process_A_args: str, queue_frame: Queue):
 
             elif answer_sheets_data["status"] == "cancelled": 
                 print(f"{task_name} - {answer_sheets_data["status"]}")
-        
 
         elif key == '3':
             settings.run()
