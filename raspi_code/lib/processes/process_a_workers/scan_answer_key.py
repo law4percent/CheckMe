@@ -350,7 +350,7 @@ def run(
         return {"error": "Camera not accessible", "status": "error"}
 
     while True:
-        time.sleep(3)
+        time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
 
         key = hardware.read_keypad(rows=rows, cols=cols)
 
