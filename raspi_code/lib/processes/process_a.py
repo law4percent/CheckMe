@@ -11,7 +11,7 @@ class Options(Enum):
     SHUTDOWN            = '4'
     
 
-def check_point(*paths) -> None:
+def _check_point(*paths) -> None:
     for path in paths:
         if not os.path.exists(path):
             os.makedirs(path)
@@ -31,7 +31,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
     answer_sheets_json_path     = process_A_args["answer_sheets_json_path"]
 
     print(f"{task_name} is now Running ✅")
-    check_point(answer_key_image_path, answer_sheets_image_path, answer_key_json_path, answer_sheets_json_path)
+    _check_point(answer_key_image_path, answer_sheets_image_path, answer_key_json_path, answer_sheets_json_path)
     current_stage, current_display_options = display.initialize_display()
     rows, cols = hardware.setup_keypad_pins(
                     pc_mode, 
@@ -52,7 +52,6 @@ def process_a(process_A_args: str, queue_frame: Queue):
         if key in ['*', '#']:
             current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="process_a")
             continue
-        
         
         if key == '1':
             answer_key_data = scan_answer_key.run(
