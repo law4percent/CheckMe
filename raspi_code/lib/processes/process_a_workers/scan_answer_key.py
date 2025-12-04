@@ -406,7 +406,6 @@ def run(
 
     capture, camera_status = _initialize_camera(camera_index)
     if camera_status["status"] == "error":
-        _cleanup_camera(capture, show_windows)
         return camera_status
     
     # Step 1 & 2: Get prerequisites
