@@ -25,47 +25,54 @@ def _smart_grid_auto(collected_images: list, tile_width: int) -> list:
     imgs = [cv2.imread(p) for p in collected_images]
     imgs = [img for img in imgs if img is not None]
     n = len(imgs)
-    
+
     if n == 0:
         return [
-            '',
-            {"status": "error", "message": "No valid images to combine"}
+            None,
+            {"status": "error", "message": "No valid images provided."}
         ]
-    
-    # Compute grid dimensions
-    grid_size = math.ceil(math.sqrt(n))
-    rows = grid_size
-    cols = grid_size
 
-    # Compute tile size
-    tile_height = int(tile_width * 1.4)
-    tile_size = (tile_width, tile_height)
+    try:
+        # Compute grid dimensions
+        grid_size = math.ceil(math.sqrt(n))
+        rows = grid_size
+        cols = grid_size
 
-    # Resize images to uniform size
-    resized_imgs = []
-    for img in imgs:
-        resized_imgs.append(cv2.resize(img, tile_size))
+        # Compute tile size
+        tile_height = int(tile_width * 1.4)
+        tile_size = (tile_width, tile_height)
 
-    # Fill empty slots with white images
-    total_slots = rows * cols
-    while len(resized_imgs) < total_slots:
-        blank = np.full((tile_height, tile_width, 3), 255, dtype=np.uint8)
-        resized_imgs.append(blank)
+        # Resize images to uniform size
+        resized_imgs = []
+        for img in imgs:
+            resized_imgs.append(cv2.resize(img, tile_size))
 
-    # Build grid row by row
-    row_list = []
-    for r in range(rows):
-        start = r * cols
-        end = start + cols
-        row_imgs = resized_imgs[start:end]
-        row_list.append(np.hstack(row_imgs))
+        # Fill empty slots with white images
+        total_slots = rows * cols
+        while len(resized_imgs) < total_slots:
+            blank = np.full((tile_height, tile_width, 3), 255, dtype=np.uint8)
+            resized_imgs.append(blank)
 
-    # Combine rows vertically
-    combined_image = np.vstack(row_list)
-    return [
-        combined_image,
-        {"status": "success"}
-    ]
+        # Build grid row by row
+        row_list = []
+        for r in range(rows):
+            start = r * cols
+            end = start + cols
+            row_imgs = resized_imgs[start:end]
+            row_list.append(np.hstack(row_imgs))
+
+        # Combine rows vertically
+        combined_image = np.vstack(row_list)
+        return [
+            combined_image,
+            {"status": "success"}
+        ]
+
+    except Exception as e:
+        return [
+            None,
+            {"status": "error", "message": f"Failed to combine images: {str(e)}"}
+        ]
 
 
 def _combine_images_into_grid(collected_images: list, tile_width: int = 600):
