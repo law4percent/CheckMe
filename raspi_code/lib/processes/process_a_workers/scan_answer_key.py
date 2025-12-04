@@ -135,28 +135,43 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
-def _ask_for_number_of_pages(key: str, is_answered_number_of_pages: bool, number_of_pages: int) -> int:
-    if is_answered_number_of_pages:
-        return [number_of_pages, True]
-    
-    print("How many pages the answer key? [1-9]")
-    if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-        return [1, False]
-    
-    number_of_pages = int(key)
-    return [number_of_pages, True]
+def _ask_for_number_of_pages(keypad_rows_and_cols: list) -> list:
+    rows, cols = keypad_rows_and_cols
+    number_of_pages = 1
+    while True:
+        print("How many pages does? [1-9] or [#] Cancel")
+        time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
+        key = hardware.read_keypad(rows=rows, cols=cols)
+        if key is None:
+            continue
+
+        if key == '#':
+            print("❌ Scanning cancelled by user")
+            return {"status": "cancelled"}
+        
+
+        if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+            continue
+
+        number_of_pages = int(key)
+        return [number_of_pages, {"status": "success"}]
 
 
-def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool, essay_existence: bool) -> bool:
-    if is_answered_essay_existence:
-        return [essay_existence, True]
-    
-    print("Is there an essay? [*]Y or [#]N")
-    if key not in ['*', '#']:
-        return [False, False]
-    
-    essay_existence = (key == '*')
-    return [essay_existence, True]
+def _ask_for_essay_existence(keypad_rows_and_cols) -> list:
+    rows, cols = keypad_rows_and_cols
+    while True:
+        time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
+        key = hardware.read_keypad(rows=rows, cols=cols)
+        if key is None:
+            continue
+
+        if key == '#':
+            print("❌ Scanning cancelled by user")
+            return [False, {"status": "cancelled"}]
+        
+        if key == '*':
+            print("Essay existence: YES")
+            return [True, {"status": "success"}]
 
 
 def _handle_single_page_workflow(
@@ -170,11 +185,11 @@ def _handle_single_page_workflow(
     if key is None:
         return {"status": "waiting"}
 
-    if key and key not in ['1', '2']:
+    if key not in ['*', '#']:
         print("Invalid key. Please press [1] to SCAN or [2] to EXIT.")
         return {"status": "waiting"} 
     
-    if key == display.ScanAnswerKeyOption.EXIT.value:
+    if key == '#':
         return {"status": "cancelled"} 
 
     img_full_path = _naming_the_file(
@@ -306,6 +321,38 @@ def _handle_multiple_pages_workflow(
     return {"status": "waiting"}
 
 
+def _ask_for_prerequisites(keypad_rows_and_cols: list) -> dict:
+    # Step 1: Ask for number of pages
+    number_of_pages, status = _ask_for_number_of_pages(keypad_rows_and_cols)
+    if status["status"] == "cancelled":
+        return status
+
+    # Step 2: Ask for essay existence
+    essay_existence, status = _ask_for_essay_existence(keypad_rows_and_cols)
+    if status["status"] == "cancelled":
+        return status
+    
+    return {
+        "number_of_pages"   : number_of_pages,
+        "essay_existence"   : essay_existence,
+        "status"            : "success"
+    }
+
+
+def _initialize_camera(camera_index: int) -> list:
+    """Initialize camera capture."""
+    capture = cv2.VideoCapture(camera_index)
+    if not capture.isOpened():
+        return [
+            capture,
+            {"status": "error", "message": "Cannot open camera"}
+        ]
+    return [
+        capture,
+        {"status": "success"}
+    ]
+
+
 def run(
         task_name: str,
         keypad_rows_and_cols: list,
@@ -336,35 +383,30 @@ def run(
     """
 
     rows, cols                      = keypad_rows_and_cols
-    capture                         = cv2.VideoCapture(camera_index)
     collected_image_names           = []
-    number_of_pages                 = 1
     count_page                      = 1
-    is_answered_number_of_pages     = False
-    essay_existence                 = False
-    is_answered_essay_existence     = False
     result                          = {"status": "waiting"}
 
-    if not capture.isOpened():
-        print("Error - Cannot open camera")
-        return {"error": "Camera not accessible", "status": "error"}
+    capture, camera_status = _initialize_camera(camera_index)
+    if camera_status["status"] == "error":
+        return camera_status["status"]
+    
+    # Step 1 & 2: Get prerequisites
+    prerequisites = _ask_for_prerequisites(keypad_rows_and_cols)
+    if prerequisites["status"] == "cancelled":
+        return prerequisites["status"]
+    number_of_pages = prerequisites["number_of_pages"]
+    essay_existence = prerequisites["essay_existence"]
 
     while True:
+        # Display menu
+        print("[1] SCAN")
+        print("[2] EXIT")
         time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
 
         key = hardware.read_keypad(rows=rows, cols=cols)
 
         if key is None:
-            continue
-
-        # Step 1: Ask for number of pages
-        number_of_pages, is_answered_number_of_pages = _ask_for_number_of_pages(key, is_answered_number_of_pages, number_of_pages)
-        if not is_answered_number_of_pages:
-            continue
-
-        # Step 2: Ask for essay existence
-        essay_existence, is_answered_essay_existence = _ask_for_essay_existence(key, is_answered_essay_existence, essay_existence)
-        if not is_answered_essay_existence:
             continue
     
         # Capture frame from camera
@@ -377,10 +419,6 @@ def run(
             }
             break
 
-        # Display menu
-        print("[1] SCAN")
-        print("[2] EXIT")
-
         if show_windows:
             cv2.imshow("CheckMe-ScanAnswerSheet", frame)
 
@@ -390,7 +428,7 @@ def run(
             result = _handle_single_page_workflow(
                 key                     = key,
                 frame                   = frame,
-                answer_key_image_path         = answer_key_image_path,
+                answer_key_image_path   = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
                 count_page              = count_page
@@ -401,11 +439,11 @@ def run(
             result = _handle_multiple_pages_workflow(
                 key                     = key,
                 frame                   = frame,
-                answer_key_image_path         = answer_key_image_path,
+                answer_key_image_path   = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
                 count_page              = count_page,
-                number_of_pages        = number_of_pages,
+                number_of_pages         = number_of_pages,
                 collected_image_names   = collected_image_names
             )
             count_page += 1
