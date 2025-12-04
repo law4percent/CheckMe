@@ -7,7 +7,7 @@ import os
 import json
 import math
 import numpy as np
-from lib.services import answer_key_model
+from lib.services import answer_key_model, answer_sheet_model
 
 
 def _smart_grid_auto(collected_images: list, tile_width: int) -> list:
@@ -80,7 +80,7 @@ def _save_image_file(frame, img_full_path: str) -> dict:
         return {"status": "error", "message": f"Failed to save image: {str(e)}"}
 
 
-def _naming_the_file(img_path: str, current_count: int) -> str:
+def _naming_the_file(img_path: str, current_count: int) -> list:
     """
     Generate image filename with timestamp and page number.
     
@@ -88,7 +88,11 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(img_path, exist_ok=True)
-    return f"{img_path}/{now}_img{current_count}.jpg"
+    file_name = f"{now}_img{current_count}"
+    return [
+        f"{img_path}/{file_name}.jpg", 
+        file_name
+    ]
 
 
 def _ask_for_number_of_sheets(keypad_rows_and_cols: list, pc_mode: bool, limit: int = 50) -> list:
@@ -159,9 +163,21 @@ def _has_essay(assessment_uid: str) -> list:
         return [False, {"status": "error", "message": str(e)}]
 
 
-def _save_to_db() -> dict:
-    
-    return {"status": "success"}
+def _save_to_db(result: dict) -> dict:
+    """Save answer sheet record to database."""
+    try:
+        answer_sheet_model.create_answer_sheet(
+            assessment_uid  = result["assessment_uid"],
+            number_of_pages = result["number_of_pages"],
+            json_file_name  = result["json_file_name"],
+            json_path       = result["json_path"],
+            img_path        = result["img_path"],
+            is_final_score  = result["is_final_score"]
+        )
+        
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": f"Database save failed: {str(e)}"}
 
 
 def _handle_single_page_answer_sheet(
@@ -179,7 +195,7 @@ def _handle_single_page_answer_sheet(
         return {"status": "waiting"}
     
     # Step 2: Save captured frame
-    img_full_path = _naming_the_file(
+    img_full_path, file_name = _naming_the_file(
         img_path        = answer_sheet_image_path,
         current_count   = current_count_sheets
     )
@@ -189,17 +205,16 @@ def _handle_single_page_answer_sheet(
     )
     if save_image_file_status["status"] == "error":
         return save_image_file_status
-    
+    json_full_path = f"{answer_sheet_json_path}/{file_name}.json"
     return {
         "status"            : "success",
-        # "student_id"        : student_id,             # need to solve this: I want this separate in the other process such as process_b() function to avoid delay for the user
+        "assessment_uid"    : assessment_uid,
         "number_of_pages"   : number_of_pages_per_sheet,
-        # "json_path"         : answer_sheet_json_path, # need to solve this: I want this separate in the other process such as process_b() function to avoid delay for the user
-        # "score"             : 0,                      # need to solve this: I want this separate in the other process such as process_b() function to avoid delay for the user
+        "json_file_name"    : file_name,
+        "json_path"         : json_full_path,
+        # "json_path"         : answer_sheet_json_path,
         "img_path"          : img_full_path,
-        "is_final_score"    : has_essay, # Meaning: If the answer sheet has essays it will mark as partial score or true
-        # "is_image_uploaded" : False,                  # need to solve this: I want this separate in the other process such as process_c() function to avoid delay for the user
-        "next_sheet_count"  : current_count_sheets,
+        "is_final_score"    : not has_essay # True if no essay (score is final)
     }
 
 
@@ -287,7 +302,6 @@ def run(
     # Step 1: Initialize camera
     capture, camera_status = _initialize_camera(camera_index)
     if camera_status["status"] == "error":
-        _cleanup(capture, show_windows)
         return camera_status
     
     # Step 2: Ask for prerequisites
@@ -305,10 +319,10 @@ def run(
 
     # Step 3: Scan answer sheets based on number of sheets and pages
     while count_sheets <= number_of_sheets:
-        # Display menu
-        print(f"Sheet {count_sheets}/{number_of_sheets}")
-        print("[*] START SCANNING")
-        print("[#] EXIT")
+        progress = f"[{count_sheets}/{number_of_sheets}]"
+        print(f"\n{progress} Sheet {count_sheets}")
+        print(f"{progress} [*] START SCANNING")
+        print(f"{progress} [#] EXIT")
         time.sleep(0.1)
 
         key = hardware.read_keypad(rows, cols, pc_mode)
@@ -345,7 +359,16 @@ def run(
             )
             if result["status"] == "waiting":
                 continue
-            count_sheets = result["next_sheet_count"]
+            
+            if result["status"] == "success":
+                save_status = _save_to_db(result)
+                if save_status["status"] == "error":
+                    result = save_status
+                    break
+                
+                elif save_status["status"] == "success":
+                    print(f"✅ Sheet {count_sheets}/{number_of_sheets} saved")
+                    count_sheets += 1
 
         # Handle multi-page answer sheets
         else:

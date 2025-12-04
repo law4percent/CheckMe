@@ -1,10 +1,12 @@
 import sqlite3
+import os
 
-import sqlite3
-
-def get_connection(db_name='database/checkme.db'):
+def get_connection(db_path='database'):
     """Create and return a database connection."""
-    conn = sqlite3.connect(db_name)
+    if not os.path.exists(db_path):
+        os.makedirs(db_path)
+        print(f"Folder '{db_path}' created.")
+    conn = sqlite3.connect(f"{db_path}/checkme.db")
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
@@ -26,22 +28,21 @@ def create_table():
     ''')
 
     # Table 2: answer_sheets
+    # In create_table() function, update answer_sheets table:
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS answer_sheets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            answer_key_id INTEGER NOT NULL,
-            student_id INTEGER NOT NULL,
+            assessment_uid TEXT NOT NULL,
+            student_id TEXT,
             number_of_pages INTEGER NOT NULL,
+            json_file_name TEXT NOT NULL,
             json_path TEXT NOT NULL,
             img_path TEXT NOT NULL,
             score INTEGER DEFAULT 0,
             is_final_score INTEGER DEFAULT 0,
             is_image_uploaded INTEGER DEFAULT 0,
             saved_at TEXT DEFAULT (datetime('now', 'localtime')),
-            image_uploaded_at TEXT,
-            FOREIGN KEY (answer_key_id)
-                REFERENCES answer_keys(id)
-                ON DELETE CASCADE
+            image_uploaded_at TEXT
         )
     ''')
 
