@@ -255,6 +255,20 @@ def _cleanup(capture) -> None:
     cv2.destroyAllWindows()
 
 
+def _initialize_camera(camera_index: int) -> list:
+    """Initialize camera capture."""
+    capture = cv2.VideoCapture(camera_index)
+    if not capture.isOpened():
+        return [
+            capture,
+            {"status": "error", "message": "Cannot open camera"}
+        ]
+    return [
+        capture,
+        {"status": "success"}
+    ]
+
+
 def run(
         task_name: str,
         keypad_rows_and_cols: list,
@@ -283,19 +297,16 @@ def run(
             Dictionary with status and results
     """
     rows, cols              = keypad_rows_and_cols
-    capture                 = cv2.VideoCapture(camera_index)
     count_sheets            = 1
     count_pages_per_sheet   = 1
     result                  = {"status": "waiting"}
 
-    if not capture.isOpened():
-        print("❌ Error - Cannot open camera")
-        return {
-            "error": "Camera not accessible", 
-            "status": "error"
-        }
+    # Step 1: Initialize camera
+    capture, camera_status = _initialize_camera(camera_index)
+    if camera_status["status"] == "error":
+        return camera_status["status"]
     
-    # Step 1 & 2: Ask for number of sheets and pages per sheet
+    # Step 2: Ask for number of sheets and pages per sheet
     prerequisites = _ask_for_prerequisites(
         keypad_rows_and_cols = keypad_rows_and_cols,
         assessment_uid       = assessment_uid
@@ -333,15 +344,16 @@ def run(
                 number_of_pages_per_sheet,
                 count_pages_per_sheet
             )
+            
             if result["status"] == "error":
                 _cleanup(capture)
                 print(f"❌ {result.get('message', 'Unknown error')}")
-                return {"status": "error", "message": result.get("message", "Unknown error")}
+                return result["status"]
             
             if result["status"] == "cancelled":
                 _cleanup(capture)
                 print("⚠️  Scanning cancelled by user")
-                return {"status": "cancelled", "sheets_completed": count_sheets - 1}
+                return result["status"]
             
             count_pages_per_sheet = result["count_pages_per_sheet"]
             count_sheets += 1
@@ -358,12 +370,12 @@ def run(
             if result["status"] == "error":
                 _cleanup(capture)
                 print(f"❌ {result.get('message', 'Unknown error')}")
-                return {"status": "error", "message": result.get("message", "Unknown error")}
+                return result["status"]
             
             if result["status"] == "cancelled":
                 _cleanup(capture)
                 print("⚠️  Scanning cancelled by user")
-                return {"status": "cancelled", "sheets_completed": count_sheets - 1}
+                return result["status"]
             
             count_pages_per_sheet = result["count_pages_per_sheet"]
             count_sheets += 1
