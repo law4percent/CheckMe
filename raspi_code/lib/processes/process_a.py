@@ -3,6 +3,7 @@ import time
 from .process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown, hardware, display
 from enum import Enum
 import os
+import sqlite3
 
 class Options(Enum):
     SCAN_ANSWER_KEY     = '1'
@@ -10,6 +11,28 @@ class Options(Enum):
     SETTINGS            = '3'
     SHUTDOWN            = '4'
     
+
+def _choose_answer_key_from_db(cols: str, rows: str) -> str:
+    #   Step 1.1: Fetch answer key data from database
+    
+
+    #   Step 1.2: Load answer key data into memory
+
+
+    #   Step 1.3: Display answer key summary on screen
+    while True:
+        time.sleep(0.1)
+
+        print("[*]UP or [#]DOWN")
+        
+        key = hardware.read_keypad(rows = rows, cols = cols)
+        if key == None:
+            continue
+
+        if key in ['*', '#']:
+            continue
+
+        return "dummy_assessment_uid"
 
 def _check_point(*paths) -> None:
     for path in paths:
@@ -88,9 +111,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
         
         elif key == '2':
             # Step 1: Choose answer key from database via assessment_uid
-            #   Step 1.1: Fetch answer key data from database
-            #   Step 1.2: Load answer key data into memory
-            #   Step 1.3: Display answer key summary on screen
+            target_assessment_uid = _choose_answer_key_from_db()
 
             # Step 2: Scan answer sheets
             answer_sheets_data = scan_answer_sheet.run(
@@ -101,6 +122,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
                 show_windows                = show_windows, 
                 answer_sheet_images_path    = answer_sheet_images_path, 
                 answer_sheet_json_path      = answer_sheet_jsons_path,
+                assessment_uid              = target_assessment_uid,  # to be replaced with real assessment_uid
                 pc_mode                     = pc_mode
             )
 
