@@ -2,27 +2,17 @@ from lib.processes import process_a, process_b, process_c
 from multiprocessing import Process, Queue, Event
 
 def main(**kargs):
-    queue_frame = Queue(maxsize=1)
-    
     task_a = Process(
-        target  =   process_a.process_a,
-        kwargs  =   {
-            "process_A_args"    : kargs["process_A_args"],
-            "queue_frame"       : queue_frame
-        }
+        target  = process_a.process_a,
+        kwargs  = {"process_A_args": kargs["process_A_args"]}
     )
     task_b = Process(
-        target  =   process_b.process_b, 
-        kwargs  =   {
-            "process_B_args"    : kargs["process_B_args"],
-            "queue_frame"       : queue_frame
-        }
+        target  = process_b.process_b, 
+        kwargs  = {"process_B_args": kargs["process_B_args"]}
     )
     task_c = Process(
-        target  =   process_c.process_c, 
-        kwargs  =   {
-            "process_C_args"    : kargs["process_C_args"]
-        }
+        target  = process_c.process_c, 
+        kwargs  = {"process_C_args": kargs["process_C_args"]}
     )
     
     task_a.start()

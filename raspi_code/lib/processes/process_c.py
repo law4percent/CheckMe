@@ -7,7 +7,7 @@ import time
     # - Then upload to the Google Drive
     # - Repeat the process
 
-def process_c(process_C_args: str):
+def process_c(process_C_args: dict):
     task_name   = process_C_args["task_name"]
     pc_mode     = process_C_args["pc_mode"]
     save_logs   = process_C_args["save_logs"]

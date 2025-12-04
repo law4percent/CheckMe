@@ -164,14 +164,23 @@ def _save_to_db() -> dict:
     return {"status": "success"}
 
 
-def _handle_single_page_answer_sheet(key: str, answer_sheet_images_path: int, current_count_sheets: int, essay_existence: bool, frame: any, assessment_uid: str) -> dict:
+def _handle_single_page_answer_sheet(
+        key: str, 
+        frame: any, 
+        answer_sheet_image_path: str, 
+        answer_sheet_json_path: str,
+        current_count_sheets: int, 
+        number_of_pages_per_sheet: int,
+        assessment_uid: str, 
+        has_essay: bool
+    ) -> dict:
     # Step 1: Check key input
     if key != '*':
         return {"status": "waiting"}
     
     # Step 2: Save captured frame
     img_full_path = _naming_the_file(
-        img_path        = answer_sheet_images_path,
+        img_path        = answer_sheet_image_path,
         current_count   = current_count_sheets
     )
     save_image_file_status = _save_image_file(
@@ -181,15 +190,16 @@ def _handle_single_page_answer_sheet(key: str, answer_sheet_images_path: int, cu
     if save_image_file_status["status"] == "error":
         return save_image_file_status
     
-    # Step 3: Save to SQLite DB
-    saving_to_db_status = _save_to_db(assessment_uid, img_full_path)
-    if saving_to_db_status["status"] == "error":
-        return saving_to_db_status
-    
     return {
         "status"            : "success",
-        "next_sheet_count"  : current_count_sheets + 1,
-        "img_full_path"     : img_full_path
+        # "student_id"        : student_id,             # need to solve this: I want this separate in the other process such as process_b() function to avoid delay for the user
+        "number_of_pages"   : number_of_pages_per_sheet,
+        # "json_path"         : answer_sheet_json_path, # need to solve this: I want this separate in the other process such as process_b() function to avoid delay for the user
+        # "score"             : 0,                      # need to solve this: I want this separate in the other process such as process_b() function to avoid delay for the user
+        "img_path"          : img_full_path,
+        "is_final_score"    : has_essay, # Meaning: If the answer sheet has essays it will mark as partial score or true
+        # "is_image_uploaded" : False,                  # need to solve this: I want this separate in the other process such as process_c() function to avoid delay for the user
+        "next_sheet_count"  : current_count_sheets,
     }
 
 
@@ -293,8 +303,6 @@ def run(
     number_of_pages_per_sheet   = prerequisites["number_of_pages_per_sheet"]
     has_essay                   = prerequisites["has_essay"]
 
-    collected_images_of_all_sheets = []
-
     # Step 3: Scan answer sheets based on number of sheets and pages
     while count_sheets <= number_of_sheets:
         # Display menu
@@ -327,45 +335,22 @@ def run(
         if number_of_pages_per_sheet == 1:
             result = _handle_single_page_answer_sheet(
                 key                         = key,
-                answer_sheet_images_path    = answer_sheet_images_path,
-                answer_sheet_jsons_path     = answer_sheet_jsons_path,
-                current_count_sheets        = count_sheets,
                 frame                       = frame,
-                assessment_uid              = assessment_uid
+                answer_sheet_image_path     = answer_sheet_images_path,
+                answer_sheet_json_path      = answer_sheet_jsons_path,
+                current_count_sheets        = count_sheets,
+                number_of_pages_per_sheet   = number_of_pages_per_sheet,
+                assessment_uid              = assessment_uid,
+                has_essay                   = has_essay
             )
             if result["status"] == "waiting":
                 continue
             count_sheets = result["next_sheet_count"]
-            collected_images_of_all_sheets.append(result["img_full_path"])
-
-            # if result["status"] == "error":
-            #     _cleanup(capture, show_windows)
-            #     print(f"❌ {result.get('message', 'Unknown error')}")
-            #     return result
-            
-            # if result["status"] == "cancelled":
-            #     _cleanup(capture, show_windows)
-            #     print("⚠️  Scanning cancelled by user")
-            #     return result
-            
-            # count_sheets += 1
 
         # Handle multi-page answer sheets
         else:
             result = _handle_multi_page_answer_sheet()
             count_sheets = result["next_sheet_count"]
-        
-            # if result["status"] == "error":
-            #     _cleanup(capture, show_windows)
-            #     print(f"❌ {result.get('message', 'Unknown error')}")
-            #     return result
-            
-            # if result["status"] == "cancelled":
-            #     _cleanup(capture, show_windows)
-            #     print("⚠️  Scanning cancelled by user")
-            #     return result
-            
-            # count_sheets += 1
 
     _cleanup(capture, show_windows)
     print("✅ All answer sheets captured successfully")

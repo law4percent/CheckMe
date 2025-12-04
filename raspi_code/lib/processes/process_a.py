@@ -57,7 +57,7 @@ def _check_point(*paths) -> None:
             print(f"Folder '{path}' created.")
 
 
-def process_a(process_A_args: str, queue_frame: Queue):
+def process_a(process_A_args: dict):
 
     task_name       = process_A_args["task_name"]
     pc_mode         = process_A_args["pc_mode"]
@@ -71,13 +71,18 @@ def process_a(process_A_args: str, queue_frame: Queue):
     answer_sheet_jsons_path     = process_A_args["answer_sheet_jsons_path"]
 
     print(f"{task_name} is now Running ✅")
-    _check_point(answer_key_image_path, answer_sheet_images_path, answer_key_json_path, answer_sheet_jsons_path)
+    _check_point(
+        answer_key_image_path, 
+        answer_sheet_images_path, 
+        answer_key_json_path, 
+        answer_sheet_jsons_path
+    )
     current_stage, current_display_options = display.initialize_display()
     rows, cols = hardware.setup_keypad_pins(
-                    pc_mode, 
-                    ROW_PINS = keypad_pins["ROWS"], 
-                    COL_PINS = keypad_pins["COLS"]
-                )
+        pc_mode, 
+        ROW_PINS = keypad_pins["ROWS"], 
+        COL_PINS = keypad_pins["COLS"]
+    )
     
     while True:
         time.sleep(0.1)
