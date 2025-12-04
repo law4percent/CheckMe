@@ -20,14 +20,17 @@ from datetime import datetime
     6. Save extracted answer key as JSON
 """
 
-def _smart_grid_auto(collected_images: list, tile_width: int):
+def _smart_grid_auto(collected_images: list, tile_width: int) -> list:
     """Arrange multiple images into a grid layout."""
     imgs = [cv2.imread(p) for p in collected_images]
     imgs = [img for img in imgs if img is not None]
     n = len(imgs)
     
-    if n == 0: #<==== for investigation
-        raise ValueError("No valid images provided.")
+    if n == 0:
+        return [
+            '',
+            {"status": "error", "message": "No valid images to combine"}
+        ]
     
     # Compute grid dimensions
     grid_size = math.ceil(math.sqrt(n))
@@ -59,13 +62,15 @@ def _smart_grid_auto(collected_images: list, tile_width: int):
 
     # Combine rows vertically
     combined_image = np.vstack(row_list)
-    return combined_image
+    return [
+        combined_image,
+        {"status": "success"}
+    ]
 
 
 def _combine_images_into_grid(collected_images: list, tile_width: int = 600):
     """Combine multiple page images into a single grid image."""
-    combined_image = _smart_grid_auto(collected_images, tile_width)
-    return combined_image
+    return _smart_grid_auto(collected_images, tile_width)
 
 
 def _get_JSON_of_answer_key(image_path: str) -> list:
@@ -79,6 +84,7 @@ def _get_JSON_of_answer_key(image_path: str) -> list:
         Returns:
             Extracted answer key dictionary and status dictionary
     """
+    answer_key = {}
     try:
         gemini_engine = GeminiOCREngine()
         answer_key = gemini_engine.extract_answer_key(image_path)
@@ -96,13 +102,17 @@ def _get_JSON_of_answer_key(image_path: str) -> list:
         ]
 
 
-def _save_image_file(frame, img_full_path: str):
+def _save_image_file(frame, img_full_path: str) -> dict:
     """Save image frame to disk."""
-    # os.makedirs(os.path.dirname(img_full_path), exist_ok=True) <- Need to investigate
-    cv2.imwrite(img_full_path, frame)
+    try:
+        os.makedirs(os.path.dirname(img_full_path), exist_ok=True)
+        cv2.imwrite(img_full_path, frame)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to save image: {str(e)}"}
 
 
-def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str) -> list:
+def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str, assessment_uid: str) -> list:
     """
         Save extracted answer key as JSON file.
         Uses assessment_uid from the extracted data.
@@ -114,24 +124,22 @@ def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str) -> l
         Returns:
             Path to saved JSON file, and status dictionary
     """
-    assessment_uid = answer_key_data.get("assessment_uid")
-    
-    if not assessment_uid:
+    try:
+        os.makedirs(answer_key_json_path, exist_ok=True)
+        json_path = os.path.join(answer_key_json_path, f"{assessment_uid}.json")
+        
+        with open(json_path, 'w') as f:
+            json.dump(answer_key_data, f, indent=2)
+        
         return [
-            '',
-            {"status": "error", "message": "assessment_uid not found in extracted data"}
+            json_path,
+            {"status": "success"}
         ]
-    
-    # os.makedirs(answer_key_json_path, exist_ok=True) <- Need to investigate
-    json_path = os.path.join(answer_key_json_path, f"{assessment_uid}.json")
-    
-    with open(json_path, 'w') as f:
-        json.dump(answer_key_data, f, indent=2)
-    
-    return [
-        json_path,
-        {"status": "success"}
-    ]
+    except Exception as e:
+        return [
+            "",
+            {"status": "error", "message": f"Failed to save JSON: {str(e)}"}
+        ]
 
 
 def _naming_the_file(img_path: str, current_count: int) -> str:
@@ -141,7 +149,6 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
         Format: {img_path}/{timestamp}_img{current_count}.jpg
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # os.makedirs(img_path, exist_ok=True) <- Need to investigate
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
@@ -157,7 +164,7 @@ def _ask_for_number_of_pages(keypad_rows_and_cols: list) -> list:
 
         if key == '#':
             print("❌ Scanning cancelled by user")
-            return {"status": "cancelled"}
+            return [number_of_pages, {"status": "cancelled"}]
         
 
         if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
@@ -170,14 +177,15 @@ def _ask_for_number_of_pages(keypad_rows_and_cols: list) -> list:
 def _ask_for_essay_existence(keypad_rows_and_cols) -> list:
     rows, cols = keypad_rows_and_cols
     while True:
+        print("Is there an essay? [*] YES or [#] NO")
         time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
         key = hardware.read_keypad(rows=rows, cols=cols)
         if key is None:
             continue
 
         if key == '#':
-            print("❌ Scanning cancelled by user")
-            return [False, {"status": "cancelled"}]
+            print("Essay existence: NO")
+            return [False, {"status": "success"}]
         
         if key == '*':
             print("Essay existence: YES")
@@ -199,10 +207,13 @@ def _handle_single_page_workflow(
         img_path        = answer_key_image_path,
         current_count   = number_of_pages
     )
-    _save_image_file(
+    save_image_file_status = _save_image_file(
         frame           = frame, 
         img_full_path   = img_full_path
     )
+    if save_image_file_status["status"] == "error":
+        return save_image_file_status
+    
     answer_key_data, answer_key_data_status = _get_JSON_of_answer_key(image_path=img_full_path)
     if answer_key_data_status["status"] == "error":
         return answer_key_data_status
@@ -218,7 +229,8 @@ def _handle_single_page_workflow(
     answer_key_data["total_pages"]  = number_of_pages
     json_path, json_path_status = _save_answer_key_json(
         answer_key_data         = answer_key_data,
-        answer_key_json_path    = answer_key_json_path
+        answer_key_json_path    = answer_key_json_path,
+        assessment_uid          = assessment_uid
     )
     if json_path_status["status"] == "error":
         return json_path_status
@@ -258,16 +270,20 @@ def _handle_multiple_pages_workflow(
         current_count   = count_page
     )
     collected_image_names.append(img_full_path)
-    _save_image_file(
+    save_image_file_status = _save_image_file(
         frame           = frame, 
         img_full_path   = img_full_path
     )
+    if save_image_file_status["status"] == "error":
+        return save_image_file_status
     
     if count_page == number_of_pages:
         print(f"Combining {count_page} pages... please wait")
         
         # Combine images
-        combined_image  = _combine_images_into_grid(collected_image_names)
+        combined_image, combined_images_status = _combine_images_into_grid(collected_image_names)
+        if combined_images_status["status"] == "error":
+            return combined_images_status
         now             = datetime.now().strftime("%Y%m%d_%H%M%S")
         combined_path   = os.path.join(answer_key_image_path, f"{now}_combined_img.jpg")
         _save_image_file(
@@ -289,7 +305,8 @@ def _handle_multiple_pages_workflow(
         answer_key_data["total_pages"]  = number_of_pages
         json_path, json_path_status = _save_answer_key_json(
             answer_key_data         = answer_key_data,
-            answer_key_json_path    = answer_key_json_path
+            answer_key_json_path    = answer_key_json_path,
+            assessment_uid          = assessment_uid
         )
         if json_path_status["status"] == "error":
             return json_path_status
@@ -384,13 +401,14 @@ def run(
 
     capture, camera_status = _initialize_camera(camera_index)
     if camera_status["status"] == "error":
+        _cleanup_camera(capture, show_windows)
         return camera_status
     
     # Step 1 & 2: Get prerequisites
     prerequisites = _ask_for_prerequisites(keypad_rows_and_cols)
     if prerequisites["status"] == "cancelled":
         _cleanup_camera(capture, show_windows)
-        return prerequisites["status"]
+        return prerequisites
     number_of_pages = prerequisites["number_of_pages"]
     essay_existence = prerequisites["essay_existence"]
 
@@ -431,7 +449,7 @@ def run(
                 answer_key_image_path   = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
-                number_of_pages              = count_page
+                number_of_pages         = number_of_pages
             )
             if result.get("status") == "waiting":
                 continue
