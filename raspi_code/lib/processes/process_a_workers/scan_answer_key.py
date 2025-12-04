@@ -140,7 +140,7 @@ def _ask_for_number_of_pages(key: str, is_answered_number_of_pages: bool, number
         return [number_of_pages, True]
     
     print("How many pages the answer key? [1-9]")
-    if not key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+    if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
         return [1, False]
     
     number_of_pages = int(key)
@@ -152,7 +152,7 @@ def _ask_for_essay_existence(key: str, is_answered_essay_existence: bool, essay_
         return [essay_existence, True]
     
     print("Is there an essay? [*]Y or [#]N")
-    if not key in ['*', '#']:
+    if key not in ['*', '#']:
         return [False, False]
     
     essay_existence = (key == '*')
@@ -170,7 +170,7 @@ def _handle_single_page_workflow(
     if key is None:
         return {"status": "waiting"}
 
-    if key and not key in ['1', '2']:
+    if key and key not in ['1', '2']:
         print("Invalid key. Please press [1] to SCAN or [2] to EXIT.")
         return {"status": "waiting"} 
     
@@ -240,7 +240,7 @@ def _handle_multiple_pages_workflow(
     if key is None:
         return {"status": "waiting"}
 
-    if key and not key in ['1', '2']:
+    if key and key not in ['1', '2']:
         print("Invalid key. Please press [1] to SCAN or [2] to EXIT.")
         return {"status": "waiting"}
 
