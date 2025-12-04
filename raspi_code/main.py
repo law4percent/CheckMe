@@ -45,6 +45,8 @@ if __name__ == "__main__":
             "task_name"     : "Process B",
             "pc_mode"       : pc_mode,
             "save_logs"     : save_logs,
+            "poll_interval" : 2,  # Add this - seconds between polling
+            "answer_key_json_path"  : "answer_keys/json" 
         },
         process_C_args = {
             "task_name"     : "Process C",
