@@ -138,7 +138,7 @@ Return JSON in this exact format:
     # STUDENT ANSWER EXTRACTION
     # ============================================================
 
-    def extract_student_answers(self, image_path: str) -> Dict:
+    def extract_answer_sheet(self, image_path: str) -> Dict:
         """Extract student answers from answer sheet image."""
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY not set in environment")
