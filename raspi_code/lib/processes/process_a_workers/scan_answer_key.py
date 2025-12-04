@@ -400,14 +400,19 @@ def run(
 
     while True:
         # Display menu
-        print("[1] SCAN")
-        print("[2] EXIT")
+        print("[*] SCAN")
+        print("[#] EXIT")
         time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
 
         key = hardware.read_keypad(rows=rows, cols=cols)
 
         if key is None:
             continue
+
+        if key == '#':
+            print("❌ Scanning cancelled by user")
+            result = {"status": "cancelled"}
+            break
     
         # Capture frame from camera
         ret, frame = capture.read()
@@ -420,7 +425,7 @@ def run(
             break
 
         if show_windows:
-            cv2.imshow("CheckMe-ScanAnswerSheet", frame)
+            cv2.imshow(f"Scanning Answer Key {count_page}/{number_of_pages}", frame)
 
         # Step 3: Process according to number of pages
         # ========== SINGLE PAGE WORKFLOW ==========
