@@ -7,6 +7,7 @@ import os
 import json
 import math
 import numpy as np
+from lib.services import answer_key_model
 
 
 def _smart_grid_auto(collected_images: list, tile_width: int) -> list:
@@ -90,7 +91,7 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
-def _ask_for_number_of_sheets(keypad_rows_and_cols: list, limit: int = 50) -> list:
+def _ask_for_number_of_sheets(keypad_rows_and_cols: list, pc_mode: bool, limit: int = 50) -> list:
     """Ask user for number of answer sheets with multi-digit input support."""
     rows, cols = keypad_rows_and_cols
     number_of_sheets = 1
@@ -99,7 +100,7 @@ def _ask_for_number_of_sheets(keypad_rows_and_cols: list, limit: int = 50) -> li
         print("How many answer sheets? [*] Done or [#] Cancel")
         print(f"Current input: {collected_input}")
         time.sleep(0.1)
-        key = hardware.read_keypad(rows=rows, cols=cols)
+        key = hardware.read_keypad(rows, cols, pc_mode)
         if key is None:
             continue
 
@@ -126,14 +127,14 @@ def _ask_for_number_of_sheets(keypad_rows_and_cols: list, limit: int = 50) -> li
             return [number_of_sheets, {"status": "success"}]
 
 
-def _ask_for_number_of_pages(keypad_rows_and_cols: list) -> list:
+def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> list:
     """Ask user for number of pages per answer sheet (1-9)."""
     rows, cols = keypad_rows_and_cols
     number_of_pages_per_sheet = 1
     while True:
         print("How many pages per answer sheet? [1-9] or [#] Cancel")
         time.sleep(0.1)
-        key = hardware.read_keypad(rows=rows, cols=cols)
+        key = hardware.read_keypad(rows, cols, pc_mode)
         if key is None:
             continue
 
@@ -152,15 +153,19 @@ def _has_essay(assessment_uid: str) -> list:
     """Check if assessment has essay questions (to be implemented with DB)."""
     try:
         # TODO: Implement database fetching logic
-        has_essay = False
+        has_essay = answer_key_model.get_has_essay_by_assessment_uid(assessment_uid)
         return [has_essay, {"status": "success"}]
     except Exception as e:
         return [False, {"status": "error", "message": str(e)}]
 
 
-def _handle_single_page_answer_sheet(key: str, answer_sheet_images_path: int, current_count_sheets: int, essay_existence: bool, frame: any) -> dict:
-    pass
-    # Step 1: Check key input and capture frame
+def _save_to_db() -> dict:
+    
+    return {"status": "success"}
+
+
+def _handle_single_page_answer_sheet(key: str, answer_sheet_images_path: int, current_count_sheets: int, essay_existence: bool, frame: any, assessment_uid: str) -> dict:
+    # Step 1: Check key input
     if key != '*':
         return {"status": "waiting"}
     
@@ -174,10 +179,12 @@ def _handle_single_page_answer_sheet(key: str, answer_sheet_images_path: int, cu
         img_full_path   = img_full_path,
     )
     if save_image_file_status["status"] == "error":
-        return {
-            "status"    : "error",
-            "message"   : save_image_file_status["message"]
-        }
+        return save_image_file_status
+    
+    # Step 3: Save to SQLite DB
+    saving_to_db_status = _save_to_db(assessment_uid, img_full_path)
+    if saving_to_db_status["status"] == "error":
+        return saving_to_db_status
     
     return {
         "status"            : "success",
@@ -190,32 +197,29 @@ def _handle_multi_page_answer_sheet() -> dict:
     pass
 
 
-def _ask_for_prerequisites(keypad_rows_and_cols: list, assessment_uid: str) -> dict:
+def _ask_for_prerequisites(keypad_rows_and_cols: list, assessment_uid: str, pc_mode: bool) -> dict:
     """Ask user for number of sheets and pages per sheet, and check for essay questions."""
 
     # Step 1: Ask for number of sheets
-    number_of_sheets, status = _ask_for_number_of_sheets(keypad_rows_and_cols)
-    if status["status"] == "cancelled":
-        print("❌ Scanning cancelled by user")
-        return status
+    number_of_sheets, number_of_sheets_status = _ask_for_number_of_sheets(keypad_rows_and_cols, pc_mode)
+    if number_of_sheets_status["status"] == "cancelled":
+        return number_of_sheets_status
 
     # Step 2: Ask for number of pages per answer sheet
-    number_of_pages_per_sheet, status = _ask_for_number_of_pages(keypad_rows_and_cols)
-    if status["status"] == "cancelled":
-        print("❌ Scanning cancelled by user")
-        return status
+    number_of_pages_per_sheet, number_of_pages_per_sheet_status = _ask_for_number_of_pages(keypad_rows_and_cols, pc_mode)
+    if number_of_pages_per_sheet_status["status"] == "cancelled":
+        return number_of_pages_per_sheet_status
 
     # Step 3: Check if assessment has essay questions
-    has_essay, status = _has_essay(assessment_uid)
-    if status["status"] == "error":
-        print("❌ Error checking for essay questions")
-        return status
+    has_essay, has_essay_status = _has_essay(assessment_uid)
+    if has_essay_status["status"] == "error":
+        return has_essay_status
 
     return {
-        "number_of_sheets": number_of_sheets,
-        "number_of_pages_per_sheet": number_of_pages_per_sheet,
-        "has_essay": has_essay,
-        "status": "success"
+        "status"                    : "success",
+        "number_of_sheets"          : number_of_sheets,
+        "number_of_pages_per_sheet" : number_of_pages_per_sheet,
+        "has_essay"                 : has_essay
     }
 
 
@@ -241,10 +245,8 @@ def _initialize_camera(camera_index: int) -> list:
 
 
 def run(
-        task_name: str,
         keypad_rows_and_cols: list,
         camera_index: int,
-        save_logs: bool,
         show_windows: bool,
         answer_sheet_images_path: str,
         answer_sheet_jsons_path: str,
@@ -281,7 +283,8 @@ def run(
     # Step 2: Ask for prerequisites
     prerequisites = _ask_for_prerequisites(
         keypad_rows_and_cols    = keypad_rows_and_cols,
-        assessment_uid          = assessment_uid
+        assessment_uid          = assessment_uid,
+        pc_mode                 = pc_mode
     )
     if prerequisites["status"] != "success":
         _cleanup(capture, show_windows)
@@ -300,7 +303,7 @@ def run(
         print("[#] EXIT")
         time.sleep(0.1)
 
-        key = hardware.read_keypad(rows=rows, cols=cols)
+        key = hardware.read_keypad(rows, cols, pc_mode)
 
         if key is None or key not in ['*', '#']:
             continue
@@ -325,7 +328,10 @@ def run(
             result = _handle_single_page_answer_sheet(
                 key                         = key,
                 answer_sheet_images_path    = answer_sheet_images_path,
-                current_count_sheets        = count_sheets
+                answer_sheet_jsons_path     = answer_sheet_jsons_path,
+                current_count_sheets        = count_sheets,
+                frame                       = frame,
+                assessment_uid              = assessment_uid
             )
             if result["status"] == "waiting":
                 continue

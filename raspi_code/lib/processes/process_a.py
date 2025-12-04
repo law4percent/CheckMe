@@ -132,8 +132,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
             # Step 2: Scan answer sheets
             answer_sheets_data = scan_answer_sheet.run(
                 keypad_rows_and_cols        = [rows, cols], 
-                camera_index                = camera_index, 
-                save_logs                   = save_logs, 
+                camera_index                = camera_index,
                 show_windows                = show_windows, 
                 answer_sheet_images_path    = answer_sheet_images_path, 
                 answer_sheet_json_path      = answer_sheet_jsons_path,

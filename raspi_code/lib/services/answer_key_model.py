@@ -14,18 +14,23 @@ def create_answer_key(assessment_uid: str, number_of_pages: int, json_path: str,
     conn.close()
 
 
-def get_answer_key_by_id(key_id):
+def get_has_essay_by_assessment_uid(assessment_uid):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM answer_keys WHERE id = ?", (key_id,))
-    result = cursor.fetchone()
-
+    cursor.execute(
+        "SELECT has_essay FROM answer_keys WHERE assessment_uid = ?",
+        (assessment_uid,)
+    )
+    row = cursor.fetchone()
     conn.close()
-    return result
+
+    if row:
+        return row[0]  # return the actual value of has_essay (0 or 1)
+    return None  # not found
 
 
-def get_all_answer_keys():
+def get_all_answer_keys() -> list:
     conn = get_connection()
     cursor = conn.cursor()
 
