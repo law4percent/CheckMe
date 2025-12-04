@@ -1,3 +1,4 @@
+# lib/processes/process_a_workers/scan_answer_sheet.py
 import cv2
 import time
 from . import hardware
@@ -157,112 +158,36 @@ def _has_essay(assessment_uid: str) -> list:
         return [False, {"status": "error", "message": str(e)}]
 
 
-def _handle_single_page_answer_sheet(
-        capture,
-        show_windows: bool,
-        answer_sheet_images_path: str,
-        sheet_count: int,
-        rows: int,
-        cols: int
-    ) -> dict:
-    """Capture and process single-page answer sheet using 4x3 keypad."""
-    collected_images = []
-    page_count = 1
+def _handle_single_page_answer_sheet(key: str, answer_sheet_images_path: int, current_count_sheets: int, essay_existence: bool, frame: any) -> dict:
+    pass
+    # Step 1: Check key input and capture frame
+    if key != '*':
+        return {"status": "waiting"}
     
-    print(f"📄 Sheet {sheet_count}: Press [2] to capture or [8] to finish")
-    
-    while True:
-        ret, frame = capture.read()
-        if not ret:
-            return {
-                "status": "error",
-                "message": "Failed to capture frame"
-            }
-        
-        if show_windows:
-            cv2.imshow(f"Sheet {sheet_count} - Press [2] Capture [8] Finish", frame)
-        
-        key = hardware.read_keypad(rows=rows, cols=cols)
-        
-        if key == '2':
-            # Capture image
-            img_path = _naming_the_file(answer_sheet_images_path, sheet_count)
-            save_status = _save_image_file(frame, img_path)
-            if save_status["status"] == "error":
-                return save_status
-            collected_images.append(img_path)
-            print(f"✅ Captured: {img_path}")
-            return {
-                "status": "success",
-                "images": collected_images,
-                "page_count": page_count
-            }
-        
-        elif key == '8':
-            return {
-                "status": "success",
-                "images": collected_images,
-                "page_count": page_count
-            }
-        
-        time.sleep(0.05)
-
-
-def _handle_multi_page_answer_sheet(
-        capture,
-        show_windows: bool,
-        answer_sheet_images_path: str,
-        sheet_count: int,
-        number_of_pages: int,
-        rows: int,
-        cols: int
-    ) -> dict:
-    """Capture and process multi-page answer sheet using 4x3 keypad."""
-    collected_images = []
-    page_count = 1
-    
-    while page_count <= number_of_pages:
-        print(f"📄 Sheet {sheet_count} Page {page_count}/{number_of_pages}: Press [2] to capture or [8] to finish")
-        
-        ret, frame = capture.read()
-        if not ret:
-            return {
-                "status": "error",
-                "message": "Failed to capture frame"
-            }
-        
-        if show_windows:
-            cv2.imshow(f"Sheet {sheet_count} Page {page_count}/{number_of_pages} - [2] Capture [8] Finish", frame)
-        
-        key = hardware.read_keypad(rows=rows, cols=cols)
-        
-        if key == '2':
-            # Capture image
-            img_index = (sheet_count - 1) * number_of_pages + page_count
-            img_path = _naming_the_file(answer_sheet_images_path, img_index)
-            save_status = _save_image_file(frame, img_path)
-            if save_status["status"] == "error":
-                return save_status
-            collected_images.append(img_path)
-            print(f"✅ Captured Page {page_count}: {img_path}")
-            page_count += 1
-        
-        elif key == '8':
-            if page_count <= number_of_pages:
-                print(f"⚠️  Warning: Only {page_count - 1} pages captured out of {number_of_pages}")
-            return {
-                "status": "success",
-                "images": collected_images,
-                "page_count": page_count - 1
-            }
-        
-        time.sleep(0.05)
+    # Step 2: Save captured frame
+    img_full_path = _naming_the_file(
+        img_path        = answer_sheet_images_path,
+        current_count   = current_count_sheets
+    )
+    save_image_file_status = _save_image_file(
+        frame           = frame,
+        img_full_path   = img_full_path,
+    )
+    if save_image_file_status["status"] == "error":
+        return {
+            "status"    : "error",
+            "message"   : save_image_file_status["message"]
+        }
     
     return {
-        "status": "success",
-        "images": collected_images,
-        "page_count": page_count - 1
+        "status"            : "success",
+        "next_sheet_count"  : current_count_sheets + 1,
+        "img_full_path"     : img_full_path
     }
+
+
+def _handle_multi_page_answer_sheet() -> dict:
+    pass
 
 
 def _ask_for_prerequisites(keypad_rows_and_cols: list, assessment_uid: str) -> dict:
@@ -294,10 +219,11 @@ def _ask_for_prerequisites(keypad_rows_and_cols: list, assessment_uid: str) -> d
     }
 
 
-def _cleanup(capture) -> None:
+def _cleanup(capture: any, show_windows: bool) -> None:
     """Release camera and close all OpenCV windows."""
     capture.release()
-    cv2.destroyAllWindows()
+    if show_windows:
+        cv2.destroyAllWindows()
 
 
 def _initialize_camera(camera_index: int) -> list:
@@ -349,20 +275,22 @@ def run(
     # Step 1: Initialize camera
     capture, camera_status = _initialize_camera(camera_index)
     if camera_status["status"] == "error":
+        _cleanup(capture, show_windows)
         return camera_status
     
     # Step 2: Ask for prerequisites
     prerequisites = _ask_for_prerequisites(
-        keypad_rows_and_cols=keypad_rows_and_cols,
-        assessment_uid=assessment_uid
+        keypad_rows_and_cols    = keypad_rows_and_cols,
+        assessment_uid          = assessment_uid
     )
     if prerequisites["status"] != "success":
-        _cleanup(capture)
+        _cleanup(capture, show_windows)
         return prerequisites
-    
-    number_of_sheets = prerequisites["number_of_sheets"]
-    number_of_pages_per_sheet = prerequisites["number_of_pages_per_sheet"]
-    has_essay = prerequisites["has_essay"]
+    number_of_sheets            = prerequisites["number_of_sheets"]
+    number_of_pages_per_sheet   = prerequisites["number_of_pages_per_sheet"]
+    has_essay                   = prerequisites["has_essay"]
+
+    collected_images_of_all_sheets = []
 
     # Step 3: Scan answer sheets based on number of sheets and pages
     while count_sheets <= number_of_sheets:
@@ -374,23 +302,20 @@ def run(
 
         key = hardware.read_keypad(rows=rows, cols=cols)
 
-        if key is None:
+        if key is None or key not in ['*', '#']:
             continue
 
         if key == '#':
-            _cleanup(capture)
-            return {"status": "cancelled"}
-
-        if key != '*':
-            continue
+            result = {"status": "cancelled"}
+            break
 
         ret, frame = capture.read()
         if not ret:
-            _cleanup(capture)
-            return {
-                "status": "error",
-                "message": "Failed to capture frame"
+            result = {
+                "status"    : "error",
+                "message"   : "Failed to capture frame"
             }
+            break
         
         if show_windows:
             cv2.imshow(f"Scanning Sheet {count_sheets}/{number_of_sheets}", frame)
@@ -398,57 +323,44 @@ def run(
         # Handle single-page answer sheets
         if number_of_pages_per_sheet == 1:
             result = _handle_single_page_answer_sheet(
-                capture=capture,
-                show_windows=show_windows,
-                answer_sheet_images_path=answer_sheet_images_path,
-                sheet_count=count_sheets,
-                rows=rows,
-                cols=cols
+                key                         = key,
+                answer_sheet_images_path    = answer_sheet_images_path,
+                current_count_sheets        = count_sheets
             )
+            if result["status"] == "waiting":
+                continue
+            count_sheets = result["next_sheet_count"]
+            collected_images_of_all_sheets.append(result["img_full_path"])
 
-            if result["status"] == "error":
-                _cleanup(capture)
-                print(f"❌ {result.get('message', 'Unknown error')}")
-                return result
+            # if result["status"] == "error":
+            #     _cleanup(capture, show_windows)
+            #     print(f"❌ {result.get('message', 'Unknown error')}")
+            #     return result
             
-            if result["status"] == "cancelled":
-                _cleanup(capture)
-                print("⚠️  Scanning cancelled by user")
-                return result
+            # if result["status"] == "cancelled":
+            #     _cleanup(capture, show_windows)
+            #     print("⚠️  Scanning cancelled by user")
+            #     return result
             
-            count_sheets += 1
+            # count_sheets += 1
 
         # Handle multi-page answer sheets
         else:
-            result = _handle_multi_page_answer_sheet(
-                capture=capture,
-                show_windows=show_windows,
-                answer_sheet_images_path=answer_sheet_images_path,
-                sheet_count=count_sheets,
-                number_of_pages=number_of_pages_per_sheet,
-                rows=rows,
-                cols=cols
-            )
+            result = _handle_multi_page_answer_sheet()
+            count_sheets = result["next_sheet_count"]
         
-            if result["status"] == "error":
-                _cleanup(capture)
-                print(f"❌ {result.get('message', 'Unknown error')}")
-                return result
+            # if result["status"] == "error":
+            #     _cleanup(capture, show_windows)
+            #     print(f"❌ {result.get('message', 'Unknown error')}")
+            #     return result
             
-            if result["status"] == "cancelled":
-                _cleanup(capture)
-                print("⚠️  Scanning cancelled by user")
-                return result
+            # if result["status"] == "cancelled":
+            #     _cleanup(capture, show_windows)
+            #     print("⚠️  Scanning cancelled by user")
+            #     return result
             
-            count_sheets += 1
+            # count_sheets += 1
 
-    # All sheets captured successfully
-    _cleanup(capture)
+    _cleanup(capture, show_windows)
     print("✅ All answer sheets captured successfully")
-    return {
-        "status": "success",
-        "message": "All sheets scanned",
-        "number_of_sheets": number_of_sheets,
-        "pages_per_sheet": number_of_pages_per_sheet,
-        "has_essay": has_essay
-    }
+    return result
