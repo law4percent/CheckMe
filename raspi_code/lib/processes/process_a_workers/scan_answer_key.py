@@ -159,13 +159,13 @@ def _naming_the_file(img_path: str, current_count: int) -> str:
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
-def _ask_for_number_of_pages(keypad_rows_and_cols: list) -> list:
+def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> list:
     rows, cols = keypad_rows_and_cols
     number_of_pages = 1
     while True:
         print("How many pages does? [1-9] or [#] Cancel")
         time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
-        key = hardware.read_keypad(rows=rows, cols=cols)
+        key = hardware.read_keypad(rows, cols, pc_mode)
         if key is None:
             continue
 
@@ -181,12 +181,12 @@ def _ask_for_number_of_pages(keypad_rows_and_cols: list) -> list:
         return [number_of_pages, {"status": "success"}]
 
 
-def _ask_for_essay_existence(keypad_rows_and_cols) -> list:
+def _ask_for_essay_existence(keypad_rows_and_cols: list, pc_mode: bool) -> list:
     rows, cols = keypad_rows_and_cols
     while True:
         print("Is there an essay? [*] YES or [#] NO")
         time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
-        key = hardware.read_keypad(rows=rows, cols=cols)
+        key = hardware.read_keypad(rows, cols, pc_mode)
         if key is None:
             continue
 
@@ -232,8 +232,6 @@ def _handle_single_page_workflow(
             "message"   : "assessment_uid not found on paper"
         }
     
-    answer_key_data["has_essay"]    = essay_existence
-    answer_key_data["total_pages"]  = number_of_pages
     json_path, json_path_status = _save_answer_key_json(
         answer_key_data         = answer_key_data,
         answer_key_json_path    = answer_key_json_path,
@@ -245,9 +243,11 @@ def _handle_single_page_workflow(
     return {
         "status"                : "success",
         "assessment_uid"        : assessment_uid,
-        "pages"                 : number_of_pages,
+        "number_of_pages"       : number_of_pages,
         "answer_key_data"       : answer_key_data,
-        "answer_key_json_path"  : json_path
+        "json_path"             : json_path,
+        "img_path"              : img_full_path,
+        "has_essay"             : essay_existence
     }
 
 
@@ -292,12 +292,12 @@ def _handle_multiple_pages_workflow(
         if combined_images_status["status"] == "error":
             return combined_images_status
         now             = datetime.now().strftime("%Y%m%d_%H%M%S")
-        combined_path   = os.path.join(answer_key_image_path, f"{now}_combined_img.jpg")
+        img_full_path   = os.path.join(answer_key_image_path, f"{now}_combined_img.jpg")
         _save_image_file(
             frame           = combined_image, 
-            img_full_path   = combined_path
+            img_full_path   = img_full_path
         )
-        answer_key_data, answer_key_data_status = _get_JSON_of_answer_key(image_path=combined_path)
+        answer_key_data, answer_key_data_status = _get_JSON_of_answer_key(image_path=img_full_path)
         if answer_key_data_status["status"] == "error":
             return answer_key_data_status
 
@@ -308,8 +308,6 @@ def _handle_multiple_pages_workflow(
                 "message"   : "assessment_uid not found on paper"
             }
         
-        answer_key_data["has_essay"]    = essay_existence
-        answer_key_data["total_pages"]  = number_of_pages
         json_path, json_path_status = _save_answer_key_json(
             answer_key_data         = answer_key_data,
             answer_key_json_path    = answer_key_json_path,
@@ -322,9 +320,11 @@ def _handle_multiple_pages_workflow(
         return {
             "status"                : "success",
             "assessment_uid"        : assessment_uid,
-            "pages"                 : number_of_pages,
+            "number_of_pages"       : number_of_pages,
             "answer_key_data"       : answer_key_data,
-            "answer_key_json_path"  : json_path
+            "json_path"             : json_path,
+            "img_path"              : img_full_path,
+            "has_essay"             : essay_existence
         }
 
     return {
@@ -333,14 +333,14 @@ def _handle_multiple_pages_workflow(
     }
 
 
-def _ask_for_prerequisites(keypad_rows_and_cols: list) -> dict:
+def _ask_for_prerequisites(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     # Step 1: Ask for number of pages
-    number_of_pages, number_of_pages_status = _ask_for_number_of_pages(keypad_rows_and_cols)
+    number_of_pages, number_of_pages_status = _ask_for_number_of_pages(keypad_rows_and_cols, pc_mode)
     if number_of_pages_status["status"] == "cancelled":
         return number_of_pages_status
 
     # Step 2: Ask for essay existence
-    essay_existence, essay_existence_status = _ask_for_essay_existence(keypad_rows_and_cols)
+    essay_existence, essay_existence_status = _ask_for_essay_existence(keypad_rows_and_cols, pc_mode)
     if essay_existence_status["status"] == "cancelled":
         return essay_existence_status
     
@@ -373,14 +373,12 @@ def _cleanup_camera(capture: any, show_windows: bool) -> None:
 
 
 def run(
-        task_name: str,
         keypad_rows_and_cols: list,
-        camera_index: int, 
-        save_logs: bool, 
+        camera_index: int,
         show_windows: bool, 
         answer_key_image_path: str,
         answer_key_json_path: str,
-        pc_mode: bool = False
+        pc_mode: bool
     ) -> dict:
 
     """
@@ -412,7 +410,7 @@ def run(
         return camera_status
     
     # Step 1 & 2: Get prerequisites
-    prerequisites = _ask_for_prerequisites(keypad_rows_and_cols)
+    prerequisites = _ask_for_prerequisites(keypad_rows_and_cols, pc_mode)
     if prerequisites["status"] == "cancelled":
         _cleanup_camera(capture, show_windows)
         return prerequisites
@@ -425,7 +423,7 @@ def run(
         print("[#] EXIT")
         time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
 
-        key = hardware.read_keypad(rows=rows, cols=cols)
+        key = hardware.read_keypad(rows, cols, pc_mode)
 
         if key == None or key not in ['*', '#']:
             result = {"status": "waiting"}

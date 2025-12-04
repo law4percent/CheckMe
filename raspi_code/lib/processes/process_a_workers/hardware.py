@@ -24,7 +24,11 @@ def setup_keypad_pins(pc_mode: bool, ROW_PINS: list, COL_PINS: list) -> list:
     return [rows, cols]
 
 
-def read_keypad(rows: list, cols: list) -> str | None:
+def read_keypad(rows: list, cols: list, pc_mode: bool) -> str | None:
+    if pc_mode:
+        print("Skipping read keypad in pc mode...")
+        return None
+    
     for r, row in enumerate(rows):
         row.off()    # active-low → set row LOW to enable
 
