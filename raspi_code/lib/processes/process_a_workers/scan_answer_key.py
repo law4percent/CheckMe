@@ -77,7 +77,7 @@ def _get_JSON_of_answer_key(image_path: str) -> list:
             image_path: Path to answer key image
         
         Returns:
-            Extracted answer key as dictionary (includes assessment_uid read from paper)
+            Extracted answer key dictionary and status dictionary
     """
     try:
         gemini_engine = GeminiOCREngine()
@@ -190,11 +190,14 @@ def _handle_single_page_workflow(
         answer_key_image_path: str,
         answer_key_json_path: str,
         essay_existence: bool,
-        count_page: int
+        number_of_pages: int
     ) -> dict:
+    if key != '*':
+        return {"status": "waiting"}
+
     img_full_path = _naming_the_file(
         img_path        = answer_key_image_path,
-        current_count   = count_page
+        current_count   = number_of_pages
     )
     _save_image_file(
         frame           = frame, 
@@ -211,19 +214,19 @@ def _handle_single_page_workflow(
             "message"   : "assessment_uid not found on paper"
         }
     
-    answer_key_data["has_essay"] = essay_existence
+    answer_key_data["has_essay"]    = essay_existence
+    answer_key_data["total_pages"]  = number_of_pages
     json_path, json_path_status = _save_answer_key_json(
         answer_key_data         = answer_key_data,
         answer_key_json_path    = answer_key_json_path
     )
-
     if json_path_status["status"] == "error":
         return json_path_status
     
     return {
         "status"                : "success",
         "assessment_uid"        : assessment_uid,
-        "pages"                 : count_page,
+        "pages"                 : number_of_pages,
         "answer_key_data"       : answer_key_data,
         "answer_key_json_path"  : json_path
     }
@@ -244,17 +247,11 @@ def _handle_multiple_pages_workflow(
     ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
     extension = ordinal_map.get(count_page, 'th')
     print(f"Put the {count_page}{extension} page.")
-
-    if key is None:
-        return {"status": "waiting"}
-
-    if key and key not in ['1', '2']:
-        print("Invalid key. Please press [1] to SCAN or [2] to EXIT.")
-        return {"status": "waiting"}
-
-    if key == display.ScanAnswerKeyOption.EXIT.value:
-        print(f"❌ Scanning cancelled at page {count_page}/{number_of_pages}")
-        return {"status": "cancelled"}
+    if key != '*':
+        return {
+            "status"    : "waiting", 
+            "next_page" : count_page
+        }
 
     img_full_path = _naming_the_file(
         img_path        = answer_key_image_path,
@@ -277,30 +274,25 @@ def _handle_multiple_pages_workflow(
             frame           = combined_image, 
             img_full_path   = combined_path
         )
-        answer_key_data = _get_JSON_of_answer_key(image_path=combined_path)
-        
-        if "error" in answer_key_data:
-            print(f"❌ Extraction failed: {answer_key_data.get('error')}")
-            return {
-                "error"     : answer_key_data.get('error'), 
-                "status"    : "error"
-            }
+        answer_key_data, answer_key_data_status = _get_JSON_of_answer_key(image_path=combined_path)
+        if answer_key_data_status["status"] == "error":
+            return answer_key_data_status
 
         assessment_uid = answer_key_data.get("assessment_uid")
         if not assessment_uid:
-            print("❌ Extraction failed: assessment_uid not found on paper")
             return {
-                "error"     : "assessment_uid not found on paper", 
-                "status"    : "error"
+                "status"    : "error",
+                "message"   : "assessment_uid not found on paper"
             }
         
-        answer_key_data["has_essay"]     = essay_existence
-        answer_key_data["total_pages"]   = number_of_pages
-        
-        json_path = _save_answer_key_json(
+        answer_key_data["has_essay"]    = essay_existence
+        answer_key_data["total_pages"]  = number_of_pages
+        json_path, json_path_status = _save_answer_key_json(
             answer_key_data         = answer_key_data,
             answer_key_json_path    = answer_key_json_path
         )
+        if json_path_status["status"] == "error":
+            return json_path_status
         
         print("✅ Successfully scanned and extracted answer key!")
         return {
@@ -311,7 +303,10 @@ def _handle_multiple_pages_workflow(
             "answer_key_json_path"  : json_path
         }
 
-    return {"status": "waiting"}
+    return {
+        "status"    : "waiting", 
+        "next_page" : count_page + 1
+    }
 
 
 def _ask_for_prerequisites(keypad_rows_and_cols: list) -> dict:
@@ -408,6 +403,7 @@ def run(
         key = hardware.read_keypad(rows=rows, cols=cols)
 
         if key == None or key not in ['*', '#']:
+            result = {"status": "waiting"}
             continue
 
         if key == '#':
@@ -435,10 +431,11 @@ def run(
                 answer_key_image_path   = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
-                count_page              = count_page
+                number_of_pages              = count_page
             )
-            if result.get("status") == "error" or result.get("status") == "success":
-                break
+            if result.get("status") == "waiting":
+                continue
+            break
         
         # ========== MULTIPLE PAGES WORKFLOW ==========
         else:
@@ -452,9 +449,10 @@ def run(
                 number_of_pages         = number_of_pages,
                 collected_image_names   = collected_image_names
             )
-            count_page += 1
-            if result.get("status") != "waiting":
-                break
+            if result.get("status") == "waiting":
+                count_page = result["next_page"]
+                continue
+            break
 
     _cleanup_camera(capture, show_windows)
     return result
