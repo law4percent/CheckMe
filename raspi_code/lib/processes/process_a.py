@@ -3,7 +3,7 @@ import time
 from .process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown, hardware, display
 from enum import Enum
 import os
-import sqlite3
+from lib.services import answer_key_model, answer_sheet_model
 
 class Options(Enum):
     SCAN_ANSWER_KEY     = '1'
@@ -12,27 +12,43 @@ class Options(Enum):
     SHUTDOWN            = '4'
     
 
-def _choose_answer_key_from_db(cols: str, rows: str) -> str:
-    #   Step 1.1: Fetch answer key data from database
-    
+def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
+    """
+        Let the user choose an answer key from the database using the keypad.
+        Only shows assessment_uid for selection.
+        Returns the selected assessment_uid.
+    """
+    # Fetch only assessment_uid
+    keys = answer_key_model.get_all_answer_keys()
 
-    #   Step 1.2: Load answer key data into memory
+    if not keys:
+        print("No answer keys found in the database.")
+        return None
 
+    index = 0  # start at first key
 
-    #   Step 1.3: Display answer key summary on screen
     while True:
         time.sleep(0.1)
 
-        print("[*]UP or [#]DOWN")
-        
-        key = hardware.read_keypad(rows = rows, cols = cols)
-        if key == None:
+        # Display only assessment_uid
+        current_uid = keys[index]
+        print(f"\nSelected Assessment UID: {current_uid}")
+        print("[*]UP or [#]DOWN | Press 1 to select")
+
+        # Read keypad input
+        key = hardware.read_keypad(rows=rows, cols=cols, pc_mode=pc_mode)
+        if key is None:
             continue
 
-        if key in ['*', '#']:
-            continue
+        if key == '*':  # UP
+            index = (index - 1) % len(keys)
+        elif key == '#':  # DOWN
+            index = (index + 1) % len(keys)
+        elif key == 1:
+            # Any other key selects the current assessment_uid
+            print(f"Selected assessment_uid: {current_uid}")
+            return current_uid
 
-        return "dummy_assessment_uid"
 
 def _check_point(*paths) -> None:
     for path in paths:
@@ -69,7 +85,7 @@ def process_a(process_A_args: str, queue_frame: Queue):
         print(f"{current_display_options[0]}{current_display_options[1]}")
         print("[*]UP or [#]DOWN")
         
-        key = hardware.read_keypad(rows = rows, cols = cols)
+        key = hardware.read_keypad(rows, cols, pc_mode)
         if key == None:
             continue
 
@@ -80,10 +96,8 @@ def process_a(process_A_args: str, queue_frame: Queue):
         if key == '1':
             # Step 1: Scan answer key
             answer_key_data = scan_answer_key.run(
-                task_name               = task_name,
                 keypad_rows_and_cols    = [rows, cols], 
-                camera_index            = camera_index, 
-                save_logs               = save_logs, 
+                camera_index            = camera_index,
                 show_windows            = show_windows, 
                 answer_key_image_path   = answer_key_image_path, 
                 answer_key_json_path    = answer_key_json_path,
@@ -92,30 +106,31 @@ def process_a(process_A_args: str, queue_frame: Queue):
 
             # Step 2: Save results to database
             if answer_key_data["status"] == "success":
-                # save the json path and answer key UID into SQLite
-                # answer_key_data {
-                #     "status"                : "success",
-                #     "assessment_uid"        : assessment_uid,
-                #     "pages"                 : number_of_pages,
-                #     "answer_key_data"       : answer_key_data, <= Optional to save in DB
-                #     "answer_key_json_path"  : json_path
-                # }
-                pass
+                answer_key_model.create_answer_key(
+                    assessment_uid  = answer_sheets_data["assessment_uid"],
+                    number_of_pages = answer_sheets_data["number_of_pages"],
+                    json_path       = answer_sheets_data["json_path"],
+                    img_path        = answer_sheets_data["img_path"],
+                    has_essay       = answer_sheets_data["has_essay"]
+                )
             
             elif answer_key_data["status"] == "error":
-                print(f"{task_name} - Error: {answer_key_data["error"]}")
+                if save_logs:
+                    pass
+                print(f"{task_name} - Error: {answer_key_data["message"]}")
 
             elif answer_key_data["status"] == "cancelled": 
+                if save_logs:
+                    pass
                 print(f"{task_name} - {answer_key_data["status"]}")
         
         
         elif key == '2':
             # Step 1: Choose answer key from database via assessment_uid
-            target_assessment_uid = _choose_answer_key_from_db()
+            target_assessment_uid = _choose_answer_key_from_db(cols, rows, pc_mode)
 
             # Step 2: Scan answer sheets
             answer_sheets_data = scan_answer_sheet.run(
-                task_name                   = task_name,
                 keypad_rows_and_cols        = [rows, cols], 
                 camera_index                = camera_index, 
                 save_logs                   = save_logs, 
@@ -128,14 +143,6 @@ def process_a(process_A_args: str, queue_frame: Queue):
 
             # Step 3: Save results to database
             if answer_sheets_data["status"] == "success":
-                # answer_sheets_data {
-                #     "status"                : "success",
-                #     "assessment_uid"        : assessment_uid,
-                #     "pages"                 : number_of_pages,
-                #     "total_pages"           : number_of_pages,
-                #     "answer_key_data"       : answer_key_data,
-                #     "answer_key_json_path"  : json_path
-                # }
                 pass
 
             elif answer_sheets_data["status"] == "error":

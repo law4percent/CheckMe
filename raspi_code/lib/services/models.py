@@ -1,59 +1,49 @@
 import sqlite3
 
-def _get_connection(db_name='database/checkme.db'):
+import sqlite3
+
+def get_connection(db_name='database/checkme.db'):
     """Create and return a database connection."""
     conn = sqlite3.connect(db_name)
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
-# answer_key_data {
-#          | Column's Name        |  Row's Value |
-#             "status"            : "success",
-#             "assessment_uid"    : assessment_uid,
-#             "pages"             : number_of_sheets,
-#             "answer_key"        : answer_key,
-#             "saved_path"        : json_path
-#         }
-
 def create_table():
-    conn = _get_connection()
+    conn = get_connection()
     cursor = conn.cursor()
+
+    # Table 1: answer_keys
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS answer_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            age INTEGER
+            assessment_uid TEXT NOT NULL,
+            number_of_pages INTEGER NOT NULL,
+            json_path TEXT NOT NULL,
+            img_path TEXT NOT NULL,
+            has_essay INTEGER NOT NULL,
+            saved_at TEXT DEFAULT (datetime('now', 'localtime'))
         )
     ''')
-    conn.commit()
-    conn.close()
 
-def add_user(name, age):
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO users (name, age) VALUES (?, ?)', (name, age))
-    conn.commit()
-    conn.close()
+    # Table 2: answer_sheets
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS answer_sheets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            answer_key_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            number_of_pages INTEGER NOT NULL,
+            json_path TEXT NOT NULL,
+            img_path TEXT NOT NULL,
+            score INTEGER DEFAULT 0,
+            is_final_score INTEGER DEFAULT 0,
+            is_image_uploaded INTEGER DEFAULT 0,
+            saved_at TEXT DEFAULT (datetime('now', 'localtime')),
+            image_uploaded_at TEXT,
+            FOREIGN KEY (answer_key_id)
+                REFERENCES answer_keys(id)
+                ON DELETE CASCADE
+        )
+    ''')
 
-def get_all_users():
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users')
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
-def update_user_age(name, age):
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET age = ? WHERE name = ?', (age, name))
-    conn.commit()
-    conn.close()
-
-def delete_user(name):
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM users WHERE name = ?', (name,))
     conn.commit()
     conn.close()
