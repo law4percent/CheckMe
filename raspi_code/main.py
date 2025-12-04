@@ -47,9 +47,9 @@ if __name__ == "__main__":
             "show_windows"              : True,
             "keypad_pins"               : {"ROWS": [5, 6, 13, 19], "COLS": [12, 16, 20]},
             "answer_key_image_path"     : "answer_keys/images",
-            "answer_key_json_path"      : "answer_keys/jsons",
+            "answer_key_json_path"      : "answer_keys/json",
             "answer_sheet_images_path"  : "answer_sheets/images",
-            "answer_sheet_jsons_path"   : "answer_sheets/jsons",
+            "answer_sheet_jsons_path"   : "answer_sheets/json",
         },
         process_B_args = {
             "task_name"     : "Process B",
