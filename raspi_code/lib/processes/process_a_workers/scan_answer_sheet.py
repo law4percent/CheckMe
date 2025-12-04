@@ -6,7 +6,6 @@ import os
 import json
 import math
 import numpy as np
-from lib.services.gemini import GeminiOCREngine
 
 
 def _smart_grid_auto(collected_images: list, tile_width: int):
@@ -15,8 +14,8 @@ def _smart_grid_auto(collected_images: list, tile_width: int):
     imgs = [img for img in imgs if img is not None]
     n = len(imgs)
     
-    # if n == 0: <==== for investigation
-    #     raise ValueError("No valid images provided.")
+    if n == 0:
+        raise ValueError("No valid images provided.")
     
     # Compute grid dimensions
     grid_size = math.ceil(math.sqrt(n))
@@ -57,74 +56,24 @@ def _combine_images_into_grid(collected_images: list, tile_width: int = 600):
     return combined_image
 
 
-def _get_JSON_of_answer_key(image_path: str):
-    """
-        Send image to Gemini API for OCR extraction of answer key.
-        Gemini reads the assessment UID directly from the paper.
-        
-        Args:
-            image_path: Path to answer key image
-        
-        Returns:
-            Extracted answer key as dictionary (includes assessment_uid read from paper)
-    """
-    try:
-        gemini_engine = GeminiOCREngine()
-        answer_key = gemini_engine.extract_answer_key(image_path)
-        
-        return answer_key
-    
-    except Exception as e:
-        print(f"Error extracting answer key: {e}")
-        return {"error": str(e)}
-
-
 def _save_image_file(frame, img_full_path: str):
     """Save image frame to disk."""
-    # os.makedirs(os.path.dirname(img_full_path), exist_ok=True) <- Need to investigate
+    os.makedirs(os.path.dirname(img_full_path), exist_ok=True)
     cv2.imwrite(img_full_path, frame)
-
-
-def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
-    """
-        Save extracted answer key as JSON file.
-        Uses assessment_uid from the extracted data.
-        
-        Args:
-            answer_key_data: Extracted answer key dictionary (contains assessment_uid)
-            credentials_path: Path to credentials folder
-        
-        Returns:
-            Path to saved JSON file or None if assessment_uid not found
-    """
-    assessment_uid = answer_key_data.get("assessment_uid")
-    
-    if not assessment_uid:
-        print("❌ Error: assessment_uid not found in extracted data")
-        return None
-    
-    # os.makedirs(answer_key_json_path, exist_ok=True) <- Need to investigate
-    json_path = os.path.join(answer_key_json_path, f"{assessment_uid}.json")
-    
-    with open(json_path, 'w') as f:
-        json.dump(answer_key_data, f, indent=2)
-    
-    print(f"Answer key saved to: {json_path}")
-    return json_path
 
 
 def _naming_the_file(img_path: str, current_count: int) -> str:
     """
-        Generate image filename with timestamp and page number.
-        
-        Format: {img_path}/{timestamp}_img{current_count}.jpg
+    Generate image filename with timestamp and page number.
+    
+    Format: {img_path}/{timestamp}_img{current_count}.jpg
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # os.makedirs(img_path, exist_ok=True) <- Need to investigate
+    os.makedirs(img_path, exist_ok=True)
     return f"{img_path}/{now}_img{current_count}.jpg"
 
 
-def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, number_of_sheets: int) -> int:
+def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, number_of_sheets: int, limit: int = 50) -> list:
     if is_answered_number_of_sheets:
         return [number_of_sheets, True]
     
@@ -133,7 +82,7 @@ def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, numb
     while True:
         time.sleep(0.1)
         key = hardware.read_keypad()
-        if key == None:
+        if key is None:
             continue
 
         if key.isdigit():
@@ -145,7 +94,13 @@ def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, numb
             if collect_input == '':
                 print("Please enter a valid number.")
                 continue
+
             number_of_sheets = int(collect_input)
+            if number_of_sheets < 1 or number_of_sheets > limit:
+                print(f"Please enter a number between 1 and {limit}.")
+                collect_input = ''
+                continue
+
             print(f"Number of answer sheets set to {number_of_sheets}.")
             return [number_of_sheets, True]
 
@@ -154,30 +109,140 @@ def _ask_for_number_of_sheets(key: str, is_answered_number_of_sheets: bool, numb
             return [0, False]
 
 
-def _ask_for_number_of_pages(key: str, is_answered_number_of_pages: bool, number_of_pages: int) -> int:
-    if is_answered_number_of_pages:
-        return [number_of_pages, True]
+def _ask_for_number_of_pages(key: str, is_answered_number_of_pages_per_sheet: bool, number_of_pages_per_sheet: int) -> list:
+    if is_answered_number_of_pages_per_sheet:
+        return [number_of_pages_per_sheet, True]
     
     print("How many pages per answer sheets? [1-9]")
-    if not key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-        return [1, False]
+    if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+        return [number_of_pages_per_sheet, False]
     
-    number_of_pages = int(key)
-    return [number_of_pages, True]
+    number_of_pages_per_sheet = int(key)
+    return [number_of_pages_per_sheet, True]
 
 
-def _has_essay(assessmen_uid: str) -> bool:
+def _has_essay(assessment_uid: str) -> bool:
+    """Check if assessment has essay questions (to be implemented with DB)."""
     # will handle db fetching later
     return False
 
 
-def _handle_single_page_answer_sheet(capture, show_windows: bool, answer_sheet_images_path: str, answer_sheet_jsons_path: str, sheet_count: int, page_count: int) -> dict:
-    pass
+def _handle_single_page_answer_sheet(
+        capture, 
+        show_windows: bool, 
+        answer_sheet_images_path: str, 
+        sheet_count: int, 
+        page_count: int,
+        rows: int,
+        cols: int
+    ) -> dict:
+    """Capture and process single-page answer sheet using 4x3 keypad."""
+    collected_images = []
+    
+    print(f"📄 Sheet {sheet_count}: Press [*] to capture or [#] to finish")
+    
+    while True:
+        ret, frame = capture.read()
+        if not ret:
+            return {
+                "status": "error", 
+                "message": "Failed to capture frame"
+            }
+        
+        if show_windows:
+            cv2.imshow(f"Sheet {sheet_count}", frame)
+        
+        key = hardware.read_keypad(rows=rows, cols=cols)
+        
+        if key == '2':
+            # Capture image
+            img_path = _naming_the_file(answer_sheet_images_path, page_count)
+            _save_image_file(frame, img_path)
+            collected_images.append(img_path)
+            print(f"✅ Captured: {img_path}")
+            return {"status": "success", "images": collected_images}
+        
+        elif key == '8':
+            return {"status": "cancelled", "images": collected_images}
+        
+        time.sleep(0.05)
 
 
-def _handle_multi_page_answer_sheet(capture, show_windows: bool, answer_sheet_images_path: str, answer_sheet_jsons_path: str, sheet_count: int, page_count: int) -> dict:
-    pass
+def _handle_multi_page_answer_sheet(
+        capture, 
+        show_windows: bool, 
+        answer_sheet_images_path: str, 
+        sheet_count: int, 
+        number_of_pages: int,
+        rows: int,
+        cols: int
+    ) -> dict:
+    """Capture and process multi-page answer sheet using 4x3 keypad."""
+    collected_images = []
+    page_count = 1
+    
+    while page_count <= number_of_pages:
+        print(f"📄 Sheet {sheet_count} Page {page_count}/{number_of_pages}: Press [2] to capture or [8] to finish")
+        
+        ret, frame = capture.read()
+        if not ret:
+            return {"status": "error", "message": "Failed to capture frame"}
+        
+        if show_windows:
+            cv2.imshow(f"Sheet {sheet_count} Page {page_count}/{number_of_pages} - [2] Capture [8] Finish", frame)
+        
+        key = hardware.read_keypad(rows=rows, cols=cols)
+        
+        if key == '2':
+            # Capture image
+            img_path = _naming_the_file(answer_sheet_images_path, (sheet_count - 1) * number_of_pages + page_count)
+            _save_image_file(frame, img_path)
+            collected_images.append(img_path)
+            print(f"✅ Captured Page {page_count}: {img_path}")
+            page_count += 1
+        
+        elif key == '8':
+            if page_count <= number_of_pages:
+                print(f"⚠️  Warning: Only {page_count - 1} pages captured out of {number_of_pages}")
+            return {"status": "success", "images": collected_images}
+        
+        time.sleep(0.05)
+    
+    return {"status": "success", "images": collected_images}
 
+
+def _ask_for_prerequisites(rows: int, cols: int, number_of_sheets, is_answered_number_of_sheets, number_of_pages_per_sheet, is_answered_number_of_pages_per_sheet) -> None:
+    while True:
+        time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
+
+        key = hardware.read_keypad(rows=rows, cols=cols)
+        if key is None:
+            continue
+
+        # Step 1: Ask for number of sheets
+        number_of_sheets, is_answered_number_of_sheets = _ask_for_number_of_sheets(
+            key                             = key, 
+            is_answered_number_of_sheets    = is_answered_number_of_sheets, 
+            number_of_sheets                = number_of_sheets
+        )
+        if not is_answered_number_of_sheets:
+            continue
+
+        # Step 2: Ask for number of pages per answer sheet
+        number_of_pages_per_sheet, is_answered_number_of_pages_per_sheet = _ask_for_number_of_pages(
+            key                                     = key, 
+            is_answered_number_of_pages_per_sheet   = is_answered_number_of_pages_per_sheet, 
+            number_of_pages_per_sheet               = number_of_pages_per_sheet
+        )
+        if not is_answered_number_of_pages_per_sheet:
+            continue
+
+        return {
+            "number_of_sheets"                      : number_of_sheets, 
+            "is_answered_number_of_sheets"          : is_answered_number_of_sheets, 
+            "number_of_pages_per_sheet"             : number_of_pages_per_sheet, 
+            "is_answered_number_of_pages_per_sheet" : is_answered_number_of_pages_per_sheet
+        }
 
 
 def run(
@@ -190,71 +255,102 @@ def run(
         answer_sheet_jsons_path: str,
         pc_mode: bool = False
     ) -> dict:
+    """
+    Main function to capture and process answer sheets.
+    
+    Args:
+        task_name: Name of the task
+        keypad_rows_and_cols: [rows, cols] for keypad
+        camera_index: Camera device index
+        save_logs: Whether to save logs
+        show_windows: Whether to display preview windows
+        answer_sheet_images_path: Path to save answer sheet images
+        answer_sheet_jsons_path: Path to save answer sheet JSON files
+        pc_mode: Whether running in PC mode
+    
+    Returns:
+        Dictionary with status and results
+    """
+    rows, cols                              = keypad_rows_and_cols
+    capture                                 = cv2.VideoCapture(camera_index)
 
-    rows, cols                      = keypad_rows_and_cols
-    capture                         = cv2.VideoCapture(camera_index)
+    number_of_sheets                        = 1
+    count_sheets                            = 1
+    is_answered_number_of_sheets            = False
 
-    number_of_sheets                = 1
-    count_sheets                    = 1
-    is_answered_number_of_sheets    = False
+    number_of_pages_per_sheet               = 1
+    is_answered_number_of_pages_per_sheet   = False
 
-    number_of_pages                 = 1
-    is_answered_number_of_pages     = False
-
-    essay_existence                 = _has_essay("dummy_assessment_uid") # to be replaced with real assessment_uid
-    result                          = {"status": "waiting"}
+    essay_existence                         = _has_essay("dummy_assessment_uid")  # to be replaced with real assessment_uid
+    result                                  = {"status": "waiting"}
 
     if not capture.isOpened():
-        print("Error - Cannot open camera")
-        return {"error": "Camera not accessible", "status": "error"}
+        print("❌ Error - Cannot open camera")
+        return {
+            "error": "Camera not accessible", 
+            "status": "error"
+        }
     
-    while True:
-        time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
+    print("🎯 Answer Sheet Scanner Started")
+    # Step 1 & 2: Ask for number of sheets and pages per sheet
+    prerequisites = _ask_for_prerequisites(
+        rows, 
+        cols, 
+        number_of_sheets, 
+        is_answered_number_of_sheets, 
+        number_of_pages_per_sheet, 
+        is_answered_number_of_pages_per_sheet
+    )
+    number_of_sheets                        = prerequisites["number_of_sheets"]
+    is_answered_number_of_sheets            = prerequisites["is_answered_number_of_sheets"]
+    number_of_pages_per_sheet               = prerequisites["number_of_pages_per_sheet"]
+    is_answered_number_of_pages_per_sheet   = prerequisites["is_answered_number_of_pages_per_sheet"]
 
-        key = hardware.read_keypad(rows=rows, cols=cols)
-        if key == None:
-            continue
-
-        # Step 1: Ask for number of sheets
-        number_of_sheets, is_answered_number_of_sheets = _ask_for_number_of_sheets(key, is_answered_number_of_sheets, number_of_sheets)
-        if not is_answered_number_of_sheets:
-            continue
-
-        # ✅ Step 2: Ask for number of pages per answer sheet
-        number_of_pages, is_answered_number_of_pages = _ask_for_number_of_pages(key, is_answered_number_of_pages, number_of_pages)
-        if not is_answered_number_of_pages:
-            continue
-
-
-        # Step 3: Scan answer sheets based on number of sheets and pages
-        if count_sheets <= number_of_sheets:
-            count_pages = 1
-            while count_pages <= number_of_pages:
-                ret, frame = capture.read()
-                if not ret:
-                    print("Error - Failed to capture image")
-                    capture.release()
-                    cv2.destroyAllWindows()
-                    return {"error": "Failed to capture image", "status": "error"}
-                cv2.imshow("Capture Preview - Press 'c' to capture", frame)
-
-                # Handle single-page answer sheet
-                if number_of_pages == 1:
-                    pass
-
-                # Handle multi-page answer sheet
-                else:
-                    pass
-                
-                if result["status"] != "success":
-                    capture.release()
-                    cv2.destroyAllWindows()
-                    break
-                
-                count_pages += 1
-
-            # Save to database can be handled here if needed
-
-            count_sheets += 1
+    # Step 3: Scan answer sheets based on number of sheets and pages
+    while count_sheets <= number_of_sheets:
+        
+        if number_of_pages_per_sheet == 1:
+            result = _handle_single_page_answer_sheet(
+                capture, 
+                show_windows, 
+                answer_sheet_images_path, 
+                count_sheets, 
+                count_sheets,
+                rows,
+                cols
+            )
         else:
-            break
+            result = _handle_multi_page_answer_sheet(
+                capture, 
+                show_windows, 
+                answer_sheet_images_path, 
+                count_sheets, 
+                number_of_pages_per_sheet,
+                rows,
+                cols
+            )
+        
+        if result["status"] == "error":
+            capture.release()
+            cv2.destroyAllWindows()
+            print(f"❌ {result.get('message', 'Unknown error')}")
+            return result
+        
+        if result["status"] == "cancelled":
+            print("⚠️  Scanning cancelled by user")
+            capture.release()
+            cv2.destroyAllWindows()
+            return {"status": "cancelled", "sheets_completed": count_sheets - 1}
+        
+        count_sheets += 1
+
+    # All sheets captured successfully
+    capture.release()
+    cv2.destroyAllWindows()
+    print("✅ All answer sheets captured successfully")
+    return {
+        "status": "success",
+        "sheets_count": number_of_sheets,
+        "pages_per_sheet": number_of_pages_per_sheet,
+        "total_images": number_of_sheets * number_of_pages_per_sheet
+    }
