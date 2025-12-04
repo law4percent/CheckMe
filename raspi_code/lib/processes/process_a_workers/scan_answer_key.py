@@ -68,7 +68,7 @@ def _combine_images_into_grid(collected_images: list, tile_width: int = 600):
     return combined_image
 
 
-def _get_JSON_of_answer_key(image_path: str):
+def _get_JSON_of_answer_key(image_path: str) -> list:
     """
         Send image to Gemini API for OCR extraction of answer key.
         Gemini reads the assessment UID directly from the paper.
@@ -83,11 +83,17 @@ def _get_JSON_of_answer_key(image_path: str):
         gemini_engine = GeminiOCREngine()
         answer_key = gemini_engine.extract_answer_key(image_path)
         
-        return answer_key
+        return [
+            answer_key, 
+            {"status": "success"}
+        ]
     
     except Exception as e:
         print(f"Error extracting answer key: {e}")
-        return {"error": str(e)}
+        return [
+            answer_key, 
+            {"status": "error", "message": str(e)}
+        ]
 
 
 def _save_image_file(frame, img_full_path: str):
@@ -96,7 +102,7 @@ def _save_image_file(frame, img_full_path: str):
     cv2.imwrite(img_full_path, frame)
 
 
-def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
+def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str) -> list:
     """
         Save extracted answer key as JSON file.
         Uses assessment_uid from the extracted data.
@@ -106,13 +112,15 @@ def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
             credentials_path: Path to credentials folder
         
         Returns:
-            Path to saved JSON file or None if assessment_uid not found
+            Path to saved JSON file, and status dictionary
     """
     assessment_uid = answer_key_data.get("assessment_uid")
     
     if not assessment_uid:
-        print("❌ Error: assessment_uid not found in extracted data")
-        return None
+        return [
+            '',
+            {"status": "error", "message": "assessment_uid not found in extracted data"}
+        ]
     
     # os.makedirs(answer_key_json_path, exist_ok=True) <- Need to investigate
     json_path = os.path.join(answer_key_json_path, f"{assessment_uid}.json")
@@ -120,8 +128,10 @@ def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str):
     with open(json_path, 'w') as f:
         json.dump(answer_key_data, f, indent=2)
     
-    print(f"Answer key saved to: {json_path}")
-    return json_path
+    return [
+        json_path,
+        {"status": "success"}
+    ]
 
 
 def _naming_the_file(img_path: str, current_count: int) -> str:
@@ -182,16 +192,6 @@ def _handle_single_page_workflow(
         essay_existence: bool,
         count_page: int
     ) -> dict:
-    if key is None:
-        return {"status": "waiting"}
-
-    if key not in ['*', '#']:
-        print("Invalid key. Please press [1] to SCAN or [2] to EXIT.")
-        return {"status": "waiting"} 
-    
-    if key == '#':
-        return {"status": "cancelled"} 
-
     img_full_path = _naming_the_file(
         img_path        = answer_key_image_path,
         current_count   = count_page
@@ -200,37 +200,30 @@ def _handle_single_page_workflow(
         frame           = frame, 
         img_full_path   = img_full_path
     )
-    answer_key_data = _get_JSON_of_answer_key(image_path=img_full_path)
-    
-    if "error" in answer_key_data:
-        print(f"❌ Extraction failed: {answer_key_data.get('error')}")
-        return {
-            "error"     : answer_key_data.get('error'), 
-            "status"    : "error"
-        }
+    answer_key_data, answer_key_data_status = _get_JSON_of_answer_key(image_path=img_full_path)
+    if answer_key_data_status["status"] == "error":
+        return answer_key_data_status
 
     assessment_uid = answer_key_data.get("assessment_uid")
     if not assessment_uid:
-        print("❌ Extraction failed: assessment_uid not found on paper")
         return {
-            "error"     : "assessment_uid not found on paper", 
-            "status"    : "error"
+            "status"    : "error",
+            "message"   : "assessment_uid not found on paper"
         }
     
-    # Add essay flag
     answer_key_data["has_essay"] = essay_existence
-    
-    # Save JSON result
-    json_path = _save_answer_key_json(
+    json_path, json_path_status = _save_answer_key_json(
         answer_key_data         = answer_key_data,
         answer_key_json_path    = answer_key_json_path
     )
+
+    if json_path_status["status"] == "error":
+        return json_path_status
     
-    print("✅ Successfully scanned and extracted answer key!")
     return {
         "status"                : "success",
         "assessment_uid"        : assessment_uid,
-        "pages"                 : 1,
+        "pages"                 : count_page,
         "answer_key_data"       : answer_key_data,
         "answer_key_json_path"  : json_path
     }
@@ -323,14 +316,14 @@ def _handle_multiple_pages_workflow(
 
 def _ask_for_prerequisites(keypad_rows_and_cols: list) -> dict:
     # Step 1: Ask for number of pages
-    number_of_pages, status = _ask_for_number_of_pages(keypad_rows_and_cols)
-    if status["status"] == "cancelled":
-        return status
+    number_of_pages, number_of_pages_status = _ask_for_number_of_pages(keypad_rows_and_cols)
+    if number_of_pages_status["status"] == "cancelled":
+        return number_of_pages_status
 
     # Step 2: Ask for essay existence
-    essay_existence, status = _ask_for_essay_existence(keypad_rows_and_cols)
-    if status["status"] == "cancelled":
-        return status
+    essay_existence, essay_existence_status = _ask_for_essay_existence(keypad_rows_and_cols)
+    if essay_existence_status["status"] == "cancelled":
+        return essay_existence_status
     
     return {
         "number_of_pages"   : number_of_pages,
@@ -351,6 +344,13 @@ def _initialize_camera(camera_index: int) -> list:
         capture,
         {"status": "success"}
     ]
+
+
+def _cleanup_camera(capture: any, show_windows: bool) -> None:
+    """Release camera resources."""
+    capture.release()
+    if show_windows:
+        cv2.destroyAllWindows()
 
 
 def run(
@@ -389,11 +389,12 @@ def run(
 
     capture, camera_status = _initialize_camera(camera_index)
     if camera_status["status"] == "error":
-        return camera_status["status"]
+        return camera_status
     
     # Step 1 & 2: Get prerequisites
     prerequisites = _ask_for_prerequisites(keypad_rows_and_cols)
     if prerequisites["status"] == "cancelled":
+        _cleanup_camera(capture, show_windows)
         return prerequisites["status"]
     number_of_pages = prerequisites["number_of_pages"]
     essay_existence = prerequisites["essay_existence"]
@@ -406,21 +407,19 @@ def run(
 
         key = hardware.read_keypad(rows=rows, cols=cols)
 
-        if key is None:
+        if key == None or key not in ['*', '#']:
             continue
 
         if key == '#':
-            print("❌ Scanning cancelled by user")
             result = {"status": "cancelled"}
             break
-    
+        
         # Capture frame from camera
         ret, frame = capture.read()
         if not ret:
-            print("Error - Check the camera")
             result = {
-                "error"     : "Failed to capture image", 
-                "status"    : "error"
+                "status"    : "error",
+                "message"   : "Failed to capture image"
             }
             break
 
@@ -438,6 +437,8 @@ def run(
                 essay_existence         = essay_existence,
                 count_page              = count_page
             )
+            if result.get("status") == "error" or result.get("status") == "success":
+                break
         
         # ========== MULTIPLE PAGES WORKFLOW ==========
         else:
@@ -452,11 +453,8 @@ def run(
                 collected_image_names   = collected_image_names
             )
             count_page += 1
+            if result.get("status") != "waiting":
+                break
 
-        if result.get("status") != "waiting":
-            break
-
-    capture.release()
-    if show_windows:
-        cv2.destroyAllWindows()
+    _cleanup_camera(capture, show_windows)
     return result
