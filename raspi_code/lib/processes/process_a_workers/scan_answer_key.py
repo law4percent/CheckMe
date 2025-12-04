@@ -26,8 +26,8 @@ def _smart_grid_auto(collected_images: list, tile_width: int):
     imgs = [img for img in imgs if img is not None]
     n = len(imgs)
     
-    # if n == 0: <==== for investigation
-    #     raise ValueError("No valid images provided.")
+    if n == 0: #<==== for investigation
+        raise ValueError("No valid images provided.")
     
     # Compute grid dimensions
     grid_size = math.ceil(math.sqrt(n))
