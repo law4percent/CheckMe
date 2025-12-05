@@ -424,8 +424,10 @@ def run(
 
         key = hardware.read_keypad(rows, cols, pc_mode)
 
-        if key == None or key not in ['*', '#']:
-            result = {"status": "waiting"}
+        if key is None or key not in ['*', '#']:
+            ret, frame = capture.read()
+            if ret and show_windows:
+                cv2.imshow(f"Scanning page {count_page}/{number_of_pages}", frame)
             continue
 
         if key == '#':

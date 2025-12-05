@@ -410,7 +410,6 @@ def run(
             ret, frame = capture.read()
             if ret and show_windows:
                 cv2.imshow(f"Scanning Sheet {count_sheets}/{number_of_sheets}", frame)
-                cv2.waitKey(1)
             continue
 
         if key == '#':
