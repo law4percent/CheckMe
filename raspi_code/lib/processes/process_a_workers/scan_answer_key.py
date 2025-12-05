@@ -422,29 +422,26 @@ def run(
         print("[#] EXIT")
         time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
 
+        ret, frame = capture.read()
+        if not ret:
+            result = {
+                "status"    : "error",
+                "message"   : "Failed to capture frame"
+            }
+            break
+        
+        if show_windows:
+            cv2.imshow(f"Scanning Sheet {count_page}/{number_of_pages}", frame)
+            cv2.waitKey(1)
+
         key = hardware.read_keypad(rows, cols, pc_mode)
 
         if key is None or key not in ['*', '#']:
-            ret, frame = capture.read()
-            if ret and show_windows:
-                cv2.imshow(f"Scanning page {count_page}/{number_of_pages}", frame)
             continue
 
         if key == '#':
             result = {"status": "cancelled"}
             break
-        
-        # Capture frame from camera
-        ret, frame = capture.read()
-        if not ret:
-            result = {
-                "status"    : "error",
-                "message"   : "Failed to capture image"
-            }
-            break
-
-        if show_windows:
-            cv2.imshow(f"Scanning Answer Key {count_page}/{number_of_pages}", frame)
 
         # Step 3: Process according to number of pages
         # ========== SINGLE PAGE WORKFLOW ==========

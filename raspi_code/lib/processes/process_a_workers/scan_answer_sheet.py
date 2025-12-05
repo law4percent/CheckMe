@@ -404,18 +404,6 @@ def run(
         print(f"{progress} [#] EXIT")
         time.sleep(0.1)
 
-        key = hardware.read_keypad(rows, cols, pc_mode)
-
-        if key is None or key not in ['*', '#']:
-            ret, frame = capture.read()
-            if ret and show_windows:
-                cv2.imshow(f"Scanning Sheet {count_sheets}/{number_of_sheets}", frame)
-            continue
-
-        if key == '#':
-            result = {"status": "cancelled"}
-            break
-
         ret, frame = capture.read()
         if not ret:
             result = {
@@ -427,6 +415,15 @@ def run(
         if show_windows:
             cv2.imshow(f"Scanning Sheet {count_sheets}/{number_of_sheets}", frame)
             cv2.waitKey(1)
+
+        key = hardware.read_keypad(rows, cols, pc_mode)
+
+        if key is None or key not in ['*', '#']:
+            continue
+
+        if key == '#':
+            result = {"status": "cancelled"}
+            break
 
         # Handle single-page answer sheets
         if number_of_pages_per_sheet == 1:
