@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from lib.services import answer_key_model, answer_sheet_model
 from lib.services.gemini import GeminiOCREngine
+from lib.services.firebase_rtdb import get_firebase_service
 
 # Configure logging
 logging.basicConfig(
@@ -76,20 +77,24 @@ def _save_graded_result_to_json(json_path: str, graded_data: dict) -> dict:
 
 
 def _process_single_answer_sheet(
-    ocr_engine: GeminiOCREngine,
-    sheet_record: dict,
-    answer_key_data: dict
-) -> dict:
+        ocr_engine: GeminiOCREngine,
+        sheet_record: dict,
+        answer_key_data: dict,
+        teacher_uid: str,
+        firebase_enabled: bool = True
+    ) -> dict:
     """
-    Process a single answer sheet through OCR and grading.
-    
-    Args:
-        ocr_engine: Initialized GeminiOCREngine
-        sheet_record: Answer sheet record from database
-        answer_key_data: Answer key data (already loaded)
-    
-    Returns:
-        Result dictionary with status and grading info
+        Process a single answer sheet through OCR and grading.
+        
+        Args:
+            ocr_engine: Initialized GeminiOCREngine
+            sheet_record: Answer sheet record from database
+            answer_key_data: Answer key data (already loaded)
+            teacher_uid: Teacher's Firebase UID
+            firebase_enabled: Whether to sync to Firebase
+        
+        Returns:
+            Result dictionary with status and grading info
     """
     try:
         sheet_id = sheet_record["id"]
@@ -136,12 +141,36 @@ def _process_single_answer_sheet(
         score = graded_result["summary"]["correct"]
         is_final_score = not graded_result.get("has_essay", False)
         
+        # Step 6: Upload to Firebase (if enabled)
+        firebase_status = {"status": "skipped"}
+        if firebase_enabled and teacher_uid:
+            try:
+                firebase_service = get_firebase_service()
+                firebase_status = firebase_service.upload_graded_result(
+                    teacher_uid     = teacher_uid,
+                    assessment_uid  = assessment_uid,
+                    student_id      = str(student_id),
+                    score           = score,
+                    is_final_score  = is_final_score,
+                    graded_at       = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
+                )
+                
+                if firebase_status["status"] == "success":
+                    logger.info(f"✅ Synced to Firebase: {student_id}")
+                else:
+                    logger.warning(f"⚠️ Firebase sync failed: {firebase_status.get('message')}")
+                    
+            except Exception as e:
+                logger.error(f"Firebase upload error: {e}")
+                firebase_status = {"status": "error", "message": str(e)}
+        
         return {
             "status": "success",
             "student_id": student_id,
             "score": score,
             "is_final_score": is_final_score,
-            "graded_result": graded_result
+            "graded_result": graded_result,
+            "firebase_status": firebase_status
         }
         
     except Exception as e:
@@ -168,7 +197,6 @@ def _fetch_unprocessed_sheets(batch_size: int = 5) -> list:
         return sheets
     except Exception as e:
         logger.error(f"Failed to fetch unprocessed sheets: {e}")
-        print(f"Failed to fetch unprocessed sheets: {e}")
         return []
 
 
@@ -190,7 +218,7 @@ def _update_sheet_with_results(sheet_id: int, result: dict) -> dict:
         }
 
 
-def _process_batch(ocr_engine: GeminiOCREngine) -> dict:
+def _process_batch(ocr_engine: GeminiOCREngine, teacher_uid: str, firebase_enabled: bool) -> dict:
     """
         Process one batch of unprocessed answer sheets.
         
@@ -199,6 +227,7 @@ def _process_batch(ocr_engine: GeminiOCREngine) -> dict:
     """
     # Step 1: Fetch unprocessed sheets
     sheets = _fetch_unprocessed_sheets(batch_size=CONFIG["BATCH_SIZE"])
+    exit()
     
     if not sheets:
         return {
@@ -207,10 +236,10 @@ def _process_batch(ocr_engine: GeminiOCREngine) -> dict:
             "message"   : "No sheets to process"
         }
     
-    # logger.info(f"Found {len(sheets)} unprocessed sheet(s)")
+    logger.info(f"Found {len(sheets)} unprocessed sheet(s)")
     
     processed_count = 0
-    failed_count = 0
+    failed_count    = 0
     
     # Step 2: Group sheets by assessment_uid to load answer keys efficiently
     sheets_by_uid = {}
@@ -248,9 +277,11 @@ def _process_batch(ocr_engine: GeminiOCREngine) -> dict:
             
             # Process the sheet
             result = _process_single_answer_sheet(
-                ocr_engine=ocr_engine,
-                sheet_record=sheet,
-                answer_key_data=answer_key_data
+                ocr_engine          = ocr_engine,
+                sheet_record        = sheet,
+                answer_key_data     = answer_key_data,
+                teacher_uid         = teacher_uid,
+                firebase_enabled    = firebase_enabled
             )
             
             if result["status"] == "success":
