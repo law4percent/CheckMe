@@ -276,13 +276,13 @@ def _handle_multiple_pages_workflow(
         img_path        = answer_key_image_path,
         current_count   = count_page
     )
-    collected_image_names.append(img_full_path)
     save_image_file_status = _save_image_file(
         frame           = frame, 
         img_full_path   = img_full_path
     )
     if save_image_file_status["status"] == "error":
         return save_image_file_status
+    collected_image_names.append(img_full_path)
     
     if count_page == number_of_pages:
         print(f"Combining {count_page} pages... please wait")

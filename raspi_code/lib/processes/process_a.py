@@ -139,7 +139,7 @@ def process_a(process_A_args: dict):
                 keypad_rows_and_cols        = [rows, cols], 
                 camera_index                = camera_index,
                 show_windows                = show_windows, 
-                answer_sheet_images_path    = answer_sheet_images_path, 
+                answer_sheet_image_path     = answer_sheet_images_path, 
                 answer_sheet_json_path      = answer_sheet_jsons_path,
                 assessment_uid              = target_assessment_uid,  # to be replaced with real assessment_uid
                 pc_mode                     = pc_mode
