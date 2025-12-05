@@ -1,7 +1,9 @@
 from lib.processes import process_a, process_b, process_c
-from multiprocessing import Process, Queue, Event
+from multiprocessing import Process
+from lib.services import models
 
 def main(**kargs):
+    models.create_table()
     task_a = Process(
         target  = process_a.process_a,
         kwargs  = {"process_A_args": kargs["process_A_args"]}
