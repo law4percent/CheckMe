@@ -479,8 +479,8 @@ def run(
                     break
                 
                 print(f"✅ Sheet {count_sheets}/{number_of_sheets} completed and saved")
-                count_sheets = result["next_sheet"]
-                count_page_per_sheet = result["next_page"]
+                count_sheets            = result["next_sheet"]
+                count_page_per_sheet    = result["next_page"]
                 collected_image_names.clear()
             
             elif result["status"] == "error":
