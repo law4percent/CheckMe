@@ -57,8 +57,8 @@ def _check_point(*paths) -> None:
             print(f"Folder '{path}' created.")
 
 
-def process_a(process_A_args: dict):
-
+def process_a(**kwargs):
+    process_A_args  = kwargs.get("process_A_args", {})
     task_name       = process_A_args["task_name"]
     pc_mode         = process_A_args["pc_mode"]
     save_logs       = process_A_args["save_logs"]
