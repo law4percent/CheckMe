@@ -1,3 +1,4 @@
+# lib/processes/process_a.py
 from multiprocessing import Queue
 import time
 from .process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown, hardware, display
@@ -112,13 +113,14 @@ def process_a(**kwargs):
             # Step 2: Save results to database
             if answer_key_data["status"] == "success":
                 answer_key_model.create_answer_key(
-                    assessment_uid  = answer_sheets_data["assessment_uid"],
-                    number_of_pages = answer_sheets_data["number_of_pages"],
-                    json_path       = answer_sheets_data["json_path"],
-                    img_path        = answer_sheets_data["img_path"],
-                    has_essay       = answer_sheets_data["has_essay"]
+                    assessment_uid  = answer_key_data["assessment_uid"],
+                    number_of_pages = answer_key_data["number_of_pages"],
+                    json_path       = answer_key_data["json_path"],
+                    img_path        = answer_key_data["img_path"],
+                    has_essay       = answer_key_data["has_essay"]
                 )
             
+            # Step 2: Else just display
             elif answer_key_data["status"] == "error":
                 if save_logs:
                     pass
@@ -133,8 +135,13 @@ def process_a(**kwargs):
         elif key == '2':
             # Step 1: Choose answer key from database via assessment_uid
             target_assessment_uid = _choose_answer_key_from_db(cols, rows, pc_mode)
+            if target_assessment_uid is None:
+                print("⚠️ No answer key selected. Returning to menu...")
+                continue 
 
-            # Step 2: Scan answer sheets
+            # Step 2: Scan answer sheets and save to DB
+            # Implementing FIFO/Queueing with DB management here is very crucial because process_b() located at lib/processes/process_b.py
+            #  will do the extraction with OCR powered by gemini
             answer_sheets_data = scan_answer_sheet.run(
                 keypad_rows_and_cols        = [rows, cols], 
                 camera_index                = camera_index,
@@ -145,14 +152,15 @@ def process_a(**kwargs):
                 pc_mode                     = pc_mode
             )
 
-            # Step 3: Save results to database
-            if answer_sheets_data["status"] == "success":
-                pass
+            # Step 3: Just display
+            if answer_sheets_data["status"] == "error":
+                if save_logs:
+                    pass
+                print(f"{task_name} - Error: {answer_sheets_data["message"]}")
 
-            elif answer_sheets_data["status"] == "error":
-                print(f"{task_name} - Error: {answer_sheets_data["error"]}")
-
-            elif answer_sheets_data["status"] == "cancelled": 
+            elif answer_sheets_data["status"] == "cancelled" or answer_sheets_data["status"] == "success":
+                if save_logs:
+                    pass
                 print(f"{task_name} - {answer_sheets_data["status"]}")
 
 
