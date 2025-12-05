@@ -71,17 +71,17 @@ def create_answer_sheet(
 
 def get_unprocessed_sheets(limit: int = 5) -> List[Dict]:
     """
-    Fetch answer sheets that haven't been processed yet.
-    
-    Criteria:
-    - student_id IS NULL (OCR hasn't extracted student ID yet)
-    - is_image_uploaded = 0
-    
-    Args:
-        limit: Maximum number of records to fetch
-    
-    Returns:
-        List of answer sheet records
+        Fetch answer sheets that haven't been processed yet.
+        
+        Criteria:
+        - student_id IS NULL (OCR hasn't extracted student ID yet)
+        - is_image_uploaded = 0
+        
+        Args:
+            limit: Maximum number of records to fetch
+        
+        Returns:
+            List of answer sheet records
     """
     try:
         conn = get_connection()
@@ -115,18 +115,18 @@ def get_unprocessed_sheets(limit: int = 5) -> List[Dict]:
         sheets = []
         for row in rows:
             sheets.append({
-                "id": row[0],
-                "assessment_uid": row[1],
-                "student_id": row[2],
-                "number_of_pages": row[3],
-                "json_file_name": row[4],
-                "json_path": row[5],
-                "img_path": row[6],
-                "score": row[7],
-                "is_final_score": row[8],
-                "is_image_uploaded": row[9],
-                "saved_at": row[10],
-                "image_uploaded_at": row[11]
+                "id"                : row[0],
+                "assessment_uid"    : row[1],
+                "student_id"        : row[2],
+                "number_of_pages"   : row[3],
+                "json_file_name"    : row[4],
+                "json_path"         : row[5],
+                "img_path"          : row[6],
+                "score"             : row[7],
+                "is_final_score"    : row[8],
+                "is_image_uploaded" : row[9],
+                "saved_at"          : row[10],
+                "image_uploaded_at" : row[11]
             })
         
         return sheets

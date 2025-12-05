@@ -61,6 +61,7 @@ def _check_point(*paths) -> None:
 def process_a(**kwargs):
     process_A_args  = kwargs.get("process_A_args", {})
     task_name       = process_A_args["task_name"]
+    status_checker  = process_A_args["status_checker"]
     pc_mode         = process_A_args["pc_mode"]
     save_logs       = process_A_args["save_logs"]
     camera_index    = process_A_args["camera_index"]
@@ -87,6 +88,9 @@ def process_a(**kwargs):
     
     while True:
         time.sleep(0.1)
+        if not status_checker.is_set():
+            print("Error occur in some process")
+            exit()
 
         print(f"{current_display_options[0]}{current_display_options[1]}")
         print("[*]UP or [#]DOWN")

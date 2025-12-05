@@ -71,8 +71,8 @@ def get_all_answer_keys() -> List[str]:
         List of assessment UIDs
     """
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
+        conn    = get_connection()
+        cursor  = conn.cursor()
         
         cursor.execute('SELECT assessment_uid FROM answer_keys ORDER BY saved_at DESC')
         rows = cursor.fetchall()
@@ -86,17 +86,17 @@ def get_all_answer_keys() -> List[str]:
 
 def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
     """
-    Fetch answer key record by assessment UID.
-    
-    Args:
-        assessment_uid: Assessment identifier
-    
-    Returns:
-        Answer key record or None
+        Fetch answer key record by assessment UID.
+        
+        Args:
+            assessment_uid: Assessment identifier
+        
+        Returns:
+            Answer key record or None
     """
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
+        conn    = get_connection()
+        cursor  = conn.cursor()
         
         cursor.execute('''
             SELECT 
@@ -118,13 +118,13 @@ def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
             return None
         
         return {
-            "id": row[0],
-            "assessment_uid": row[1],
-            "number_of_pages": row[2],
-            "json_path": row[3],
-            "img_path": row[4],
-            "has_essay": row[5],
-            "saved_at": row[6]
+            "id"                : row[0],
+            "assessment_uid"    : row[1],
+            "number_of_pages"   : row[2],
+            "json_path"         : row[3],
+            "img_path"          : row[4],
+            "has_essay"         : row[5],
+            "saved_at"          : row[6]
         }
     except Exception as e:
         print(f"Error fetching answer key by UID: {e}")

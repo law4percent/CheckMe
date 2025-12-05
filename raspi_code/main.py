@@ -1,5 +1,5 @@
 from lib.processes import process_a, process_b, process_c
-from multiprocessing import Process
+from multiprocessing import Process, Event
 from lib.services import models
 
 def main(**kargs):
@@ -27,9 +27,10 @@ def main(**kargs):
     
 
 if __name__ == "__main__":
-    pc_mode  = True
-    save_logs   = False
-    
+    pc_mode         = True
+    save_logs       = False
+    status_checker  = Event()
+    status_checker.set()
     main(
         process_A_args = {
             "task_name"                 : "Process A",
@@ -42,17 +43,20 @@ if __name__ == "__main__":
             "answer_key_json_path"      : "answer_keys/json",
             "answer_sheet_images_path"  : "answer_sheets/images",
             "answer_sheet_jsons_path"   : "answer_sheets/json",
+            "status_checker"            : status_checker
         },
         process_B_args = {
-            "task_name"     : "Process B",
-            "pc_mode"       : pc_mode,
-            "save_logs"     : save_logs,
-            "poll_interval" : 2,  # Add this - seconds between polling
-            "answer_key_json_path"  : "answer_keys/json" 
+            "task_name"             : "Process B",
+            "pc_mode"               : pc_mode,
+            "save_logs"             : save_logs,
+            "poll_interval"         : 5,
+            "answer_key_json_path"  : "answer_keys/json",
+            "status_checker"        : status_checker
         },
         process_C_args = {
-            "task_name"     : "Process C",
-            "pc_mode"       : pc_mode,
-            "save_logs"     : save_logs,
+            "task_name"         : "Process C",
+            "pc_mode"           : pc_mode,
+            "save_logs"         : save_logs,
+            "status_checker"    : status_checker
         }
     )

@@ -154,20 +154,21 @@ def _process_single_answer_sheet(
 
 def _fetch_unprocessed_sheets(batch_size: int = 5) -> list:
     """
-    Fetch answer sheets that need processing.
-    
-    Criteria:
-    - student_id IS NULL (not yet processed)
-    - is_image_uploaded = 0 (image ready but not OCR'd)
-    
-    Returns:
-        List of answer sheet records
+        Fetch answer sheets that need processing.
+        
+        Criteria:
+        - student_id IS NULL (not yet processed)
+        - is_image_uploaded = 0 (image ready but not OCR'd)
+        
+        Returns:
+            List of answer sheet records
     """
     try:
         sheets = answer_sheet_model.get_unprocessed_sheets(limit=batch_size)
         return sheets
     except Exception as e:
         logger.error(f"Failed to fetch unprocessed sheets: {e}")
+        print(f"Failed to fetch unprocessed sheets: {e}")
         return []
 
 
@@ -191,22 +192,22 @@ def _update_sheet_with_results(sheet_id: int, result: dict) -> dict:
 
 def _process_batch(ocr_engine: GeminiOCREngine) -> dict:
     """
-    Process one batch of unprocessed answer sheets.
-    
-    Returns:
-        Summary of batch processing
+        Process one batch of unprocessed answer sheets.
+        
+        Returns:
+            Summary of batch processing
     """
     # Step 1: Fetch unprocessed sheets
     sheets = _fetch_unprocessed_sheets(batch_size=CONFIG["BATCH_SIZE"])
     
     if not sheets:
         return {
-            "status": "idle",
-            "processed": 0,
-            "message": "No sheets to process"
+            "status"    : "idle",
+            "processed" : 0,
+            "message"   : "No sheets to process"
         }
     
-    logger.info(f"Found {len(sheets)} unprocessed sheet(s)")
+    # logger.info(f"Found {len(sheets)} unprocessed sheet(s)")
     
     processed_count = 0
     failed_count = 0
@@ -283,13 +284,14 @@ def _process_batch(ocr_engine: GeminiOCREngine) -> dict:
 
 def process_b(**kwargs):
     """
-    Main Process B function - Background OCR processing.
-    
-    Continuously monitors answer_sheets table and processes unprocessed records.
+        Main Process B function - Background OCR processing.
+        
+        Continuously monitors answer_sheets table and processes unprocessed records.
     """
-    process_B_args = kwargs.get("process_B_args", {})
-    task_name = process_B_args.get("task_name", "Process B")
-    poll_interval = process_B_args.get("poll_interval", 5)
+    process_B_args  = kwargs.get("process_B_args", {})
+    task_name       = process_B_args.get("task_name")
+    poll_interval   = process_B_args.get("poll_interval", 5)
+    status_checker  = process_B_args.get("status_checker")
     
     # Override config with args from main.py
     CONFIG["POLL_INTERVAL"] = poll_interval
@@ -302,7 +304,9 @@ def process_b(**kwargs):
         logger.info("Gemini OCR Engine initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize OCR engine: {e}")
-        return {"status": "error", "message": "OCR engine initialization failed"}
+        print(f"{task_name} - Error: OCR engine initialization failed {e}")
+        status_checker.clear() # This will stop all the processes a and c
+        exit()
     
     # Main processing loop
     cycle_count = 0
@@ -316,9 +320,14 @@ def process_b(**kwargs):
             batch_result = _process_batch(ocr_engine)
             
             if batch_result["status"] == "idle":
-                logger.info("No sheets to process. Waiting...")
+                # logger.info("No sheets to process. Waiting...")
+                print(f"{task_name} - No sheets to process. Waiting...")
             elif batch_result["status"] == "success":
-                logger.info(
+                # logger.info(
+                #     f"Batch complete: {batch_result['processed']} processed, "
+                #     f"{batch_result['failed']} failed out of {batch_result['total']}"
+                # )
+                print(
                     f"Batch complete: {batch_result['processed']} processed, "
                     f"{batch_result['failed']} failed out of {batch_result['total']}"
                 )
