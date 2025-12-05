@@ -80,11 +80,12 @@ def _save_image_file(frame, img_full_path: str) -> dict:
         return {"status": "error", "message": f"Failed to save image: {str(e)}"}
 
 
-def _naming_the_file(img_path: str, current_count: int) -> list:
+def _naming_the_file(img_path: str, current_count: any) -> list:
     """
-    Generate image filename with timestamp and page number.
-    
-    Format: {img_path}/{timestamp}_img{current_count}.jpg
+        Generate image filename with timestamp and page number.
+        
+        Format: {img_path}/{timestamp}_img{current_count}.jpg
+        current_count can be int or str
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(img_path, exist_ok=True)
@@ -479,17 +480,12 @@ def run(
                     break
                 
                 print(f"✅ Sheet {count_sheets}/{number_of_sheets} completed and saved")
-                count_sheets            = result["next_sheet"]
-                count_page_per_sheet    = result["next_page"]
+                count_sheets = result["next_sheet"]
+                count_page_per_sheet = result["next_page"]
                 collected_image_names.clear()
             
             elif result["status"] == "error":
                 break
 
     _cleanup(capture, show_windows)
-    
-    if result["status"] == "success" or (result["status"] == "waiting" and count_sheets > number_of_sheets):
-        print("✅ All answer sheets captured successfully")
-        return {"status": "success", "message": "All sheets processed"}
-    
     return result
