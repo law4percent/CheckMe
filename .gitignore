@@ -1,16 +1,31 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
+raspi_code/lib/processes/__pycache__
+raspi_code/lib/services/__pycache__
+raspi_code/test
+raspi_code/venv
+raspi_code/credentials/.env
+raspi_code/credentials/*.txt
+raspi_code/database/checkme.db
+raspi_code/lib/processes/process_a_workers/__pycache__
+raspi_code/answer_keys
+raspi_code/answer_sheets
+
 # Environment variables
 .env
 .env.local
 .env.production
 .env.example
+app/CheckMe/.env
+raspi_code/.env
 
 # dependencies
 node_modules/
+app/CheckMe/node_modules
 
 # Expo
 .expo/
+app/CheckMe/.expo
 dist/
 web-build/
 expo-env.d.ts
