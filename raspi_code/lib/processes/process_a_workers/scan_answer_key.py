@@ -19,18 +19,35 @@ from datetime import datetime
     5. Send combined image to Gemini for OCR extraction (includes reading assessment UID from paper)
     6. Save extracted answer key as JSON
 """
+def _path_existence_checkpoint(target_path) -> dict:
+    if not os.path.exists(target_path):
+        return {
+            "status"    : "error", 
+            "message"   : f"{target_path} is not exist. From {__name__}."
+        }
+    return {"status": "succes"}
 
-def _smart_grid_auto(collected_images: list, tile_width: int) -> list:
+
+def _file_existence_checkpoint(file_path) -> dict:
+    if not os.path.isfile(file_path):
+        return {
+            "status"    : "error", 
+            "message"   : f"{file_path} file does not exist. From {__name__}."
+        }
+    return {"status": "success"}
+
+
+def _smart_grid_auto(collected_images: list, tile_width: int) -> dict:
     """Arrange multiple images into a grid layout."""
     imgs = [cv2.imread(p) for p in collected_images]
     imgs = [img for img in imgs if img is not None]
     n = len(imgs)
 
     if n == 0:
-        return [
-            None,
-            {"status": "error", "message": "No valid images provided."}
-        ]
+        return {
+            "status"    : "error", 
+            "message"   : f"No valid images provided. From {__name__}."
+        }
 
     try:
         # Compute grid dimensions
@@ -63,24 +80,24 @@ def _smart_grid_auto(collected_images: list, tile_width: int) -> list:
 
         # Combine rows vertically
         combined_image = np.vstack(row_list)
-        return [
-            combined_image,
-            {"status": "success"}
-        ]
+        return {
+            "status": "success", 
+            "frame" : combined_image
+        }
 
     except Exception as e:
-        return [
-            None,
-            {"status": "error", "message": f"Failed to combine images: {str(e)}"}
-        ]
+        return {
+            "status": "error", 
+            "message": f"{e}. From {__name__}."
+        }
 
 
-def _combine_images_into_grid(collected_images: list, tile_width: int = 600):
+def _combine_images_into_grid(collected_images: list, tile_width: int = 600) -> dict:
     """Combine multiple page images into a single grid image."""
     return _smart_grid_auto(collected_images, tile_width)
 
 
-def _get_JSON_of_answer_key(image_path: str) -> list:
+def _get_JSON_of_answer_key(image_path: str) -> dict:
     """
         Send image to Gemini API for OCR extraction of answer key.
         Gemini reads the assessment UID directly from the paper.
@@ -89,37 +106,50 @@ def _get_JSON_of_answer_key(image_path: str) -> list:
             image_path: Path to answer key image
         
         Returns:
-            Extracted answer key dictionary and status dictionary
+            Extracted answer key
     """
+    file_status = _file_existence_checkpoint(image_path)
+    if file_status["status"] == "error":
+        return file_status
+    
     answer_key = {}
     try:
         gemini_engine = GeminiOCREngine()
         answer_key = gemini_engine.extract_answer_key(image_path)
         
-        return [
-            answer_key, 
-            {"status": "success"}
-        ]
+        return {
+            "status"    : "success",
+            "answer_key": answer_key
+        }
     
     except Exception as e:
-        print(f"Error extracting answer key: {e}")
-        return [
-            answer_key, 
-            {"status": "error", "message": str(e)}
-        ]
+        return {
+            "status"    : "error", 
+            "message"   : f"{e}. From {__name__}."
+        }
 
 
-def _save_image_file(frame, img_full_path: str) -> dict:
+def _save_image(frame: any, file_name: str, target_path: str) -> dict:
     """Save image frame to disk."""
+    path_status = _path_existence_checkpoint(target_path)
+    if path_status["status"] == "error":
+        return path_status
+        
     try:
-        os.makedirs(os.path.dirname(img_full_path), exist_ok=True)
-        cv2.imwrite(img_full_path, frame)
-        return {"status": "success"}
+        full_path = f"{target_path}/{file_name}"
+        cv2.imwrite(full_path, frame)
+        return {
+            "status"    : "success",
+            "full_path" : full_path
+        }
     except Exception as e:
-        return {"status": "error", "message": f"Failed to save image: {str(e)}"}
+        return {
+            "status"    : "error", 
+            "message"   : f"Failed to save image: {str(e)}. From {__name__}."
+        }
 
 
-def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str, assessment_uid: str) -> list:
+def _save_in_json_file(JSON_data: dict, target_path: str) -> dict:
     """
         Save extracted answer key as JSON file.
         Uses assessment_uid from the extracted data.
@@ -131,72 +161,141 @@ def _save_answer_key_json(answer_key_data: dict, answer_key_json_path: str, asse
         Returns:
             Path to saved JSON file, and status dictionary
     """
+    # Step 1: Check the path existence
+    path_status = _path_existence_checkpoint(target_path)
+    if path_status["status"] == "error":
+        return path_status
+    
+    # Step 2: Check the assessment Uid existence validation
+    assessment_uid = _validate_the_assessment_uid_existence(JSON_data)
+    if assessment_uid["status"] == "error":
+        return assessment_uid
+    
+    json_file_name = f"{assessment_uid}.json"
     try:
-        os.makedirs(answer_key_json_path, exist_ok=True)
-        json_path = os.path.join(answer_key_json_path, f"{assessment_uid}.json")
-        
-        with open(json_path, 'w') as f:
-            json.dump(answer_key_data, f, indent=2)
-        
-        return [
-            json_path,
-            {"status": "success"}
-        ]
+        full_path = os.path.join(target_path, json_file_name)
+        with open(full_path, 'w') as f:
+            json.dump(JSON_data, f, indent=2)
+        return {
+            "status"        : "success",
+            "full_path"     : full_path,
+            "file_name"     : json_file_name,
+            "assessment_uid": assessment_uid
+        }
     except Exception as e:
-        return [
-            "",
-            {"status": "error", "message": f"Failed to save JSON: {str(e)}"}
-        ]
+        return {
+            "status"    : "error", 
+            "message"   : f"Failed to save JSON: {str(e)}. From {__name__}."
+        }
 
 
-def _naming_the_file(img_path: str, current_count: int) -> str:
+def _naming_image_file(file_extension: str, is_combined_image: bool, current_count: int) -> str:
     """
         Generate image filename with timestamp and page number.
         
-        Format: {img_path}/{timestamp}_img{current_count}.jpg
+        Format: {timestamp}_img{current_count}.jpg
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{img_path}/{now}_img{current_count}.jpg"
+    if is_combined_image:
+        return f"combined_img_{now}.{file_extension}"
+    return f"img{current_count}_{now}.{file_extension}"
 
 
-def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> list:
+def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     rows, cols = keypad_rows_and_cols
     number_of_pages = 1
     while True:
+        time.sleep(0.1)
+        # ========USE LCD DISPLAY==========
         print("How many pages does? [1-9] or [#] Cancel")
-        time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
+        # =================================
         key = hardware.read_keypad(rows, cols, pc_mode)
         if key is None:
             continue
 
         if key == '#':
-            print("❌ Scanning cancelled by user")
-            return [number_of_pages, {"status": "cancelled"}]
+            return {
+                "number_of_pages"   : number_of_pages, 
+                "status"            : "cancelled"
+            }
         
-
         if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
             continue
 
         number_of_pages = int(key)
-        return [number_of_pages, {"status": "success"}]
+        return {
+            "number_of_pages"   : number_of_pages, 
+            "status"            : "success"
+        }
 
 
-def _ask_for_essay_existence(keypad_rows_and_cols: list, pc_mode: bool) -> list:
+def _ask_for_essay_existence(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     rows, cols = keypad_rows_and_cols
     while True:
+        time.sleep(0.1)
+        # ========USE LCD DISPLAY==========
         print("Is there an essay? [*] YES or [#] NO")
-        time.sleep(0.1)  # Reduce CPU usage and debounce keypad input
+        # =================================
         key = hardware.read_keypad(rows, cols, pc_mode)
         if key is None:
             continue
 
         if key == '#':
-            print("Essay existence: NO")
-            return [False, {"status": "success"}]
+            return {
+                "has_essay" : False, 
+                "status"    : "success"
+            }
         
         if key == '*':
-            print("Essay existence: YES")
-            return [True, {"status": "success"}]
+            return {
+                "has_essay" : True, 
+                "status"    : "success"
+            }
+
+
+def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_combined_image: bool = False, current_page_count: int = 0) -> dict:
+    file_name = _naming_image_file(
+        current_count       = current_page_count, 
+        file_extension      = image_extension,
+        is_combined_image   = is_combined_image
+    )
+    save_image = _save_image(
+        frame           = frame, 
+        file_name       = file_name,
+        target_path     = target_path
+    )
+    if save_image["status"] == "error":
+        return save_image
+    return {
+        "status"   : "success",
+        "file_name": file_name,
+        "full_path": save_image["full_path"]
+    }
+
+
+def _validate_the_assessment_uid_existence(JSON_data: dict) -> dict:
+    assessment_uid = JSON_data.get("assessment_uid")
+    if not assessment_uid:
+        return {
+            "status"    : "error",
+            "message"   : (
+                f"assessment_uid not found in the paper. Source: {__name__}\n"
+                "============================================================\n"
+                "Possible reasons:\n"
+                "[1] Prompt Quality: The prompt sent to Gemini may be unclear.\n"
+                "[2] Image Quality: The image might be blurry.\n"
+                "[3] Font Size: The text may be too small.\n"
+                "[4] Font Style: The font might be difficult to read.\n"
+                "[5] Instructions: The paper instructions may be unclear.\n"
+                "[6] Formatting: The answer key may be poorly formatted.\n"
+                "============================================================"
+            )
+        }
+        
+    return {
+        "status"        : "success",
+        "assessment_uid": assessment_uid
+    }
 
 
 def _handle_single_page_workflow(
@@ -205,48 +304,46 @@ def _handle_single_page_workflow(
         answer_key_image_path: str,
         answer_key_json_path: str,
         essay_existence: bool,
-        number_of_pages: int
+        total_number_of_pages: int,
+        image_extension: str
     ) -> dict:
+    # ========USE LCD DISPLAY==========
+    print(f"Put the answer key.")
+    # =================================
+    
+    # Step 1: Check the key
     if key != '*':
         return {"status": "waiting"}
 
-    img_full_path = _naming_the_file(
-        img_path        = answer_key_image_path,
-        current_count   = number_of_pages
+    # Step 2: Save in image file format
+    image_details = _save_in_image_file(
+        frame               = frame, 
+        target_path         = answer_key_image_path, 
+        current_page_count  = total_number_of_pages,
+        image_extension     = image_extension
     )
-    save_image_file_status = _save_image_file(
-        frame           = frame, 
-        img_full_path   = img_full_path
-    )
-    if save_image_file_status["status"] == "error":
-        return save_image_file_status
+    if image_details["status"] == "error":
+        return image_details
     
-    answer_key_data, answer_key_data_status = _get_JSON_of_answer_key(image_path=img_full_path)
-    if answer_key_data_status["status"] == "error":
-        return answer_key_data_status
-
-    assessment_uid = answer_key_data.get("assessment_uid")
-    if not assessment_uid:
-        return {
-            "status"    : "error",
-            "message"   : "assessment_uid not found on paper"
-        }
+    # Step 3: Get the JSON of answer key with Gemini OCR
+    JSON_of_answer_key = _get_JSON_of_answer_key(image_path=image_details["full_path"])
+    if JSON_of_answer_key["status"] == "error":
+        return JSON_of_answer_key
     
-    json_path, json_path_status = _save_answer_key_json(
-        answer_key_data         = answer_key_data,
-        answer_key_json_path    = answer_key_json_path,
-        assessment_uid          = assessment_uid
+    # Step 4: Save in JSON file format
+    json_details = _save_in_json_file(
+        JSON_data   = JSON_of_answer_key,
+        target_path = answer_key_json_path
     )
-    if json_path_status["status"] == "error":
-        return json_path_status
+    if json_details["status"] == "error":
+        return json_details
     
     return {
         "status"                : "success",
-        "assessment_uid"        : assessment_uid,
-        "number_of_pages"       : number_of_pages,
-        "answer_key_data"       : answer_key_data,
-        "json_path"             : json_path,
-        "img_path"              : img_full_path,
+        "assessment_uid"        : json_details["assessment_uid"],
+        "total_number_of_pages" : total_number_of_pages,
+        "json_details"          : json_details,
+        "image_details"         : image_details,
         "has_essay"             : essay_existence
     }
 
@@ -257,92 +354,95 @@ def _handle_multiple_pages_workflow(
         answer_key_image_path: str,
         answer_key_json_path: str,
         essay_existence: bool,
-        count_page: int,
-        number_of_pages: int,
-        collected_image_names: list
+        current_page_count: int,
+        total_number_of_pages: int,
+        collected_image_names: list,
+        image_extension: str
     ) -> dict:
-
-    # Generate ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+    # ========USE LCD DISPLAY==========
     ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
-    extension = ordinal_map.get(count_page, 'th')
-    print(f"Put the {count_page}{extension} page.")
+    extension = ordinal_map.get(current_page_count, 'th')
+    print(f"Put the {current_page_count}{extension} page.")
+    # =================================
+    
+    # Step 1: Check the key
     if key != '*':
         return {
             "status"    : "waiting", 
-            "next_page" : count_page
+            "next_page" : current_page_count
         }
-
-    img_full_path = _naming_the_file(
-        img_path        = answer_key_image_path,
-        current_count   = count_page
+        
+    # Step 2: Save in image file format
+    image_details = _save_in_image_file(
+        frame               = frame, 
+        target_path         = answer_key_image_path, 
+        current_page_count  = current_page_count,
+        image_extension     = image_extension
     )
-    save_image_file_status = _save_image_file(
-        frame           = frame, 
-        img_full_path   = img_full_path
-    )
-    if save_image_file_status["status"] == "error":
-        return save_image_file_status
-    collected_image_names.append(img_full_path)
+    if image_details["status"] == "error":
+        return image_details
+    collected_image_names.append(image_details["full_path"])
     
-    if count_page == number_of_pages:
-        print(f"Combining {count_page} pages... please wait")
-        
-        # Combine images
-        combined_image, combined_images_status = _combine_images_into_grid(collected_image_names)
-        if combined_images_status["status"] == "error":
-            return combined_images_status
-        now             = datetime.now().strftime("%Y%m%d_%H%M%S")
-        img_full_path   = os.path.join(answer_key_image_path, f"{now}_combined_img.jpg")
-        _save_image_file(
-            frame           = combined_image, 
-            img_full_path   = img_full_path
-        )
-        answer_key_data, answer_key_data_status = _get_JSON_of_answer_key(image_path=img_full_path)
-        if answer_key_data_status["status"] == "error":
-            return answer_key_data_status
-
-        assessment_uid = answer_key_data.get("assessment_uid")
-        if not assessment_uid:
-            return {
-                "status"    : "error",
-                "message"   : "assessment_uid not found on paper"
-            }
-        
-        json_path, json_path_status = _save_answer_key_json(
-            answer_key_data         = answer_key_data,
-            answer_key_json_path    = answer_key_json_path,
-            assessment_uid          = assessment_uid
-        )
-        if json_path_status["status"] == "error":
-            return json_path_status
-        
-        print("✅ Successfully scanned and extracted answer key!")
+    # Step 3: Check if the page count is still less than to total pages else proceed to combined all collected images
+    if current_page_count < total_number_of_pages:
         return {
-            "status"                : "success",
-            "assessment_uid"        : assessment_uid,
-            "number_of_pages"       : number_of_pages,
-            "answer_key_data"       : answer_key_data,
-            "json_path"             : json_path,
-            "img_path"              : img_full_path,
-            "has_essay"             : essay_existence
+            "status"    : "waiting", 
+            "next_page" : current_page_count + 1
         }
+    
+    # ========USE LCD DISPLAY==========
+    print(f"Combining {current_page_count} pages... please wait")
+    time.sleep(3)
+    # =================================
+    
+    # Step 4: Combine images
+    combined_image_details = _combine_images_into_grid(collected_image_names, total_number_of_pages)
+    if combined_image_details["status"] == "error":
+        return combined_image_details
+    
+    # Step 5: Save in image file format
+    image_details = _save_in_image_file(
+        frame               = combined_image_details["frame"], 
+        target_path         = answer_key_image_path,
+        image_extension     = image_extension,
+        is_combined_image   = True
+    )
+    if image_details["status"] == "error":
+        return image_details
+    
+    # Step 6: Get the JSON of answer key with Gemini OCR
+    JSON_of_answer_key = _get_JSON_of_answer_key(image_path=image_details["full_path"])
+    if JSON_of_answer_key["status"] == "error":
+        return JSON_of_answer_key
 
+    # Step 7: Save in JSON file format    
+    json_details = _save_in_json_file(
+        JSON_data   = JSON_of_answer_key,
+        target_path = answer_key_json_path
+    )
+    if json_details["status"] == "error":
+        return json_details
+    
     return {
-        "status"    : "waiting", 
-        "next_page" : count_page + 1
+        "status"                : "success",
+        "assessment_uid"        : json_details["assessment_uid"],
+        "total_number_of_pages" : total_number_of_pages,
+        "json_details"          : json_details,
+        "image_details"         : image_details,
+        "has_essay"             : essay_existence
     }
 
 
 def _ask_for_prerequisites(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
-    # Step 1: Ask for number of pages
-    number_of_pages, number_of_pages_status = _ask_for_number_of_pages(keypad_rows_and_cols, pc_mode)
-    if number_of_pages_status["status"] == "cancelled":
-        return number_of_pages_status
+    # Ask for number of pages
+    number_of_pages = _ask_for_number_of_pages(keypad_rows_and_cols, pc_mode)
+    if number_of_pages["status"] == "cancelled":
+        return number_of_pages
 
-    # Step 2: Ask for essay existence
-    essay_existence, essay_existence_status = _ask_for_essay_existence(keypad_rows_and_cols, pc_mode)
-    if essay_existence_status["status"] == "cancelled":
-        return essay_existence_status
+    # Ask for essay existence
+    essay_existence = _ask_for_essay_existence(keypad_rows_and_cols, pc_mode)
+    if essay_existence["status"] == "cancelled":
+        return essay_existence
     
     return {
         "number_of_pages"   : number_of_pages,
@@ -351,18 +451,18 @@ def _ask_for_prerequisites(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     }
 
 
-def _initialize_camera(camera_index: int) -> list:
+def _initialize_camera(camera_index: int) -> dict:
     """Initialize camera capture."""
     capture = cv2.VideoCapture(camera_index)
     if not capture.isOpened():
-        return [
-            capture,
-            {"status": "error", "message": "Cannot open camera"}
-        ]
-    return [
-        capture,
-        {"status": "success"}
-    ]
+        return {
+            "status"    : "error", 
+            "message"   : f"Cannot open camera. From {__name__}."
+        }
+    return {
+        "status"    : "success", 
+        "capture"   : capture
+    }
 
 
 def _cleanup_camera(capture: any, show_windows: bool) -> None:
@@ -377,7 +477,8 @@ def run(
         camera_index: int,
         show_windows: bool, 
         answer_key_paths: dict,
-        pc_mode: bool
+        pc_mode: bool,
+        image_extension: str
     ) -> dict:
 
     """
@@ -397,18 +498,20 @@ def run(
         Returns:
             Dictionary with extraction results or error status
     """
-    answer_key_image_path           = answer_key_paths["image_path"]
-    answer_key_json_path            = answer_key_paths["json_path"]
-    rows, cols                      = keypad_rows_and_cols
-    collected_image_names           = []
-    count_page                      = 1
-    result                          = {"status": "waiting"}
+    answer_key_image_path   = answer_key_paths["image_path"]
+    answer_key_json_path    = answer_key_paths["json_path"]
+    rows, cols              = keypad_rows_and_cols
+    collected_image_names   = []
+    count_page              = 1
+    result                  = {"status": "waiting"}
 
-    capture, camera_status = _initialize_camera(camera_index)
+    # Step 1: Initialize Camera
+    camera_status = _initialize_camera(camera_index)
     if camera_status["status"] == "error":
         return camera_status
+    capture = camera_status["capture"]
     
-    # Step 1 & 2: Get prerequisites
+    # Step 2: Get prerequisites
     prerequisites = _ask_for_prerequisites(keypad_rows_and_cols, pc_mode)
     if prerequisites["status"] == "cancelled":
         _cleanup_camera(capture, show_windows)
@@ -417,16 +520,16 @@ def run(
     essay_existence = prerequisites["essay_existence"]
 
     while True:
-        # Display menu
-        print("[*] SCAN")
-        print("[#] EXIT")
         time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
+        # ========USE LCD DISPLAY==========
+        print("[*] SCAN | [#] CANCEL")
+        # =================================
 
         ret, frame = capture.read()
         if not ret:
             result = {
                 "status"    : "error",
-                "message"   : "Failed to capture frame"
+                "message"   : f"Failed to capture frame. From {__name__}."
             }
             break
         
@@ -452,9 +555,10 @@ def run(
                 answer_key_image_path   = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path, 
                 essay_existence         = essay_existence,
-                number_of_pages         = number_of_pages
+                total_number_of_pages   = number_of_pages,
+                image_extension         = image_extension
             )
-            if result.get("status") == "waiting":
+            if result["status"] == "waiting":
                 continue
             break
         
@@ -466,11 +570,12 @@ def run(
                 answer_key_image_path   = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
-                count_page              = count_page,
-                number_of_pages         = number_of_pages,
-                collected_image_names   = collected_image_names
+                current_page_count      = count_page,
+                total_number_of_pages   = number_of_pages,
+                collected_image_names   = collected_image_names,
+                image_extension         = image_extension
             )
-            if result.get("status") == "waiting":
+            if result["status"] == "waiting":
                 count_page = result["next_page"]
                 continue
             break

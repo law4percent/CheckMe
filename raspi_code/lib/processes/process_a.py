@@ -4,7 +4,11 @@ import time
 from .process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown, hardware, display
 from enum import Enum
 import os
-from lib.services import answer_key_model, answer_sheet_model
+from lib.services import answer_key_model
+from lib import logger_config
+import logging
+
+logger = logger_config.setup_logger(name=__name__, level=logging.DEBUG)
 
 class Options(Enum):
     SCAN_ANSWER_KEY     = '1'
@@ -20,9 +24,10 @@ def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
         Returns the selected assessment_uid.
     """
     # Fetch only assessment_uid
-    keys = answer_key_model.get_all_answer_keys()
+    assessment_uids_list = answer_key_model.get_all_answer_keys()
 
-    if not keys:
+    list_length = len(assessment_uids_list)
+    if not assessment_uids_list:
         print("No answer keys found in the database.")
         return None
 
@@ -30,9 +35,9 @@ def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
 
     while True:
         time.sleep(0.1)
-
+        current_uid = assessment_uids_list[index]
         # Display only assessment_uid
-        current_uid = keys[index]
+        # USE LCD DISPLAY
         print(f"\nSelected Assessment UID: {current_uid}")
         print("[*]UP or [#]DOWN | Press 1 to select")
 
@@ -42,11 +47,13 @@ def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
             continue
 
         if key == '*':  # UP
-            index = (index - 1) % len(keys)
+            if index > 0:
+                index -= 1
         elif key == '#':  # DOWN
-            index = (index + 1) % len(keys)
-        elif key == 1:
-            # Any other key selects the current assessment_uid
+            if index < list_length - 1:
+                index += 1
+        elif key == '1':
+            # Select the current assessment_uid
             print(f"Selected assessment_uid: {current_uid}")
             return current_uid
 
@@ -61,6 +68,7 @@ def _check_point(*paths) -> None:
 def process_a(**kwargs):
     process_A_args  = kwargs.get("process_A_args", {})
     task_name       = process_A_args["task_name"]
+    image_extension = process_A_args["image_extension"]
     status_checker  = process_A_args["status_checker"]
     pc_mode         = process_A_args["pc_mode"]
     save_logs       = process_A_args["save_logs"]
@@ -85,12 +93,14 @@ def process_a(**kwargs):
     
     while True:
         time.sleep(0.1)
-        if not status_checker.is_set():
-            print("Error occur in some process")
-            exit()
-
+        # USE LCD DISPLAY
         print(f"{current_display_options[0]}{current_display_options[1]}")
         print("[*]UP or [#]DOWN")
+        
+        if not status_checker.is_set():
+            if save_logs:
+                logger.error(f"{task_name} - Error occur in some process.")
+            exit()
         
         key = hardware.read_keypad(rows, cols, pc_mode)
         if key == None:
@@ -107,7 +117,8 @@ def process_a(**kwargs):
                 camera_index            = camera_index,
                 show_windows            = show_windows, 
                 answer_key_paths        = paths["answer_key_path"],
-                pc_mode                 = pc_mode
+                pc_mode                 = pc_mode,
+                image_extension         = image_extension
             )
 
             # Step 2: Save results to database
@@ -123,12 +134,9 @@ def process_a(**kwargs):
             # Step 2: Else just display
             elif answer_key_data["status"] == "error":
                 if save_logs:
-                    pass
-                print(f"{task_name} - Error: {answer_key_data["message"]}")
-
+                    logger.error(f"{task_name} - {answer_key_data["message"]}")
+                    
             elif answer_key_data["status"] == "cancelled": 
-                if save_logs:
-                    pass
                 print(f"{task_name} - {answer_key_data["status"]}")
         
         
@@ -136,7 +144,6 @@ def process_a(**kwargs):
             # Step 1: Choose answer key from database via assessment_uid
             target_assessment_uid = _choose_answer_key_from_db(cols, rows, pc_mode)
             if target_assessment_uid is None:
-                print("⚠️ No answer key selected. Returning to menu...")
                 continue 
 
             # Step 2: Scan answer sheets and save to DB
@@ -148,7 +155,8 @@ def process_a(**kwargs):
                 show_windows                = show_windows, 
                 answer_sheet_paths          = paths["answer_sheet_path"],
                 assessment_uid              = target_assessment_uid,  # to be replaced with real assessment_uid
-                pc_mode                     = pc_mode
+                pc_mode                     = pc_mode,
+                image_extension             = image_extension
             )
 
             # Step 3: Just display

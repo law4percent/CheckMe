@@ -28,29 +28,30 @@ def main(**kargs):
 
 if __name__ == "__main__":
     pc_mode             = True
-    save_logs           = False
+    save_logs           = True
     answer_key_path     = {"json_path": "answer_keys/json", "image_path": "answer_keys/images"}
     answer_sheet_path   = {"json_path": "answer_sheets/json", "image_path": "answer_sheets/images"}
     status_checker  = Event()
     status_checker.set()
     main(
         process_A_args = {
-            "task_name"                 : "Process A",
-            "pc_mode"                   : pc_mode,
-            "save_logs"                 : save_logs,
-            "camera_index"              : 0,
-            "show_windows"              : True,
-            "keypad_pins"               : {"ROWS": [5, 6, 13, 19], "COLS": [12, 16, 20]},
-            "paths"                     : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
-            "status_checker"            : status_checker
+            "task_name"         : "Process A",
+            "image_extension"   : "jpg", # This is experimental
+            "pc_mode"           : pc_mode,
+            "save_logs"         : save_logs,
+            "camera_index"      : 0,
+            "show_windows"      : True,
+            "keypad_pins"       : {"ROWS": [5, 6, 13, 19], "COLS": [12, 16, 20]},
+            "paths"             : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
+            "status_checker"    : status_checker
         },
         process_B_args = {
-            "task_name"             : "Process B",
-            "pc_mode"               : pc_mode,
-            "save_logs"             : save_logs,
-            "poll_interval"         : 5,
-            "paths"                 : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
-            "status_checker"        : status_checker
+            "task_name"         : "Process B",
+            "pc_mode"           : pc_mode,
+            "save_logs"         : save_logs,
+            "poll_interval"     : 5,
+            "paths"             : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
+            "status_checker"    : status_checker
         },
         process_C_args = {
             "task_name"         : "Process C",
