@@ -19,13 +19,14 @@ from datetime import datetime
     5. Send combined image to Gemini for OCR extraction (includes reading assessment UID from paper)
     6. Save extracted answer key as JSON
 """
+
 def _path_existence_checkpoint(target_path) -> dict:
     if not os.path.exists(target_path):
         return {
             "status"    : "error", 
             "message"   : f"{target_path} is not exist. From {__name__}."
         }
-    return {"status": "succes"}
+    return {"status": "success"}
 
 
 def _file_existence_checkpoint(file_path) -> dict:
@@ -56,7 +57,8 @@ def _smart_grid_auto(collected_images: list, tile_width: int) -> dict:
         cols = grid_size
 
         # Compute tile size
-        tile_height = int(tile_width * 1.4)
+        ASPECT_RATIO = 1.4
+        tile_height = int(tile_width * ASPECT_RATIO)
         tile_size = (tile_width, tile_height)
 
         # Resize images to uniform size
@@ -108,18 +110,27 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
         Returns:
             Extracted answer key
     """
+    # Step 1: Check file existence
     file_status = _file_existence_checkpoint(image_path)
     if file_status["status"] == "error":
         return file_status
     
-    answer_key = {}
     try:
         gemini_engine = GeminiOCREngine()
-        answer_key = gemini_engine.extract_answer_key(image_path)
+        JSON_data = gemini_engine.extract_answer_key(image_path)
+        
+        # Step 2: Check the assessment uid and answer key existence
+        assessment_uid_validation_result = _validate_the_assessment_uid_existence(JSON_data)
+        if assessment_uid_validation_result["status"] == "error":
+            return assessment_uid_validation_result
+        
+        answer_key_validation_result = _validate_the_answer_key_existence(JSON_data)
+        if answer_key_validation_result["status"] == "error":
+            return answer_key_validation_result
         
         return {
             "status"    : "success",
-            "answer_key": answer_key
+            "JSON_data" : JSON_data
         }
     
     except Exception as e:
@@ -166,11 +177,8 @@ def _save_in_json_file(JSON_data: dict, target_path: str) -> dict:
     if path_status["status"] == "error":
         return path_status
     
-    # Step 2: Check the assessment Uid existence validation
-    assessment_uid = _validate_the_assessment_uid_existence(JSON_data)
-    if assessment_uid["status"] == "error":
-        return assessment_uid
-    
+    # Step 3: Save into JSON file
+    assessment_uid = str(JSON_data["assessment_uid"]).strip()
     json_file_name = f"{assessment_uid}.json"
     try:
         full_path = os.path.join(target_path, json_file_name)
@@ -185,7 +193,7 @@ def _save_in_json_file(JSON_data: dict, target_path: str) -> dict:
     except Exception as e:
         return {
             "status"    : "error", 
-            "message"   : f"Failed to save JSON: {str(e)}. From {__name__}."
+            "message"   : f"{e}. From {__name__}."
         }
 
 
@@ -207,7 +215,7 @@ def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     while True:
         time.sleep(0.1)
         # ========USE LCD DISPLAY==========
-        print("How many pages does? [1-9] or [#] Cancel")
+        print("How many pages? [1-9] or [#] Cancel")
         # =================================
         key = hardware.read_keypad(rows, cols, pc_mode)
         if key is None:
@@ -248,8 +256,8 @@ def _ask_for_essay_existence(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
         
         if key == '*':
             return {
-                "has_essay" : True, 
-                "status"    : "success"
+                "status"          : "success",
+                "essay_existence" : True 
             }
 
 
@@ -275,26 +283,56 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
 
 def _validate_the_assessment_uid_existence(JSON_data: dict) -> dict:
     assessment_uid = JSON_data.get("assessment_uid")
-    if not assessment_uid:
+    if not assessment_uid or str(assessment_uid).strip() == "":
         return {
             "status"    : "error",
             "message"   : (
                 f"assessment_uid not found in the paper. Source: {__name__}\n"
-                "============================================================\n"
-                "Possible reasons:\n"
+                "==================== POSSIBLE REASONS =======================\n"
                 "[1] Prompt Quality: The prompt sent to Gemini may be unclear.\n"
                 "[2] Image Quality: The image might be blurry.\n"
                 "[3] Font Size: The text may be too small.\n"
                 "[4] Font Style: The font might be difficult to read.\n"
                 "[5] Instructions: The paper instructions may be unclear.\n"
                 "[6] Formatting: The answer key may be poorly formatted.\n"
-                "============================================================"
+                "============================================================\n\n"
+                "++++++++++++++++++++++++ JSON DATA +++++++++++++++++++++++++\n"
+                f"{JSON_data}\n"
+                "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
             )
         }
         
     return {
         "status"        : "success",
-        "assessment_uid": assessment_uid
+        "assessment_uid": str(assessment_uid).strip()
+    }
+    
+
+def _validate_the_answer_key_existence(JSON_data: dict) -> dict:
+    answer_key = JSON_data.get("answer_key")
+    if not answer_key or str(answer_key).strip() == "":
+        return {
+            "status"    : "error",
+            "message"   : (
+                f"answer_key not found in the paper. Source: {__name__}\n"
+                "==================== POSSIBLE REASONS =======================\n"
+                "[1] Prompt Quality: The prompt sent to Gemini may be unclear.\n"
+                "[2] Image Quality: The image might be blurry.\n"
+                "[3] Font Size: The text may be too small.\n"
+                "[4] Font Style: The font might be difficult to read.\n"
+                "[5] Instructions: The paper instructions may be unclear.\n"
+                "[6] Formatting: The answer key may be poorly formatted.\n"
+                "============================================================\n\n"
+                "++++++++++++++++++++++++ JSON DATA +++++++++++++++++++++++++\n"
+                f"{JSON_data}\n"
+                "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+                
+            )
+        }
+        
+    return {
+        "status"        : "success",
+        "answer_key"    : str(answer_key).strip()
     }
 
 
@@ -332,7 +370,7 @@ def _handle_single_page_workflow(
     
     # Step 4: Save in JSON file format
     json_details = _save_in_json_file(
-        JSON_data   = JSON_of_answer_key,
+        JSON_data   = JSON_of_answer_key["JSON_data"],
         target_path = answer_key_json_path
     )
     if json_details["status"] == "error":
@@ -396,7 +434,7 @@ def _handle_multiple_pages_workflow(
     # =================================
     
     # Step 4: Combine images
-    combined_image_details = _combine_images_into_grid(collected_image_names, total_number_of_pages)
+    combined_image_details = _combine_images_into_grid(collected_image_names)
     if combined_image_details["status"] == "error":
         return combined_image_details
     
@@ -417,7 +455,7 @@ def _handle_multiple_pages_workflow(
 
     # Step 7: Save in JSON file format    
     json_details = _save_in_json_file(
-        JSON_data   = JSON_of_answer_key,
+        JSON_data   = JSON_of_answer_key["JSON_data"],
         target_path = answer_key_json_path
     )
     if json_details["status"] == "error":
@@ -435,19 +473,19 @@ def _handle_multiple_pages_workflow(
 
 def _ask_for_prerequisites(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     # Ask for number of pages
-    number_of_pages = _ask_for_number_of_pages(keypad_rows_and_cols, pc_mode)
-    if number_of_pages["status"] == "cancelled":
-        return number_of_pages
+    pages_result = _ask_for_number_of_pages(keypad_rows_and_cols, pc_mode)
+    if pages_result["status"] == "cancelled":
+        return pages_result
 
     # Ask for essay existence
-    essay_existence = _ask_for_essay_existence(keypad_rows_and_cols, pc_mode)
-    if essay_existence["status"] == "cancelled":
-        return essay_existence
+    essay_result = _ask_for_essay_existence(keypad_rows_and_cols, pc_mode)
+    if essay_result["status"] == "cancelled":
+        return essay_result
     
     return {
-        "number_of_pages"   : number_of_pages,
-        "essay_existence"   : essay_existence,
-        "status"            : "success"
+        "status"            : "success",
+        "number_of_pages"   : pages_result["number_of_pages"],
+        "essay_existence"   : essay_result["essay_existence"]
     }
 
 
