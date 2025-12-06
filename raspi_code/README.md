@@ -1,5 +1,12 @@
 ## Directory Structure
 
+**ENV**
+
+Get the .env here in this [link](https://drive.google.com/drive/folders/1fnYoMi5BEu9EHZJuhX6MIntBcn0Fwjr8?usp=sharing).
+
+**Note:** You should rename the api.txt into .env
+
+
 **Recommend Directory Structure**
 
 ```
@@ -10,7 +17,6 @@ raspi_code/
 ├─ .env
 ├─ test/
 ├─ main.py                     
-├─ venv/                       
 └─ lib/
    ├─ services/
    |  ├─ firebase_rtdb.py

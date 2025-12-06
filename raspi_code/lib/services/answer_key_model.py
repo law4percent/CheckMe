@@ -73,7 +73,7 @@ def create_answer_key(
         }
 
 
-def get_all_answer_keys() -> List[str]:
+def get_all_answer_keys() -> dict:
     """
     Fetch all assessment UIDs from answer_keys table.
     
@@ -88,10 +88,15 @@ def get_all_answer_keys() -> List[str]:
         rows = cursor.fetchall()
         conn.close()
         
-        return [row[0] for row in rows]
+        return {
+            "status"            : "success",
+            "all_answer_keys"   : [row[0] for row in rows]
+        }
     except Exception as e:
-        print(f"Error fetching answer keys: {e}")
-        return []
+        return {
+            "status"    : "error",
+            "message"   : f"{e}. Source: {__name__}"
+        }
 
 
 def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:

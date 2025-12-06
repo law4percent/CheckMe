@@ -24,7 +24,10 @@ def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
         Returns the selected assessment_uid.
     """
     # Fetch only assessment_uid
-    assessment_uids_list = answer_key_model.get_all_answer_keys()
+    list_result = answer_key_model.get_all_answer_keys()
+    if list_result["status"] == "error":
+        return list_result
+    assessment_uids_list = list_result["all_answer_keys"]
 
     list_length = len(assessment_uids_list)
     if not assessment_uids_list:
@@ -42,11 +45,14 @@ def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
         # Display only assessment_uid
         # ========USE LCD DISPLAY==========
         print(f"\nSelected Assessment UID: {current_uid}")
-        print("[*]UP or [#]DOWN | Press 1 to select")
+        print("[*]UP or [#]DOWN | Press 1 to select or 0 to cancel")
         # =================================
 
         # Read keypad input
         key = hardware.read_keypad(rows=rows, cols=cols, pc_mode=pc_mode)
+        if key == '0':
+            return {"status": "cancelled"}
+        
         if key is None or key not in ['*', '#', '1']:
             continue
 
@@ -132,7 +138,7 @@ def process_a(**kwargs):
             if answer_key_data["status"] == "success":
                 create_result = answer_key_model.create_answer_key(
                     assessment_uid          = answer_key_data["assessment_uid"],
-                    total_number_of_pages   = answer_key_data["number_of_pages"],
+                    total_number_of_pages   = answer_key_data["total_number_of_pages "],
                     json_file_name          = answer_key_data["json_details"]["file_name"],
                     json_full_path          = answer_key_data["json_details"]["full_path"],
                     img_file_name           = answer_key_data["image_details"]["file_name"],
@@ -181,20 +187,19 @@ def process_a(**kwargs):
 
             # Step 3: Just display
             if answer_sheets_data["status"] == "error":
-                if save_logs:
-                    pass
                 print(f"{task_name} - Error: {answer_sheets_data["message"]}")
-
-            elif answer_sheets_data["status"] == "cancelled" or answer_sheets_data["status"] == "success":
                 if save_logs:
-                    pass
-                print(f"{task_name} - {answer_sheets_data["status"]}")
+                    logger.error(f"{task_name} - {answer_sheets_data["message"]}")
 
 
         elif key == '3':
+            continue
+            # Not yet implement
             settings.run()
             
 
         elif key == '4':
+            continue
+            # Not yet implement
             shutdown.run()
             
