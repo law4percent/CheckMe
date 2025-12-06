@@ -6,6 +6,6 @@ chmod +x start.sh
 
 2️⃣ Run it:
 ```bash
-./install.sh
+./setup.sh
 ./start.sh
 ```
