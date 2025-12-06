@@ -17,7 +17,7 @@ class Options(Enum):
     SHUTDOWN            = '4'
     
 
-def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
+def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
     """
         Let the user choose an answer key from the database using the keypad.
         Only shows assessment_uid for selection.
@@ -29,7 +29,10 @@ def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
     list_length = len(assessment_uids_list)
     if not assessment_uids_list:
         print("No answer keys found in the database.")
-        return None
+        return {
+            "status"    : "error",
+            "message"   : "No answer keys found in the database."
+        }
 
     index = 0  # start at first key
 
@@ -37,13 +40,14 @@ def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
         time.sleep(0.1)
         current_uid = assessment_uids_list[index]
         # Display only assessment_uid
-        # USE LCD DISPLAY
+        # ========USE LCD DISPLAY==========
         print(f"\nSelected Assessment UID: {current_uid}")
         print("[*]UP or [#]DOWN | Press 1 to select")
+        # =================================
 
         # Read keypad input
         key = hardware.read_keypad(rows=rows, cols=cols, pc_mode=pc_mode)
-        if key is None:
+        if key is None or key not in ['*', '#', '1']:
             continue
 
         if key == '*':  # UP
@@ -53,10 +57,10 @@ def _choose_answer_key_from_db(cols: str, rows: str, pc_mode: bool) -> str:
             if index < list_length - 1:
                 index += 1
         elif key == '1':
-            # Select the current assessment_uid
-            print(f"Selected assessment_uid: {current_uid}")
-            return current_uid
-
+            return {
+                "status"                    : "success",
+                "selected_assessment_uid"   : current_uid
+            }
 
 def _check_point(*paths) -> None:
     for path in paths:
@@ -76,6 +80,7 @@ def process_a(**kwargs):
     show_windows    = process_A_args["show_windows"]
     keypad_pins     = process_A_args["keypad_pins"]
     paths           = process_A_args["paths"]
+    tile_width      = process_A_args["tile_width"]
 
     print(f"{task_name} is now Running ✅")
     _check_point(
@@ -119,7 +124,8 @@ def process_a(**kwargs):
                 show_windows            = show_windows, 
                 answer_key_paths        = paths["answer_key_path"],
                 pc_mode                 = pc_mode,
-                image_extension         = image_extension
+                image_extension         = image_extension,
+                tile_width              = tile_width
             )
 
             # Step 2: Save results to database
@@ -156,21 +162,21 @@ def process_a(**kwargs):
         
         elif key == '2':
             # Step 1: Choose answer key from database via assessment_uid
-            target_assessment_uid = _choose_answer_key_from_db(cols, rows, pc_mode)
-            if target_assessment_uid is None:
+            selection_result = _choose_answer_key_from_db(rows, cols, pc_mode)
+            if selection_result["status"] == "error":
                 continue 
-
+            selected_assessment_uid = selection_result["selected_assessment_uid"]
+            
             # Step 2: Scan answer sheets and save to DB
-            # Implementing FIFO/Queueing with DB management here is very crucial because process_b() located at lib/processes/process_b.py
-            #  will do the extraction with OCR powered by gemini
             answer_sheets_data = scan_answer_sheet.run(
-                keypad_rows_and_cols        = [rows, cols], 
-                camera_index                = camera_index,
-                show_windows                = show_windows, 
-                answer_sheet_paths          = paths["answer_sheet_path"],
-                assessment_uid              = target_assessment_uid,  # to be replaced with real assessment_uid
-                pc_mode                     = pc_mode,
-                image_extension             = image_extension
+                keypad_rows_and_cols    = [rows, cols], 
+                camera_index            = camera_index,
+                show_windows            = show_windows, 
+                answer_sheet_paths      = paths["answer_sheet_path"],
+                selected_assessment_uid = selected_assessment_uid,
+                pc_mode                 = pc_mode,
+                image_extension         = image_extension,
+                tile_width              = tile_width
             )
 
             # Step 3: Just display

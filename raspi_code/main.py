@@ -36,14 +36,15 @@ if __name__ == "__main__":
     main(
         process_A_args = {
             "task_name"         : "Process A",
-            "image_extension"   : "jpg", # This is experimental
+            "image_extension"   : "jpg",    # This is experimental
+            "tile_width"        : 600,      # This is experimental for gridding image
             "pc_mode"           : pc_mode,
             "save_logs"         : save_logs,
             "camera_index"      : 0,
             "show_windows"      : True,
             "keypad_pins"       : {"ROWS": [5, 6, 13, 19], "COLS": [12, 16, 20]},
             "paths"             : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
-            "status_checker"    : status_checker
+            "status_checker"    : status_checker,
         },
         process_B_args = {
             "task_name"         : "Process B",

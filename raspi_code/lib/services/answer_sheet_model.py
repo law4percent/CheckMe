@@ -9,26 +9,26 @@ from .models import get_connection
 
 
 def create_answer_sheet(
-    assessment_uid: str,
-    number_of_pages: int,
-    json_file_name: str,
-    json_path: str,
-    img_path: str,
+    answer_key_assessment_uid: str,
+    total_number_of_pages_per_sheet: int,
+    json_target_path: str,
+    img_file_name: str,
+    img_full_path: str,
     is_final_score: bool
 ) -> dict:
     """
-    Create a new answer sheet record.
-    
-    Args:
-        assessment_uid: Assessment identifier
-        number_of_pages: Number of pages in the answer sheet
-        json_file_name: Name of the JSON file
-        json_path: Full path to JSON file
-        img_path: Full path to image file
-        is_final_score: Whether this is the final score (no essay)
-    
-    Returns:
-        Dictionary with status and inserted ID
+        Create a new answer sheet record.
+        
+        Args:
+            answer_key_assessment_uid: Answer key that used to
+            total_number_of_pages_per_sheet: Number of pages in the answer sheet
+            json_target_path: JSON path
+            img_file_name: Full name of image file
+            img_full_path: Full path to image file
+            is_final_score: Whether this is the final score (no essay)
+        
+        Returns:
+            Dictionary with status and inserted ID
     """
     try:
         conn = get_connection()
@@ -36,22 +36,20 @@ def create_answer_sheet(
         
         cursor.execute('''
             INSERT INTO answer_sheets (
-                assessment_uid,
-                number_of_pages,
-                json_file_name,
-                json_path,
-                img_path,
-                is_final_score,
-                is_image_uploaded
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                answer_key_assessment_uid,
+                total_number_of_pages_per_sheet,
+                json_target_path,
+                img_file_name,
+                img_full_path,
+                is_final_score
+            ) VALUES (?, ?, ?, ?, ?, ?)
         ''', (
-            assessment_uid,
-            number_of_pages,
-            json_file_name,
-            json_path,
-            img_path,
-            1 if is_final_score else 0,
-            0  # Not yet processed by OCR
+            answer_key_assessment_uid,
+            total_number_of_pages_per_sheet,
+            json_target_path,
+            img_file_name,
+            img_full_path,
+            1 if is_final_score else 0
         ))
         
         conn.commit()
@@ -65,7 +63,7 @@ def create_answer_sheet(
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e)
+            "message": f"{e}. Source: {__name__}."
         }
 
 

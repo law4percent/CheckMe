@@ -31,21 +31,22 @@ def create_table():
     ''')
 
     # Table 2: answer_sheets
-    # In create_table() function, update answer_sheets table:
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS answer_sheets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            assessment_uid TEXT NOT NULL,
-            student_id TEXT,
-            number_of_pages INTEGER NOT NULL,
-            json_file_name TEXT NOT NULL,
-            json_path TEXT NOT NULL,
-            img_path TEXT NOT NULL,
-            score INTEGER DEFAULT 0,
-            is_final_score INTEGER DEFAULT 0,
-            is_image_uploaded INTEGER DEFAULT 0,
+            answer_key_assessment_uid TEXT NOT NULL,
+            total_number_of_pages_per_sheet INTEGER NOT NULL,
+            json_file_name TEXT,                                -- will adjust later
+            json_full_path TEXT,                                -- will adjust later
+            json_target_path TEXT NOT NULL,
+            img_file_name TEXT NOT NULL,
+            img_full_path TEXT NOT NULL,
+            is_final_score INTEGER NOT NULL,
+            student_id TEXT,                                    -- will adjust later
+            score INTEGER DEFAULT 0,                            -- will adjust later
+            is_image_uploaded INTEGER DEFAULT 0,                -- will adjust later
             saved_at TEXT DEFAULT (datetime('now', 'localtime')),
-            image_uploaded_at TEXT
+            image_uploaded_at TEXT                              -- will adjust later
         )
     ''')
 

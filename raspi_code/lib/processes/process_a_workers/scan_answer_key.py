@@ -4,10 +4,10 @@ import time
 import json
 import os
 from . import hardware
+from . import camera
+from . import image_combiner
 from . import display
 from lib.services.gemini import GeminiOCREngine
-import math
-import numpy as np
 from datetime import datetime
 
 """
@@ -36,67 +36,6 @@ def _file_existence_checkpoint(file_path) -> dict:
             "message"   : f"{file_path} file does not exist. Source: {__name__}."
         }
     return {"status": "success"}
-
-
-def _smart_grid_auto(collected_images: list, tile_width: int) -> dict:
-    """Arrange multiple images into a grid layout."""
-    imgs = [cv2.imread(p) for p in collected_images]
-    imgs = [img for img in imgs if img is not None]
-    n = len(imgs)
-
-    if n == 0:
-        return {
-            "status"    : "error", 
-            "message"   : f"No valid images provided. Source: {__name__}."
-        }
-
-    try:
-        # Compute grid dimensions
-        grid_size = math.ceil(math.sqrt(n))
-        rows = grid_size
-        cols = grid_size
-
-        # Compute tile size
-        ASPECT_RATIO = 1.4
-        tile_height = int(tile_width * ASPECT_RATIO)
-        tile_size = (tile_width, tile_height)
-
-        # Resize images to uniform size
-        resized_imgs = []
-        for img in imgs:
-            resized_imgs.append(cv2.resize(img, tile_size))
-
-        # Fill empty slots with white images
-        total_slots = rows * cols
-        while len(resized_imgs) < total_slots:
-            blank = np.full((tile_height, tile_width, 3), 255, dtype=np.uint8)
-            resized_imgs.append(blank)
-
-        # Build grid row by row
-        row_list = []
-        for r in range(rows):
-            start = r * cols
-            end = start + cols
-            row_imgs = resized_imgs[start:end]
-            row_list.append(np.hstack(row_imgs))
-
-        # Combine rows vertically
-        combined_image = np.vstack(row_list)
-        return {
-            "status": "success", 
-            "frame" : combined_image
-        }
-
-    except Exception as e:
-        return {
-            "status": "error", 
-            "message": f"{e}. Source: {__name__}."
-        }
-
-
-def _combine_images_into_grid(collected_images: list, tile_width: int = 600) -> dict:
-    """Combine multiple page images into a single grid image."""
-    return _smart_grid_auto(collected_images, tile_width)
 
 
 def _get_JSON_of_answer_key(image_path: str) -> dict:
@@ -147,7 +86,7 @@ def _save_image(frame: any, file_name: str, target_path: str) -> dict:
         return path_status
         
     try:
-        full_path = f"{target_path}/{file_name}"
+        full_path = os.path.join(target_path, file_name)
         cv2.imwrite(full_path, frame)
         return {
             "status"    : "success",
@@ -160,7 +99,7 @@ def _save_image(frame: any, file_name: str, target_path: str) -> dict:
         }
 
 
-def _save_in_json_file(JSON_data: dict, target_path: str) -> dict:
+def _save_in_json_file(json_data: dict, target_path: str) -> dict:
     """
         Save extracted answer key as JSON file.
         Uses assessment_uid from the extracted data.
@@ -178,12 +117,12 @@ def _save_in_json_file(JSON_data: dict, target_path: str) -> dict:
         return path_status
     
     # Step 3: Save into JSON file
-    assessment_uid = str(JSON_data["assessment_uid"]).strip()
+    assessment_uid = str(json_data["assessment_uid"]).strip()
     json_file_name = f"{assessment_uid}.json"
     try:
         full_path = os.path.join(target_path, json_file_name)
         with open(full_path, 'w') as f:
-            json.dump(JSON_data, f, indent=2)
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
         return {
             "status"        : "success",
             "full_path"     : full_path,
@@ -211,7 +150,6 @@ def _naming_image_file(file_extension: str, is_combined_image: bool, current_cou
 
 def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     rows, cols = keypad_rows_and_cols
-    number_of_pages = 1
     while True:
         time.sleep(0.1)
         # ========USE LCD DISPLAY==========
@@ -222,18 +160,15 @@ def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
             continue
 
         if key == '#':
-            return {
-                "number_of_pages"   : number_of_pages, 
-                "status"            : "cancelled"
-            }
+            return {"status": "cancelled"}
         
         if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
             continue
 
-        number_of_pages = int(key)
+        total_number_of_pages = int(key)
         return {
-            "number_of_pages"   : number_of_pages, 
-            "status"            : "success"
+            "total_number_of_pages" : total_number_of_pages, 
+            "status"                : "success"
         }
 
 
@@ -370,7 +305,7 @@ def _handle_single_page_workflow(
     
     # Step 4: Save in JSON file format
     json_details = _save_in_json_file(
-        JSON_data   = JSON_of_answer_key["JSON_data"],
+        json_data   = JSON_of_answer_key["JSON_data"],
         target_path = answer_key_json_path
     )
     if json_details["status"] == "error":
@@ -395,7 +330,8 @@ def _handle_multiple_pages_workflow(
         current_page_count: int,
         total_number_of_pages: int,
         collected_image_names: list,
-        image_extension: str
+        image_extension: str,
+        tile_width: int
     ) -> dict:
     # ========USE LCD DISPLAY==========
     ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
@@ -434,13 +370,13 @@ def _handle_multiple_pages_workflow(
     # =================================
     
     # Step 4: Combine images
-    combined_image_details = _combine_images_into_grid(collected_image_names)
-    if combined_image_details["status"] == "error":
-        return combined_image_details
+    combined_image_result = image_combiner.combine_images_into_grid(collected_image_names, tile_width)
+    if combined_image_result["status"] == "error":
+        return combined_image_result
     
     # Step 5: Save in image file format
     image_details = _save_in_image_file(
-        frame               = combined_image_details["frame"], 
+        frame               = combined_image_result["frame"], 
         target_path         = answer_key_image_path,
         image_extension     = image_extension,
         is_combined_image   = True
@@ -455,7 +391,7 @@ def _handle_multiple_pages_workflow(
 
     # Step 7: Save in JSON file format    
     json_details = _save_in_json_file(
-        JSON_data   = JSON_of_answer_key["JSON_data"],
+        json_data   = JSON_of_answer_key["JSON_data"],
         target_path = answer_key_json_path
     )
     if json_details["status"] == "error":
@@ -483,31 +419,10 @@ def _ask_for_prerequisites(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
         return essay_result
     
     return {
-        "status"            : "success",
-        "number_of_pages"   : pages_result["number_of_pages"],
-        "essay_existence"   : essay_result["essay_existence"]
+        "status"                    : "success",
+        "total_number_of_pages"     : pages_result["total_number_of_pages"],
+        "essay_existence"           : essay_result["essay_existence"]
     }
-
-
-def _initialize_camera(camera_index: int) -> dict:
-    """Initialize camera capture."""
-    capture = cv2.VideoCapture(camera_index)
-    if not capture.isOpened():
-        return {
-            "status"    : "error", 
-            "message"   : f"Cannot open camera. Source: {__name__}."
-        }
-    return {
-        "status"    : "success", 
-        "capture"   : capture
-    }
-
-
-def _cleanup_camera(capture: any, show_windows: bool) -> None:
-    """Release camera resources."""
-    capture.release()
-    if show_windows:
-        cv2.destroyAllWindows()
 
 
 def run(
@@ -516,9 +431,9 @@ def run(
         show_windows: bool, 
         answer_key_paths: dict,
         pc_mode: bool,
-        image_extension: str
+        image_extension: str,
+        tile_width: int
     ) -> dict:
-
     """
         Main scanning workflow for answer key.
         Assessment UID is read from the paper by Gemini.
@@ -551,18 +466,18 @@ def run(
     result                  = {"status": "waiting"}
 
     # Step 1: Initialize Camera
-    camera_status = _initialize_camera(camera_index)
-    if camera_status["status"] == "error":
-        return camera_status
-    capture = camera_status["capture"]
+    camera_result = camera.initialize_camera(camera_index)
+    if camera_result["status"] == "error":
+        return camera_result
+    capture = camera_result["capture"]
     
     # Step 2: Get prerequisites
     prerequisites = _ask_for_prerequisites(keypad_rows_and_cols, pc_mode)
     if prerequisites["status"] == "cancelled":
-        _cleanup_camera(capture, show_windows)
+        camera.cleanup(capture, show_windows)
         return prerequisites
-    number_of_pages = prerequisites["number_of_pages"]
-    essay_existence = prerequisites["essay_existence"]
+    total_number_of_pages   = prerequisites["total_number_of_pages"]
+    essay_existence         = prerequisites["essay_existence"]
 
     while True:
         time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
@@ -579,7 +494,7 @@ def run(
             break
         
         if show_windows:
-            cv2.imshow(f"Scanning Sheet {count_page}/{number_of_pages}", frame)
+            cv2.imshow("Answer Key Scanner", frame)
             cv2.waitKey(1)
 
         key = hardware.read_keypad(rows, cols, pc_mode)
@@ -593,14 +508,14 @@ def run(
 
         # Step 3: Process according to number of pages
         # ========== SINGLE PAGE WORKFLOW ==========
-        if number_of_pages == 1:
+        if total_number_of_pages == 1:
             result = _handle_single_page_workflow(
                 key                     = key,
                 frame                   = frame,
                 answer_key_image_path   = answer_key_image_path,
                 answer_key_json_path    = answer_key_json_path, 
                 essay_existence         = essay_existence,
-                total_number_of_pages   = number_of_pages,
+                total_number_of_pages   = total_number_of_pages,
                 image_extension         = image_extension
             )
             if result["status"] == "waiting":
@@ -616,14 +531,15 @@ def run(
                 answer_key_json_path    = answer_key_json_path,
                 essay_existence         = essay_existence,
                 current_page_count      = count_page,
-                total_number_of_pages   = number_of_pages,
+                total_number_of_pages   = total_number_of_pages,
                 collected_image_names   = collected_image_names,
-                image_extension         = image_extension
+                image_extension         = image_extension,
+                tile_width              = tile_width
             )
             if result["status"] == "waiting":
                 count_page = result["next_page"]
                 continue
             break
 
-    _cleanup_camera(capture, show_windows)
+    camera.cleanup(capture, show_windows)
     return result
