@@ -20,10 +20,12 @@ def create_table():
         CREATE TABLE IF NOT EXISTS answer_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             assessment_uid TEXT NOT NULL,
-            number_of_pages INTEGER NOT NULL,
-            json_path TEXT NOT NULL,
-            img_path TEXT NOT NULL,
-            has_essay INTEGER NOT NULL,
+            total_number_of_pages INTEGER NOT NULL,
+            json_file_name TEXT NOT NULL,
+            json_full_path TEXT NOT NULL,
+            img_file_name TEXT NOT NULL,
+            img_full_path TEXT NOT NULL,
+            essay_existence INTEGER NOT NULL,
             saved_at TEXT DEFAULT (datetime('now', 'localtime'))
         )
     ''')

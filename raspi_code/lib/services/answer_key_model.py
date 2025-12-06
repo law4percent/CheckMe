@@ -3,30 +3,36 @@
 Database model for answer_keys table
 """
 
-import sqlite3
 from typing import Optional, List, Dict
 from .models import get_connection
 
 
 def create_answer_key(
     assessment_uid: str,
-    number_of_pages: int,
-    json_path: str,
-    img_path: str,
-    has_essay: bool
+    total_number_of_pages: int,
+    json_file_name: str,
+    json_full_path: str,
+    img_file_name: str,
+    img_full_path: str,
+    essay_existence: bool
 ) -> dict:
     """
-        Create a new answer key record.
-        
+        Creates a new answer key record in the database.
+
         Args:
-            assessment_uid: Unique assessment identifier
-            number_of_pages: Number of pages in answer key
-            json_path: Full path to JSON file
-            img_path: Full path to image file
-            has_essay: Whether assessment includes essay questions
-        
+            assessment_uid (str): Unique identifier of the assessment.
+            total_number_of_pages (int): Total number of scanned pages.
+            json_file_name (str): File name of the generated JSON details.
+            json_full_path (str): Full path to the JSON details file.
+            img_file_name (str): File name of the saved answer key image.
+            img_full_path (str): Full path to the saved image file.
+            essay_existence (bool): Indicates whether the assessment includes an essay section.
+
         Returns:
-            Dictionary with status and inserted ID
+            dict: A dictionary containing:
+                - "status": Operation status ("success" or "error").
+                - "id": Inserted record ID (if successful).
+                - "message": Error message (if failed).
     """
     try:
         conn = get_connection()
@@ -35,17 +41,21 @@ def create_answer_key(
         cursor.execute('''
             INSERT INTO answer_keys (
                 assessment_uid,
-                number_of_pages,
-                json_path,
-                img_path,
-                has_essay
-            ) VALUES (?, ?, ?, ?, ?)
+                total_number_of_pages,
+                json_file_name,
+                json_full_path,
+                img_file_name,
+                img_full_path,
+                essay_existence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
             assessment_uid,
-            number_of_pages,
-            json_path,
-            img_path,
-            1 if has_essay else 0
+            total_number_of_pages,
+            json_file_name,
+            json_full_path,
+            img_file_name,
+            img_full_path,
+            1 if essay_existence else 0
         ))
         
         conn.commit()
@@ -59,7 +69,7 @@ def create_answer_key(
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e)
+            "message": f"{e}. Source: {__name__}."
         }
 
 
