@@ -93,9 +93,10 @@ def process_a(**kwargs):
     
     while True:
         time.sleep(0.1)
-        # USE LCD DISPLAY
+        # ========USE LCD DISPLAY==========
         print(f"{current_display_options[0]}{current_display_options[1]}")
         print("[*]UP or [#]DOWN")
+        # =================================
         
         if not status_checker.is_set():
             if save_logs:
@@ -123,21 +124,34 @@ def process_a(**kwargs):
 
             # Step 2: Save results to database
             if answer_key_data["status"] == "success":
-                answer_key_model.create_answer_key(
-                    assessment_uid  = answer_key_data["assessment_uid"],
-                    number_of_pages = answer_key_data["number_of_pages"],
-                    json_path       = answer_key_data["json_path"],
-                    img_path        = answer_key_data["img_path"],
-                    has_essay       = answer_key_data["has_essay"]
+                create_result = answer_key_model.create_answer_key(
+                    assessment_uid          = answer_key_data["assessment_uid"],
+                    total_number_of_pages   = answer_key_data["number_of_pages"],
+                    json_file_name          = answer_key_data["json_details"]["file_name"],
+                    json_full_path          = answer_key_data["json_details"]["full_path"],
+                    img_file_name           = answer_key_data["image_details"]["file_name"],
+                    img_full_path           = answer_key_data["image_details"]["full_path"],
+                    essay_existence         = answer_key_data["essay_existence"]
                 )
+                if create_result["status"] == "error":
+                    # ========USE LCD DISPLAY==========
+                    print(f"{task_name} - Error: {create_result["message"]}")
+                    # =================================
+                    if save_logs:
+                        logger.error(f"{task_name} - {create_result["message"]}")
             
             # Step 2: Else just display
             elif answer_key_data["status"] == "error":
+                # ========USE LCD DISPLAY==========
+                print(f"{task_name} - Error: {answer_key_data["message"]}")
+                # =================================
                 if save_logs:
                     logger.error(f"{task_name} - {answer_key_data["message"]}")
                     
             elif answer_key_data["status"] == "cancelled": 
+                # ========USE LCD DISPLAY==========
                 print(f"{task_name} - {answer_key_data["status"]}")
+                # =================================
         
         
         elif key == '2':

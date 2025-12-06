@@ -20,10 +20,10 @@ sudo apt install -y \
     python3-pip
 
 # -----------------------------
-# 3. Upgrade pip globally
+# 3. Upgrade pip globally (allow override)
 # -----------------------------
 echo "[3/4] Upgrading pip..."
-sudo pip3 install --upgrade pip
+sudo pip3 install --upgrade pip --break-system-packages
 
 # -----------------------------
 # 4. Install Python packages from requirements.txt
@@ -35,7 +35,7 @@ if [ ! -f "requirements.txt" ]; then
     exit 1
 fi
 
-sudo pip3 install -r requirements.txt
+sudo pip3 install -r requirements.txt --break-system-packages
 
 echo "==== INSTALLATION COMPLETE ===="
-echo "All dependencies were installed globally. No virtual environment used."
+echo "All Python packages were installed globally using --break-system-packages."

@@ -24,7 +24,7 @@ def _path_existence_checkpoint(target_path) -> dict:
     if not os.path.exists(target_path):
         return {
             "status"    : "error", 
-            "message"   : f"{target_path} is not exist. From {__name__}."
+            "message"   : f"{target_path} is not exist. Source: {__name__}."
         }
     return {"status": "success"}
 
@@ -33,7 +33,7 @@ def _file_existence_checkpoint(file_path) -> dict:
     if not os.path.isfile(file_path):
         return {
             "status"    : "error", 
-            "message"   : f"{file_path} file does not exist. From {__name__}."
+            "message"   : f"{file_path} file does not exist. Source: {__name__}."
         }
     return {"status": "success"}
 
@@ -47,7 +47,7 @@ def _smart_grid_auto(collected_images: list, tile_width: int) -> dict:
     if n == 0:
         return {
             "status"    : "error", 
-            "message"   : f"No valid images provided. From {__name__}."
+            "message"   : f"No valid images provided. Source: {__name__}."
         }
 
     try:
@@ -90,7 +90,7 @@ def _smart_grid_auto(collected_images: list, tile_width: int) -> dict:
     except Exception as e:
         return {
             "status": "error", 
-            "message": f"{e}. From {__name__}."
+            "message": f"{e}. Source: {__name__}."
         }
 
 
@@ -136,7 +136,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
     except Exception as e:
         return {
             "status"    : "error", 
-            "message"   : f"{e}. From {__name__}."
+            "message"   : f"{e}. Source: {__name__}."
         }
 
 
@@ -156,7 +156,7 @@ def _save_image(frame: any, file_name: str, target_path: str) -> dict:
     except Exception as e:
         return {
             "status"    : "error", 
-            "message"   : f"Failed to save image: {str(e)}. From {__name__}."
+            "message"   : f"Failed to save image: {str(e)}. Source: {__name__}."
         }
 
 
@@ -193,7 +193,7 @@ def _save_in_json_file(JSON_data: dict, target_path: str) -> dict:
     except Exception as e:
         return {
             "status"    : "error", 
-            "message"   : f"{e}. From {__name__}."
+            "message"   : f"{e}. Source: {__name__}."
         }
 
 
@@ -250,14 +250,14 @@ def _ask_for_essay_existence(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
 
         if key == '#':
             return {
-                "has_essay" : False, 
-                "status"    : "success"
+                "status"            : "success",
+                "essay_existence"   : False, 
             }
         
         if key == '*':
             return {
-                "status"          : "success",
-                "essay_existence" : True 
+                "status"            : "success",
+                "essay_existence"   : True 
             }
 
 
@@ -382,7 +382,7 @@ def _handle_single_page_workflow(
         "total_number_of_pages" : total_number_of_pages,
         "json_details"          : json_details,
         "image_details"         : image_details,
-        "has_essay"             : essay_existence
+        "essay_existence"       : essay_existence
     }
 
 
@@ -467,7 +467,7 @@ def _handle_multiple_pages_workflow(
         "total_number_of_pages" : total_number_of_pages,
         "json_details"          : json_details,
         "image_details"         : image_details,
-        "has_essay"             : essay_existence
+        "essay_existence"       : essay_existence
     }
 
 
@@ -495,7 +495,7 @@ def _initialize_camera(camera_index: int) -> dict:
     if not capture.isOpened():
         return {
             "status"    : "error", 
-            "message"   : f"Cannot open camera. From {__name__}."
+            "message"   : f"Cannot open camera. Source: {__name__}."
         }
     return {
         "status"    : "success", 
@@ -524,17 +524,24 @@ def run(
         Assessment UID is read from the paper by Gemini.
         
         Args:
-            task_name: Name of the task
             keypad_rows_and_cols: [rows, cols] for keypad
             camera_index: Camera device index
-            save_logs: Whether to save logs
             show_windows: Whether to display camera feed
-            answer_key_path: Path to save scanned images
-            credentials_path: Path to save JSON results
+            answer_key_paths: Path to save scanned images
             pc_mode: Testing mode for development
+            image_extension: Image file extension (e.g., 'jpg', 'png').
         
         Returns:
-            Dictionary with extraction results or error status
+            dict: A dictionary containing:
+                - "status": Operation status ("success" or "error" or "cancelled").
+                - "assessment_uid": Extracted assessment UID from Gemini.
+                - "total_number_of_pages": Number of scanned pages.
+                - "json_details": Metadata extracted from the answer key
+                                (contains keys "full_path" and "file_name").
+                - "image_details": Information about saved image files
+                                (contains keys "full_path" and "file_name").
+                - "essay_existence": Boolean indicating if the assessment contains an essay section.
+                - "message": Error message (if failed).
     """
     answer_key_image_path   = answer_key_paths["image_path"]
     answer_key_json_path    = answer_key_paths["json_path"]
@@ -567,7 +574,7 @@ def run(
         if not ret:
             result = {
                 "status"    : "error",
-                "message"   : f"Failed to capture frame. From {__name__}."
+                "message"   : f"Failed to capture frame. Source: {__name__}."
             }
             break
         
