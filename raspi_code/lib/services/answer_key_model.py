@@ -16,17 +16,17 @@ def create_answer_key(
     has_essay: bool
 ) -> dict:
     """
-    Create a new answer key record.
-    
-    Args:
-        assessment_uid: Unique assessment identifier
-        number_of_pages: Number of pages in answer key
-        json_path: Full path to JSON file
-        img_path: Full path to image file
-        has_essay: Whether assessment includes essay questions
-    
-    Returns:
-        Dictionary with status and inserted ID
+        Create a new answer key record.
+        
+        Args:
+            assessment_uid: Unique assessment identifier
+            number_of_pages: Number of pages in answer key
+            json_path: Full path to JSON file
+            img_path: Full path to image file
+            has_essay: Whether assessment includes essay questions
+        
+        Returns:
+            Dictionary with status and inserted ID
     """
     try:
         conn = get_connection()

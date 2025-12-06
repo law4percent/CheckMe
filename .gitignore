@@ -9,6 +9,7 @@ raspi_code/credentials/*.txt
 raspi_code/lib/processes/process_a_workers/__pycache__
 raspi_code/answer_keys
 raspi_code/answer_sheets
+raspi_code/logs
 
 # Environment variables
 .env
