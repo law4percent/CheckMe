@@ -369,17 +369,18 @@ def run(
         keypad_rows_and_cols: list,
         camera_index: int,
         show_windows: bool,
-        answer_sheet_image_path: str,
-        answer_sheet_json_path: str,
+        answer_sheet_paths: dict,
         assessment_uid: str,
         pc_mode: bool = False
     ) -> dict:
     """Main function to capture and process answer sheets."""
+    answer_sheet_image_path = answer_sheet_paths["image_path"]
+    answer_sheet_json_path  = answer_sheet_paths["json_path"]
     rows, cols              = keypad_rows_and_cols
     count_sheets            = 1
     count_page_per_sheet    = 1
     collected_image_names   = []
-    result = {"status": "waiting"}
+    result                  = {"status": "waiting"}
 
     # Step 1: Initialize camera
     camera_result = _initialize_camera(camera_index)
@@ -441,7 +442,7 @@ def run(
                     key                         = key,
                     frame                       = frame,
                     answer_sheet_image_path     = answer_sheet_image_path,
-                    answer_sheet_json_path      = answer_sheet_json_path,
+                    answer_sheet_json_path      = answer_sheet_json_path, 
                     current_count_sheets        = count_sheets,
                     number_of_pages_per_sheet   = number_of_pages_per_sheet,
                     assessment_uid              = assessment_uid,

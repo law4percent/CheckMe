@@ -376,8 +376,7 @@ def run(
         keypad_rows_and_cols: list,
         camera_index: int,
         show_windows: bool, 
-        answer_key_image_path: str,
-        answer_key_json_path: str,
+        answer_key_paths: dict,
         pc_mode: bool
     ) -> dict:
 
@@ -398,7 +397,8 @@ def run(
         Returns:
             Dictionary with extraction results or error status
     """
-
+    answer_key_image_path           = answer_key_paths["image_path"]
+    answer_key_json_path            = answer_key_paths["json_path"]
     rows, cols                      = keypad_rows_and_cols
     collected_image_names           = []
     count_page                      = 1
@@ -450,7 +450,7 @@ def run(
                 key                     = key,
                 frame                   = frame,
                 answer_key_image_path   = answer_key_image_path,
-                answer_key_json_path    = answer_key_json_path,
+                answer_key_json_path    = answer_key_json_path, 
                 essay_existence         = essay_existence,
                 number_of_pages         = number_of_pages
             )

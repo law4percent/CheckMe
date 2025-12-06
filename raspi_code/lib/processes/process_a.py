@@ -67,17 +67,14 @@ def process_a(**kwargs):
     camera_index    = process_A_args["camera_index"]
     show_windows    = process_A_args["show_windows"]
     keypad_pins     = process_A_args["keypad_pins"]
-    answer_key_image_path       = process_A_args["answer_key_image_path"]
-    answer_key_json_path        = process_A_args["answer_key_json_path"]
-    answer_sheet_images_path    = process_A_args["answer_sheet_images_path"]
-    answer_sheet_jsons_path     = process_A_args["answer_sheet_jsons_path"]
+    paths           = process_A_args["paths"]
 
     print(f"{task_name} is now Running ✅")
     _check_point(
-        answer_key_image_path, 
-        answer_sheet_images_path, 
-        answer_key_json_path, 
-        answer_sheet_jsons_path
+        paths["answer_key_path"]["image_path"], 
+        paths["answer_sheet_path"]["image_path"], 
+        paths["answer_key_path"]["json_path"], 
+        paths["answer_sheet_path"]["json_path"]
     )
     current_stage, current_display_options = display.initialize_display()
     rows, cols = hardware.setup_keypad_pins(
@@ -109,8 +106,7 @@ def process_a(**kwargs):
                 keypad_rows_and_cols    = [rows, cols], 
                 camera_index            = camera_index,
                 show_windows            = show_windows, 
-                answer_key_image_path   = answer_key_image_path, 
-                answer_key_json_path    = answer_key_json_path,
+                answer_key_paths        = paths["answer_key_path"],
                 pc_mode                 = pc_mode
             )
 
@@ -150,8 +146,7 @@ def process_a(**kwargs):
                 keypad_rows_and_cols        = [rows, cols], 
                 camera_index                = camera_index,
                 show_windows                = show_windows, 
-                answer_sheet_image_path     = answer_sheet_images_path, 
-                answer_sheet_json_path      = answer_sheet_jsons_path,
+                answer_sheet_paths          = paths["answer_sheet_path"],
                 assessment_uid              = target_assessment_uid,  # to be replaced with real assessment_uid
                 pc_mode                     = pc_mode
             )

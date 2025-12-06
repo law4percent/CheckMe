@@ -27,8 +27,10 @@ def main(**kargs):
     
 
 if __name__ == "__main__":
-    pc_mode         = True
-    save_logs       = False
+    pc_mode             = True
+    save_logs           = False
+    answer_key_path     = {"json_path": "answer_keys/json", "image_path": "answer_keys/images"}
+    answer_sheet_path   = {"json_path": "answer_sheets/json", "image_path": "answer_sheets/images"}
     status_checker  = Event()
     status_checker.set()
     main(
@@ -39,10 +41,7 @@ if __name__ == "__main__":
             "camera_index"              : 0,
             "show_windows"              : True,
             "keypad_pins"               : {"ROWS": [5, 6, 13, 19], "COLS": [12, 16, 20]},
-            "answer_key_image_path"     : "answer_keys/images",
-            "answer_key_json_path"      : "answer_keys/json",
-            "answer_sheet_images_path"  : "answer_sheets/images",
-            "answer_sheet_jsons_path"   : "answer_sheets/json",
+            "paths"                     : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
             "status_checker"            : status_checker
         },
         process_B_args = {
@@ -50,7 +49,7 @@ if __name__ == "__main__":
             "pc_mode"               : pc_mode,
             "save_logs"             : save_logs,
             "poll_interval"         : 5,
-            "answer_key_json_path"  : "answer_keys/json",
+            "paths"                 : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
             "status_checker"        : status_checker
         },
         process_C_args = {
