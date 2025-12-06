@@ -5,15 +5,13 @@ echo "==== Raspberry Pi Project Setup ===="
 # -----------------------------
 # 1. Update system packages
 # -----------------------------
-echo "[1/5] Updating system packages..."
+echo "[1/4] Updating system packages..."
 sudo apt update && sudo apt upgrade -y
-
 
 # -----------------------------
 # 2. Install system-level dependencies
 # -----------------------------
-echo "[2/5] Installing Raspberry Pi camera libraries..."
-
+echo "[2/4] Installing Raspberry Pi camera and system libraries..."
 sudo apt install -y \
     python3-picamera2 \
     python3-libcamera \
@@ -21,37 +19,23 @@ sudo apt install -y \
     python3-opencv \
     python3-pip
 
+# -----------------------------
+# 3. Upgrade pip globally
+# -----------------------------
+echo "[3/4] Upgrading pip..."
+sudo pip3 install --upgrade pip
 
 # -----------------------------
-# 3. Create Python virtual environment
+# 4. Install Python packages from requirements.txt
 # -----------------------------
-echo "[3/5] Creating Python virtual environment..."
-
-python3 -m venv venv
-source venv/bin/activate
-
-echo "Virtual environment activated."
-
-
-# -----------------------------
-# 4. Upgrade pip
-# -----------------------------
-echo "[4/5] Upgrading pip..."
-pip install --upgrade pip
-
-
-# -----------------------------
-# 5. Install Python packages from requirements.txt
-# -----------------------------
-echo "[5/5] Installing Python packages from requirements.txt..."
+echo "[4/4] Installing Python packages globally from requirements.txt..."
 
 if [ ! -f "requirements.txt" ]; then
     echo "ERROR: requirements.txt not found!"
     exit 1
 fi
 
-pip install -r requirements.txt
+sudo pip3 install -r requirements.txt
 
 echo "==== INSTALLATION COMPLETE ===="
-echo "To activate the environment later, run:"
-echo "source venv/bin/activate"
+echo "All dependencies were installed globally. No virtual environment used."
