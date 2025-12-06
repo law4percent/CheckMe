@@ -290,6 +290,31 @@
         .score-input button:hover {
             background: #218838;
         }
+
+        code {
+            background: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            color: #e74c3c;
+            word-break: break-all;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #3498db;
+        }
+
+        .info-box p {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
     </style>
 </head>
 <body>
@@ -424,9 +449,24 @@
                         <p><strong>Sheet ID:</strong> ${sheet.id}</p>
                         <p><strong>Assessment UID:</strong> ${sheet.assessment_uid}</p>
                         <p><strong>Student ID:</strong> ${sheet.student_id || 'Not processed yet'}</p>
+                        <p><strong>Number of Pages:</strong> ${sheet.number_of_pages}</p>
                         <p><strong>Score:</strong> ${sheet.score || 'N/A'}</p>
                         <p><strong>Final Score:</strong> ${sheet.is_final_score ? 'Yes' : 'No (Needs manual review)'}</p>
                         <p><strong>Scanned:</strong> ${new Date(sheet.saved_at).toLocaleString()}</p>
+                        ${sheet.image_uploaded_at ? `<p><strong>Processed:</strong> ${new Date(sheet.image_uploaded_at).toLocaleString()}</p>` : ''}
+                        
+                        <h3 style="margin-top: 20px;">File Paths</h3>
+                        <div class="info-box">
+                            <p><strong>📄 JSON File:</strong><br>
+                                <code>${sheet.json_file_name}</code>
+                            </p>
+                            <p><strong>📄 Full JSON Path:</strong><br>
+                                <code>${sheet.json_path}</code>
+                            </p>
+                            <p><strong>🖼️ Image Path:</strong><br>
+                                <code>${sheet.img_path}</code>
+                            </p>
+                        </div>
                     `;
                     
                     if (sheet.graded_result) {
@@ -551,7 +591,7 @@
         // Auto-refresh every 5 seconds
         setInterval(() => {
             loadAnswerSheets(currentFilter);
-        }, 5050);
+        }, 5000);
 
         // Initial load
         loadAnswerSheets();

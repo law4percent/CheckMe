@@ -2,11 +2,10 @@
 
 raspi_code/lib/processes/__pycache__
 raspi_code/lib/services/__pycache__
-raspi_code/test
 raspi_code/venv
 raspi_code/credentials/.env
 raspi_code/credentials/*.txt
-raspi_code/database/checkme.db
+# raspi_code/database/checkme.db <=== Undo this temporily
 raspi_code/lib/processes/process_a_workers/__pycache__
 raspi_code/answer_keys
 raspi_code/answer_sheets

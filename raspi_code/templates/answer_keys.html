@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Answer Keys - CheckMe</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        nav {
+            margin-top: 20px;
+        }
+
+        nav a {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-right: 10px;
+            transition: all 0.3s;
+        }
+
+        nav a:hover {
+            background: #2980b9;
+        }
+
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        th {
+            background: #34495e;
+            color: white;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .badge-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+        }
+
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .answer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .answer-item {
+            padding: 10px;
+            background: #ecf0f1;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .answer-item strong {
+            color: #2c3e50;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+        }
+
+        img {
+            max-width: 100%;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        code {
+            background: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            color: #e74c3c;
+            word-break: break-all;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #3498db;
+        }
+
+        .info-box p {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔑 Answer Keys</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/answer-keys">Answer Keys</a>
+                <a href="/answer-sheets">Answer Sheets</a>
+            </nav>
+        </header>
+
+        <div class="card">
+            <h2>All Answer Keys</h2>
+            <div id="keysTable">
+                <div class="loading">Loading answer keys...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for viewing details -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadAnswerKeys() {
+            try {
+                const response = await fetch('/api/answer-keys');
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    const keys = result.data;
+                    
+                    if (keys.length === 0) {
+                        document.getElementById('keysTable').innerHTML = `
+                            <div class="empty-state">
+                                <p>No answer keys found</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    let tableHTML = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Assessment UID</th>
+                                    <th>Pages</th>
+                                    <th>Has Essay</th>
+                                    <th>Created At</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    keys.forEach(key => {
+                        const essayBadge = key.has_essay 
+                            ? '<span class="badge badge-danger">Yes</span>' 
+                            : '<span class="badge badge-success">No</span>';
+                        
+                        tableHTML += `
+                            <tr>
+                                <td>${key.id}</td>
+                                <td><strong>${key.assessment_uid}</strong></td>
+                                <td>${key.number_of_pages}</td>
+                                <td>${essayBadge}</td>
+                                <td>${new Date(key.saved_at).toLocaleString()}</td>
+                                <td>
+                                    <button class="btn btn-small" onclick="viewDetails(${key.id})">View Details</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    tableHTML += '</tbody></table>';
+                    document.getElementById('keysTable').innerHTML = tableHTML;
+                }
+            } catch (error) {
+                console.error('Error loading keys:', error);
+                document.getElementById('keysTable').innerHTML = '<div class="loading">Error loading answer keys</div>';
+            }
+        }
+
+        async function viewDetails(keyId) {
+            try {
+                const response = await fetch(`/api/answer-keys/${keyId}`);
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    const key = result.data;
+                    
+                    let detailHTML = `
+                        <h2>Answer Key Details</h2>
+                        <p><strong>ID:</strong> ${key.id}</p>
+                        <p><strong>Assessment UID:</strong> ${key.assessment_uid}</p>
+                        <p><strong>Number of Pages:</strong> ${key.number_of_pages}</p>
+                        <p><strong>Has Essay:</strong> ${key.has_essay ? 'Yes' : 'No'}</p>
+                        <p><strong>Created:</strong> ${new Date(key.saved_at).toLocaleString()}</p>
+                        
+                        <h3 style="margin-top: 20px;">File Paths</h3>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                            <p style="margin: 8px 0;"><strong>📄 JSON Path:</strong><br>
+                                <code style="background: white; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-top: 5px; font-size: 12px;">${key.json_path}</code>
+                            </p>
+                            <p style="margin: 8px 0;"><strong>🖼️ Image Path:</strong><br>
+                                <code style="background: white; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-top: 5px; font-size: 12px;">${key.img_path}</code>
+                            </p>
+                        </div>
+                        
+                        <h3 style="margin-top: 20px;">Answer Key Image</h3>
+                        <img src="/api/image?path=${encodeURIComponent(key.img_path)}" alt="Answer Key" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <div style="display: none; padding: 20px; background: #fff3cd; border-radius: 8px; margin-top: 10px;">
+                            ⚠️ Image not found at path: <code>${key.img_path}</code>
+                        </div>
+                    `;
+                    
+                    if (key.answers) {
+                        detailHTML += '<h3 style="margin-top: 20px;">Extracted Answers</h3>';
+                        detailHTML += '<div class="answer-grid">';
+                        
+                        const answers = key.answers.answers || {};
+                        Object.keys(answers).sort().forEach(q => {
+                            detailHTML += `
+                                <div class="answer-item">
+                                    <strong>${q.replace('question_', 'Q')}:</strong> ${answers[q]}
+                                </div>
+                            `;
+                        });
+                        
+                        detailHTML += '</div>';
+                    }
+                    
+                    document.getElementById('modalContent').innerHTML = detailHTML;
+                    document.getElementById('detailModal').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading details:', error);
+                alert('Error loading details');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('detailModal').style.display = 'none';
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('detailModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        // Initial load
+        loadAnswerKeys();
+    </script>
+</body>
+</html>
