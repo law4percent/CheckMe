@@ -8,7 +8,6 @@ from datetime import datetime
 import os
 from lib.services import answer_key_model, answer_sheet_model
 
-
 def _path_existence_checkpoint(target_path) -> dict:
     if not os.path.exists(target_path):
         return {

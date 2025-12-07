@@ -99,7 +99,7 @@ def get_all_answer_keys() -> dict:
         }
 
 
-def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
+def get_answer_key_json_path_by_uid(assessment_uid: str) -> Optional[Dict]:
     """
         Fetch answer key record by assessment UID.
         
@@ -117,11 +117,7 @@ def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
             SELECT 
                 id,
                 assessment_uid,
-                number_of_pages,
-                json_path,
-                img_path,
-                has_essay,
-                saved_at
+                json_full_path
             FROM answer_keys
             WHERE assessment_uid = ?
         ''', (assessment_uid,))
@@ -135,11 +131,7 @@ def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
         return {
             "id"                : row[0],
             "assessment_uid"    : row[1],
-            "number_of_pages"   : row[2],
-            "json_path"         : row[3],
-            "img_path"          : row[4],
-            "has_essay"         : row[5],
-            "saved_at"          : row[6]
+            "json_full_path"    : row[2],
         }
     except Exception as e:
         print(f"Error fetching answer key by UID: {e}")

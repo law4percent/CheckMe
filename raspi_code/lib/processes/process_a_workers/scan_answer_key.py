@@ -9,6 +9,7 @@ from . import image_combiner
 from . import display
 from lib.services.gemini import GeminiOCREngine
 from datetime import datetime
+import json
 
 """
     Complete Answer Key Scanning Pipeline:

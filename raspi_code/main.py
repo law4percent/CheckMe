@@ -27,10 +27,10 @@ def main(**kargs):
     
 
 if __name__ == "__main__":
-    pc_mode             = True
-    save_logs           = True
-    answer_key_path     = {"json_path": "answer_keys/json", "image_path": "answer_keys/images"}
-    answer_sheet_path   = {"json_path": "answer_sheets/json", "image_path": "answer_sheets/images"}
+    PC_MODE             = True
+    SAVE_LOGS           = True
+    ANSWER_KEY_PATH     = {"json_path": "answer_keys/json", "image_path": "answer_keys/images"}
+    ANSWER_SHEET_PATH   = {"json_path": "answer_sheets/json", "image_path": "answer_sheets/images"}
     status_checker  = Event()
     status_checker.set()
     main(
@@ -38,26 +38,28 @@ if __name__ == "__main__":
             "task_name"         : "Process A",
             "image_extension"   : "jpg",    # This is experimental
             "tile_width"        : 600,      # This is experimental for gridding image
-            "pc_mode"           : pc_mode,
-            "save_logs"         : save_logs,
+            "pc_mode"           : PC_MODE,
+            "save_logs"         : SAVE_LOGS,
             "camera_index"      : 0,
             "show_windows"      : True,
             "keypad_pins"       : {"ROWS": [5, 6, 13, 19], "COLS": [12, 16, 20]},
-            "paths"             : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
+            "paths"             : {"answer_key_path": ANSWER_KEY_PATH, "answer_sheet_path": ANSWER_SHEET_PATH},
             "status_checker"    : status_checker,
         },
         process_B_args = {
             "task_name"         : "Process B",
-            "pc_mode"           : pc_mode,
-            "save_logs"         : save_logs,
+            "pc_mode"           : PC_MODE,
+            "save_logs"         : SAVE_LOGS,
             "poll_interval"     : 5,
-            "paths"             : {"answer_key_path": answer_key_path, "answer_sheet_path": answer_sheet_path},
-            "status_checker"    : status_checker
+            "paths"             : {"answer_key_path": ANSWER_KEY_PATH, "answer_sheet_path": ANSWER_SHEET_PATH},
+            "status_checker"    : status_checker,
+            "teacher_uid"       : "gbRaC4u7MSRWWRi9LerDQyjVzg22",
+            "firebase_enabled"  : True
         },
         process_C_args = {
             "task_name"         : "Process C",
-            "pc_mode"           : pc_mode,
-            "save_logs"         : save_logs,
+            "pc_mode"           : PC_MODE,
+            "save_logs"         : SAVE_LOGS,
             "status_checker"    : status_checker
         }
     )

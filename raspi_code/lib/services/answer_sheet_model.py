@@ -88,20 +88,17 @@ def get_unprocessed_sheets(limit: int = 5) -> List[Dict]:
         cursor.execute('''
             SELECT 
                 id,
-                assessment_uid,
-                student_id,
-                number_of_pages,
+                answer_key_assessment_uid,
                 json_file_name,
-                json_path,
-                img_path,
-                score,
+                json_full_path,
+                json_target_path,
+                img_full_path,
                 is_final_score,
-                is_image_uploaded,
-                saved_at,
-                image_uploaded_at
+                student_id,
+                score,
+                saved_at
             FROM answer_sheets
             WHERE student_id IS NULL
-            AND is_image_uploaded = 0
             ORDER BY saved_at ASC
             LIMIT ?
         ''', (limit,))
@@ -113,18 +110,16 @@ def get_unprocessed_sheets(limit: int = 5) -> List[Dict]:
         sheets = []
         for row in rows:
             sheets.append({
-                "id"                : row[0],
-                "assessment_uid"    : row[1],
-                "student_id"        : row[2],
-                "number_of_pages"   : row[3],
-                "json_file_name"    : row[4],
-                "json_path"         : row[5],
-                "img_path"          : row[6],
-                "score"             : row[7],
-                "is_final_score"    : row[8],
-                "is_image_uploaded" : row[9],
-                "saved_at"          : row[10],
-                "image_uploaded_at" : row[11]
+                "id"                        : row[0],
+                "answer_key_assessment_uid" : row[1],
+                "json_file_name"            : row[2],
+                "json_full_path"            : row[3],
+                "json_target_path"          : row[4],
+                "img_full_path"             : row[5],
+                "is_final_score"            : row[6],
+                "student_id"                : row[7],
+                "score"                     : row[8],
+                "saved_at"                  : row[9]
             })
         
         return sheets

@@ -68,6 +68,7 @@ def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
                 "selected_assessment_uid"   : current_uid
             }
 
+
 def _check_point(*paths) -> None:
     for path in paths:
         if not os.path.exists(path):
@@ -76,7 +77,7 @@ def _check_point(*paths) -> None:
 
 
 def process_a(**kwargs):
-    process_A_args  = kwargs.get("process_A_args", {})
+    process_A_args  = kwargs["process_A_args"]
     task_name       = process_A_args["task_name"]
     image_extension = process_A_args["image_extension"]
     status_checker  = process_A_args["status_checker"]
@@ -89,6 +90,8 @@ def process_a(**kwargs):
     tile_width      = process_A_args["tile_width"]
 
     print(f"{task_name} is now Running ✅")
+    logger.info(f"{task_name} is now Running ✅")
+    
     _check_point(
         paths["answer_key_path"]["image_path"], 
         paths["answer_sheet_path"]["image_path"], 
