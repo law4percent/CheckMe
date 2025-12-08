@@ -4,18 +4,17 @@ Database model for answer_sheets table
 """
 
 import sqlite3
-from typing import Optional, List, Dict
 from .models import get_connection
 
 
 def create_answer_sheet(
-    answer_key_assessment_uid: str,
-    total_number_of_pages_per_sheet: int,
-    json_target_path: str,
-    img_file_name: str,
-    img_full_path: str,
-    is_final_score: bool
-) -> dict:
+        answer_key_assessment_uid: str,
+        total_number_of_pages_per_sheet: int,
+        json_target_path: str,
+        img_file_name: str,
+        img_full_path: str,
+        is_final_score: bool
+    ) -> dict:
     """
         Create a new answer sheet record.
         
@@ -63,41 +62,56 @@ def create_answer_sheet(
     except Exception as e:
         return {
             "status": "error",
-            "message": f"{e}. Source: {__name__}."
+            "message": f"Failed to create answer sheet. {e}. Source: {__name__}."
         }
 
 
-def get_unprocessed_sheets(limit: int = 5) -> List[Dict]:
+def get_unprocessed_sheets(limit: int = 5) -> dict:
     """
-        Fetch answer sheets that haven't been processed yet.
-        
+        Fetch answer sheets that have not been processed yet.
+
         Criteria:
-        - student_id IS NULL (OCR hasn't extracted student ID yet)
-        - is_image_uploaded = 0
-        
+        - student_id IS NULL (OCR has not extracted the student ID yet)
+
         Args:
-            limit: Maximum number of records to fetch
-        
+            limit: Maximum number of records to fetch.
+
         Returns:
-            List of answer sheet records
-    """
+            Dict: containing a list of answer sheet records with the following keys:
+
+            - "status": Indicates whether the operation was successful or resulted in an error.
+            - "sheets": List of answer sheet objects, each containing:
+                - "id"
+                - "answer_key_assessment_uid"
+                - "json_file_name"
+                - "json_full_path"
+                - "json_target_path"
+                - "img_full_path"
+                - "is_final_score"
+                - "student_id"
+                - "score"
+                - "saved_at"
+        """
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
         cursor.execute('''
             SELECT 
-                id,
-                answer_key_assessment_uid,
-                json_file_name,
-                json_full_path,
-                json_target_path,
-                img_full_path,
-                is_final_score,
-                student_id,
-                score,
-                saved_at
-            FROM answer_sheets
+                s.id,
+                s.answer_key_assessment_uid,
+                s.json_file_name,
+                s.json_full_path,
+                s.json_target_path,
+                s.img_full_path,
+                s.is_final_score,
+                s.student_id,
+                s.score,
+                s.saved_at,
+                k.total_number_of_questions
+            FROM answer_sheets s
+            JOIN answer_keys k
+                ON s.answer_key_assessment_uid = k.assessment_uid
             WHERE student_id IS NULL
             ORDER BY saved_at ASC
             LIMIT ?
@@ -119,13 +133,20 @@ def get_unprocessed_sheets(limit: int = 5) -> List[Dict]:
                 "is_final_score"            : row[6],
                 "student_id"                : row[7],
                 "score"                     : row[8],
-                "saved_at"                  : row[9]
+                "saved_at"                  : row[9],
+                "total_number_of_questions" : row[10]
             })
         
-        return sheets
+        return {
+            "status": "success",
+            "sheets": sheets
+        }
     except Exception as e:
-        print(f"Error fetching unprocessed sheets: {e}")
-        return []
+        return {
+            "status": "error",
+            "sheets": [],
+            "message": f"Failed to fetch unprocessed sheets. {e}. Source: {__name__}."
+        }
 
 
 def get_answer_sheet_by_id(sheet_id: int) -> Optional[Dict]:

@@ -19,14 +19,14 @@ def create_table():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS answer_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            assessment_uid TEXT NOT NULL,
+            assessment_uid TEXT NOT NULL UNIQUE,
             total_number_of_pages INTEGER NOT NULL,
             json_file_name TEXT NOT NULL,
             json_full_path TEXT NOT NULL,
             img_file_name TEXT NOT NULL,
             img_full_path TEXT NOT NULL,
             essay_existence INTEGER NOT NULL,
-            total_number_of_questions INTEGER NOT NULL,
+            total_number_of_questions INTEGER NOT NULL, 
             saved_at TEXT DEFAULT (datetime('now', 'localtime'))
         )
     ''')
@@ -47,7 +47,8 @@ def create_table():
             score INTEGER DEFAULT 0,                            -- will adjust later by process_b() and will save to RTDB
             is_image_uploaded INTEGER DEFAULT 0,                -- will adjust later by process_c()
             saved_at TEXT DEFAULT (datetime('now', 'localtime')), -- will fetch later by process_b() and will save to RTDB as scannedAt
-            image_uploaded_at TEXT                              -- will adjust later by process_c()
+            image_uploaded_at TEXT,                              -- will adjust later by process_c()
+            FOREIGN KEY (answer_key_assessment_uid) REFERENCES answer_keys(assessment_uid)
         )
     ''')
 

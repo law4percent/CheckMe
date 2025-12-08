@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from dataclasses import dataclass
 
-from lib.services import answer_key_model, answer_sheet_model
+from lib.services import answer_key_model, answer_sheet_model, utils
 from lib.services.gemini import GeminiOCREngine
 from lib.services.firebase_rtdb import get_firebase_service
 from lib import logger_config
@@ -292,24 +292,6 @@ def _process_single_answer_sheet(
         }
 
 
-def _fetch_unprocessed_sheets(batch_size: int = 5) -> List[dict]:
-    """
-    Fetch answer sheets that need processing.
-    
-    Criteria:
-    - student_id IS NULL (not yet processed)
-    
-    Returns:
-        List of answer sheet records
-    """
-    try:
-        sheets = answer_sheet_model.get_unprocessed_sheets(limit=batch_size)
-        return sheets if sheets else []
-    except Exception as e:
-        logger.error(f"Failed to fetch unprocessed sheets: {e}")
-        return []
-
-
 def _update_sheet_with_results(sheet_id: int, result: dict) -> Dict[str, Any]:
     """
     Update answer sheet record with OCR results.
@@ -343,30 +325,25 @@ def _update_sheet_with_results(sheet_id: int, result: dict) -> Dict[str, Any]:
 
 def _process_batch(
         ocr_engine: GeminiOCREngine,
-        config: ProcessBConfig,
-        metrics: ProcessingMetrics
-    ) -> Dict[str, Any]:
+        metrics: ProcessingMetrics,
+        sheets: list
+    ) -> dict:
     """
         Process one batch of unprocessed answer sheets.
         
         Returns:
             Summary of batch processing
     """
-    # Step 1: Fetch unprocessed sheets
-    sheets = _fetch_unprocessed_sheets(batch_size=config.batch_size)
-    
     if not sheets:
         return {
-            "status": "idle",
-            "processed": 0,
-            "message": "No sheets to process"
+            "status"    : "waiting",
+            "message"   : "No sheets to process"
         }
     
-    # logger.info(f"Found {len(sheets)} unprocessed sheet(s)")
     processed_count = 0
     failed_count    = 0
     
-    # Step 2: Group sheets by assessment_uid to load answer keys efficiently
+    # Step 1: Group sheets by assessment_uid to load answer keys efficiently
     sheets_by_uid = {}
     for sheet in sheets:
         uid = sheet["answer_key_assessment_uid"]
@@ -374,10 +351,8 @@ def _process_batch(
             sheets_by_uid[uid] = []
         sheets_by_uid[uid].append(sheet)
     
-    # Step 3: Process each group
+    # Step 2: Process each group
     for assessment_uid, sheet_group in sheets_by_uid.items():
-        # logger.info(f"Processing {len(sheet_group)} sheet(s) for UID={assessment_uid}")
-        
         # Load answer key once per group
         try:
             answer_key_record = answer_key_model.get_answer_key_json_path_by_uid(assessment_uid)
@@ -462,6 +437,60 @@ def _process_batch(
     }
 
 
+def _group_sheets_by_assessment_uid(sheets: list[dict]) -> dict:
+    sheets_by_uid = {}
+    for sheet in sheets:
+        uid = sheet["answer_key_assessment_uid"]
+        if uid not in sheets_by_uid:
+            sheets_by_uid[uid] = []
+        sheets_by_uid[uid].append(sheet)
+    return sheets_by_uid
+    
+
+def _get_JSON_of_answer_sheet(sheets, batch_size) -> dict:
+    """
+        [
+            {
+                "id"                        : row[0],
+                "answer_key_assessment_uid" : row[1],
+                "json_file_name"            : row[2],
+                "json_full_path"            : row[3],
+                "json_target_path"          : row[4],
+                "img_full_path"             : row[5],
+                "is_final_score"            : row[6],
+                "student_id"                : row[7],
+                "score"                     : row[8],
+                "saved_at"                  : row[9],
+                "total_number_of_questions" : row[10]
+            },
+            ...
+            {}
+        ]
+    """
+    collect_errors = []
+    for sheet in sheets:
+        # 1. Get the image full path
+        answer_sheet_img_full_path = str(sheet["img_full_path"])
+
+        # 2. Verify the image file existence
+        validation_result = utils.file_existence_checkpoint(answer_sheet_img_full_path)
+        if validation_result["status"] == "error":
+            collect_errors.append(
+                {
+                    "img_file"  : answer_sheet_img_full_path,
+                    "message"   : validation_result["message"],
+                }
+            )
+            continue
+
+        # 3. feed the image to OCR gemini
+        gemini_engine = GeminiOCREngine()
+        JSON_data = gemini_engine.extract_answer_sheet(answer_sheet_img_full_path)
+
+        # 4. Verify the result such as 
+
+
+
 # ============================================================
 # MAIN PROCESS B FUNCTION
 # ============================================================
@@ -483,16 +512,16 @@ def process_b(**kwargs):
     batch_size          = process_B_args["batch_size"],
     teacher_uid         = process_B_args["teacher_uid"],
     firebase_enabled    = process_B_args["firebase_enabled"],
-    status_checker      = process_B_args["status_checker"]
+    status_checker      = process_B_args["status_checker"],
+    pc_mode             = process_B_args["pc_mode"]
+    save_logs           = process_B_args["save_logs"]
 
-    logger.info(f"{config.task_name} is now Running ✅")
-    print(f"{config.task_name} is now Running ✅")
-    
-    # Log Firebase status
-    if config.firebase_enabled and config.teacher_uid:
-        logger.info(f"Firebase sync enabled for teacher: {config.teacher_uid}")
-    else:
-        logger.info("Firebase sync disabled")
+    if save_logs:
+        logger.info(f"{task_name} is now Running ✅")
+        if firebase_enabled and teacher_uid:
+            logger.info(f"Firebase sync enabled for teacher: {teacher_uid}")
+        else:
+            logger.info("Firebase sync disabled")
     
     # Initialize metrics
     metrics = ProcessingMetrics(start_time=time.time())
@@ -500,92 +529,74 @@ def process_b(**kwargs):
     # Initialize OCR engine
     try:
         ocr_engine = GeminiOCREngine()
-        logger.info("Gemini OCR Engine initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize OCR engine: {e}")
-        print(f"{config.task_name} - Error: OCR engine initialization failed: {e}")
-        
-        if config.status_checker:
-            config.status_checker.clear()  # Signal other processes to stop
-            exit()
+        if save_logs:
+            logger.error(f"{task_name} - Failed to initialize OCR engine: {e}")
+            logger.info(f"{task_name} has stopped.")
+        status_checker.clear()
+        exit()
     
     # Main processing loop
     running = True
     
-    try:
-        while running:
-            # Check if other processes signaled to stop
-            if config.status_checker and not config.status_checker.is_set():
-                logger.warning("Status checker indicates error in another process")
-                running = False
-                break
-            
-            metrics.total_cycles += 1
+    while running:
+        # Check if other processes signaled to stop
+        if not status_checker.is_set():
+            if save_logs:
+                logger.warning(f"{task_name} - Status checker indicates error in another process")
+                logger.info(f"{task_name} has stopped")
+            running = False
+            break
+        
+        metrics.total_cycles += 1
+        if save_logs:
             logger.info(f"=== Processing Cycle {metrics.total_cycles} ===")
-            
-            try:
-                # Process one batch
-                batch_result = _process_batch(ocr_engine, config, metrics)
+        
+        # Step 1: Fetch data from db
+        sheets_result = answer_sheet_model.get_unprocessed_sheets(limit=batch_size)
+        if sheets_result["status"] == "error":
+            if save_logs:
+                logger.error(f"{task_name} - {sheets_result["message"]}")
+            continue
+        sheets = sheets_result["sheets"]
+
+        # Step 2: Extract one batch images to text to json with gemini OCR
+        _get_JSON_of_answer_sheet(sheets, batch_size)
+            # 1. Get the image full path
+            # 2. Verify the image file existence
+            # 3. feed the image to OCR gemini
+            # 4. Verify the result such as 
+        
+        # Step 3: Get scores
+            # Step 3.1: Group sheets by assessment_uid to load answer keys efficiently
+            # Step 3.2: Group sheets by assessment_uid to load answer keys efficiently
+        sheets_by_uid = _group_sheets_by_assessment_uid(sheets)
+        total_number_of_questions 
+
+
+        # Step 4: Save to firebase
+
+
+        try:
+            # batch_result = _process_batch(ocr_engine, metrics, sheets)
+            pass
+            # if batch_result["status"] == "waiting":
+            #     if save_logs:
+            #         logger.info(f"{task_name} - {batch_result["message"]}")
                 
-                if batch_result["status"] == "idle":
-                    print(f"{config.task_name} - No sheets to process. Waiting...")
-                    
-                elif batch_result["status"] == "success":
-                    print(
-                        f"{config.task_name} - Batch complete: "
-                        f"{batch_result['processed']} processed, "
-                        f"{batch_result['failed']} failed out of {batch_result['total']}"
-                    )
-                
-            except Exception as e:
-                logger.exception("Error processing batch")
-                print(f"{config.task_name} - Batch processing error: {e}")
-                time.sleep(config.retry_delay)
-                continue
+            # elif batch_result["status"] == "success":
+                # if save_logs:
+                #     logger.info(
+                #         f"{task_name} - Batch complete: "
+                #         f"{batch_result['processed']} processed, "
+                #         f"{batch_result['failed']} failed out of {batch_result['total']}"
+                #     )
             
-            # Wait before next cycle
-            time.sleep(config.poll_interval)
+        except Exception as e:
+            if save_logs:
+                logger.exception(f"{task_name} - Error processing batch {e}")
+            time.sleep(retry_delay)
+            continue
         
-    except KeyboardInterrupt:
-        logger.info(f"{config.task_name} stopped by user")
-        print(f"\n{config.task_name} stopped by user")
-        
-    except Exception as e:
-        logger.exception(f"Unexpected error in {config.task_name}")
-        print(f"{config.task_name} - Fatal error: {e}")
-        
-        if config.status_checker:
-            config.status_checker.clear()
-        
-        return {
-            "status": "error",
-            "message": f"Fatal error: {str(e)}"
-        }
-    
-    finally:
-        # Log final statistics
-        logger.info(
-            f"{config.task_name} shutting down. "
-            f"Stats: Cycles={metrics.total_cycles}, "
-            f"Processed={metrics.total_processed}, "
-            f"Failed={metrics.total_failed}, "
-            f"Uptime={metrics.get_uptime():.1f}s"
-        )
-        
-        print(f"\n{config.task_name} stopped.")
-        print(f"Statistics:")
-        print(f"  - Cycles completed: {metrics.total_cycles}")
-        print(f"  - Sheets processed: {metrics.total_processed}")
-        print(f"  - Sheets failed: {metrics.total_failed}")
-        print(f"  - Uptime: {metrics.get_uptime():.1f} seconds")
-    
-    return {
-        "status": "stopped",
-        "message": f"{config.task_name} terminated normally",
-        "metrics": {
-            "cycles": metrics.total_cycles,
-            "processed": metrics.total_processed,
-            "failed": metrics.total_failed,
-            "uptime": metrics.get_uptime()
-        }
-    }
+        # Wait before next cycle
+        time.sleep(poll_interval)

@@ -48,44 +48,8 @@ Important Rules:
 6. At the top, there is a unique Assessment UID code (alphanumeric).
 
 Return JSON EXACTLY like this:
-
 {
   "assessment_uid": "XXXX1234",
-  "answers": {
-    "question_1": "A",
-    "question_2": "CPU",
-    "question_3": "unreadable",
-    ...
-    question_N": "True",
-  }
-}
-"""
-
-    STUDENT_INSTRUCTION = """
-You are an OCR system that checks student answers from their answer sheet. 
-
-The sheet contains:
-- A Student ID field at the top
-- Student's handwritten or circled answers
-- Multiple possible sections:
-  - Section Number: Multiple Choice – Circle the right answer (A, B, C, D)
-  - Section Number: True or False – Fill in the blank (T or F)
-  - Section Number: Multiple Choice – Fill in the blank (A, B, C, D)
-  - Section Number: Enumeration – Fill in the blank (text answers)
-
-Important Rules:
-1. READ the Student ID written at the top.
-2. Detect whether each answer is circled or written.
-3. For enumerations, extract the text exactly as written.
-4. Follow continuous numbering across sections (1, 2, 3, …).
-5. DO NOT include explanations or the question text.
-6. Only extract the student's answer.
-7. If a student's answer is unreadable, return "unreadable".
-8. If a student's answer blank, or missing, return "no_answer".
-
-Return JSON in this exact format:
-{
-  "student_id": "202512345",
   "answers": {
     "question_1": "A",
     "question_2": "CPU",
@@ -94,6 +58,63 @@ Return JSON in this exact format:
     question_N": "no_answer",
   }
 }
+"""
+
+    STUDENT_INSTRUCTION = """
+You are an OCR system that extracts answers from an answer sheet image.
+
+The sheet contains:
+- A Student ID field at the top.
+- Student’s handwritten or circled answers.
+- Multiple possible sections:
+  - Section Number: Multiple Choice – Circle the correct answer (A, B, C, D)
+  - Section Number: True or False – Fill in the blank (T or F)
+  - Section Number: Multiple Choice – Fill in the blank (A, B, C, D)
+  - Section Number: Enumeration – Fill in the blank (text answers)
+
+Important Rules:
+1. Read the Student ID written at the top.
+2. Detect whether each answer is circled or written.
+3. For enumeration items, extract the text exactly as written.
+4. Maintain continuous numbering across sections (1, 2, 3, …).
+5. Do NOT include explanations or the question text.
+6. Only extract the student's answer.
+7. If a student's answer is unreadable, return "unreadable".
+8. If a student's answer is blank or missing, return "no_answer".
+9. If the number of questions is not exactly {exact_number_based_on_answer_key}:
+    You MUST still produce questions up to {exact_number_based_on_answer_key}, and return JSON in this exact format:
+
+       {
+           "student_id": "XXXX2345",
+           "answers": {
+               "question_1": "A",
+               "question_2": "no_answer",
+               "question_3": "unreadable",
+               ...
+               "question_12": "no_answer",  <-- missing: mark as no_answer
+               "question_13": "no_answer",  <-- missing: mark as no_answer
+               ...
+               "question_30": "B",
+               "question_31": "D",
+               "question_32": "C",
+               ...
+               "question_N": "CPU"
+           }
+       }
+
+   ELSE (when the number of questions matches exactly):
+       Return JSON in this exact format:
+
+       {
+           "student_id": "XXXX2345",
+           "answers": {
+               "question_1": "A",
+               "question_2": "no_answer",
+               "question_3": "unreadable",
+               ...
+               "question_N": "CPU"
+           }
+       }
 """
 
     def __init__(self):
@@ -138,7 +159,7 @@ Return JSON in this exact format:
     # STUDENT ANSWER EXTRACTION
     # ============================================================
 
-    def extract_answer_sheet(self, image_path: str) -> Dict:
+    def extract_answer_sheet(self, image_path: str, exact_number_based_on_answer_key: int) -> Dict:
         """Extract student answers from answer sheet image."""
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY not set in environment")
