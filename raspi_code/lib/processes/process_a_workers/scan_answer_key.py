@@ -43,7 +43,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
         JSON_data = gemini_engine.extract_answer_key(image_path)
         
         # Step 2: Check the assessment uid and answer key existence
-        validation_result = _validate_the_keys_existence(JSON_data)
+        validation_result = _validate_the_json_result(JSON_data)
         if validation_result["status"] == "error":
             return validation_result
         
@@ -86,7 +86,6 @@ def _save_in_json_file(json_data: dict, target_path: str) -> dict:
         
         Args:
             answer_key_data: Extracted answer key dictionary (contains assessment_uid)
-            credentials_path: Path to credentials folder
         
         Returns:
             Path to saved JSON file, and status dictionary
@@ -207,7 +206,13 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
     }
 
 
-def _validate_the_keys_existence(JSON_data: dict) -> dict:
+def _validate_the_json_result(JSON_data: dict) -> dict:
+    if "assessment_uid" not in JSON_data or "answer_key" not in JSON_data:
+        return {
+            "status"    : "error",
+            "message"   : f"assessment_uid or answer_key does not exist. Something problem in the prompt or weak prompt. Source: {__name__}"
+        }
+    
     assessment_uid = JSON_data.get("assessment_uid")
     if not assessment_uid or str(assessment_uid).strip() == "":
         return {
@@ -228,31 +233,9 @@ def _validate_the_keys_existence(JSON_data: dict) -> dict:
             )
         }
     
-    answer_key = JSON_data.get("answer_key")
-    if not answer_key or str(answer_key).strip() == "":
-        return {
-            "status"    : "error",
-            "message"   : (
-                f"answer_key not found in the paper. Source: {__name__}\n"
-                "==================== POSSIBLE REASONS =======================\n"
-                "[1] Prompt Quality: The prompt sent to Gemini may be unclear.\n"
-                "[2] Image Quality: The image might be blurry.\n"
-                "[3] Font Size: The text may be too small.\n"
-                "[4] Font Style: The font might be difficult to read.\n"
-                "[5] Instructions: The paper instructions may be unclear.\n"
-                "[6] Formatting: The answer key may be poorly formatted.\n"
-                "============================================================\n\n"
-                "++++++++++++++++++++++++ JSON DATA +++++++++++++++++++++++++\n"
-                f"{JSON_data}\n"
-                "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-                
-            )
-        }
-    
     return {
         "status"        : "success",
-        "assessment_uid": str(assessment_uid).strip(),
-        "answer_key"    : str(answer_key).strip()
+        "assessment_uid": str(assessment_uid).strip()
     }
 
 
