@@ -128,8 +128,8 @@ def _naming_image_file(file_extension: str, is_combined_image: bool, current_cou
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     if is_combined_image:
-        return f"combined_img_{now}.{file_extension}"
-    return f"img{current_count}_{now}.{file_extension}"
+        return f"combined_img_DT_{now}.{file_extension}"
+    return f"img{current_count}_DT_{now}.{file_extension}"
 
 
 def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> dict:

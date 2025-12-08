@@ -101,12 +101,12 @@ def _naming_image_file(file_extension: str, is_combined_image: bool, current_she
     """
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     if is_combined_image:
-        return f"combined_img_{now}.{file_extension}"
+        return f"combined_img_DT_{now}.{file_extension}"
     
     if current_sheet_count > 0:
-        return f"img_sheet{current_sheet_count}_{now}.{file_extension}"
+        return f"img_sheet{current_sheet_count}_DT_{now}.{file_extension}"
     
-    return f"img{current_page_count}_{now}.{file_extension}"
+    return f"img{current_page_count}_DT_{now}.{file_extension}"
 
 
 def _save_image(frame: any, file_name: str, target_path: str) -> dict:
