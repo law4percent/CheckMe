@@ -49,6 +49,7 @@ def create_table():
             is_image_uploaded INTEGER DEFAULT 0,                                            -- will adjust later by process_c()
             saved_at TEXT DEFAULT (datetime('now', 'localtime')),                           -- will fetch later by process_b() and will save to RTDB as scannedAt
             image_uploaded_at TEXT,                                                         -- will adjust later by process_c()
+            processed_rtdb INTEGER DEFAULT 0,                                               -- will adjust later by process_b(): means 0 not yet 1 means ready 2 means done
             FOREIGN KEY (answer_key_assessment_uid) REFERENCES answer_keys(assessment_uid)
         )
     ''')

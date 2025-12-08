@@ -332,7 +332,7 @@ def _grade_it(json_full_path) -> dict:
     }
 
 
-def _score_batch(batch_size: int):
+def _score_batch(batch_size: int) -> dict:
     pass
     # Step 1: fetch those sheets that have processed_score is 1
     
@@ -350,11 +350,14 @@ def _score_batch(batch_size: int):
         student_id                  = student_id
     )
     if result["status"] == "error":
-        pass
+        return result
     
 
-def _update_firebase_rtdb(batch_size) -> list:
-    pass
+def _update_firebase_rtdb(batch_size) -> dict:
+    # Step 1: fetch those sheets that have processed_rtdb is 1
+    return {
+        
+    }
     
     
     
@@ -443,6 +446,7 @@ def process_b(**kwargs):
         # Step 4. scoring
         _score_batch(batch_size)
         
+        _update_firebase_rtdb(batch_size)
         # Step 5: Save to firebase
             # assessmentUid: "QWER1234"
             # isPartialScore: false

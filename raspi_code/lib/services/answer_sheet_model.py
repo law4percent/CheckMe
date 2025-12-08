@@ -208,7 +208,7 @@ def update_answer_key_json_path_by_image_path(
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE answer_sheets
-                SET img_full_path = ?, processed_score = 1
+                SET img_full_path = ?, processed_score = 1, processed_rtdb = 1
                 WHERE student_id = ? AND answer_key_assessment_uid = ?
             ''', (latest_img, student_id, answer_key_assessment_uid))
             conn.commit()
@@ -234,7 +234,8 @@ def update_answer_key_json_path_by_image_path(
                 json_file_name = ?,
                 json_full_path = ?,
                 student_id = ?,
-                processed_score = 1
+                processed_score = 1,
+                processed_rtdb = 1
             WHERE img_full_path = ?
         ''', (
             json_file_name,
