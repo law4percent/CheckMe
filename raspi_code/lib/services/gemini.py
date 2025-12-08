@@ -102,14 +102,14 @@ Return JSON EXACTLY like this:
     # STUDENT ANSWER EXTRACTION
     # ============================================================
 
-    def extract_answer_sheet(self, image_path: str, exact_number_based_on_answer_key: int) -> Dict:
+    def extract_answer_sheet(self, image_path: str, total_number_of_questions: int) -> Dict:
         """Extract student answers from answer sheet image."""
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY not set in environment")
 
         image_base64 = self._encode_image(image_path)
 
-        STUDENT_INSTRUCTION = self._format_answer_sheet_prompt(exact_number_based_on_answer_key)
+        STUDENT_INSTRUCTION = self._format_answer_sheet_prompt(total_number_of_questions)
 
         if GENAI_AVAILABLE and self.model:
             response_text = self._call_gemini_sdk(image_base64, STUDENT_INSTRUCTION)
@@ -240,7 +240,7 @@ Return JSON EXACTLY like this:
     # HELPER METHODS
     # ============================================================
 
-    def _format_answer_sheet_prompt(exact_number_based_on_answer_key: int) -> str:
+    def _format_answer_sheet_prompt(total_number_of_questions: int) -> str:
         
         STUDENT_INSTRUCTION_init_1 = f"""
 You are an OCR system that extracts answers from an answer sheet image.
@@ -263,8 +263,8 @@ Important Rules:
 6. Only extract the student's answer.
 7. If a student's answer is unreadable, return "unreadable".
 8. If a student's answer is blank or missing, return "no_answer".
-9. If the number of questions is not exactly {exact_number_based_on_answer_key}:
-    You MUST still produce questions up to {exact_number_based_on_answer_key}, and return JSON in this exact format:
+9. If the number of questions is not exactly {total_number_of_questions}:
+    You MUST still produce questions up to {total_number_of_questions}, and return JSON in this exact format:
 """
         STUDENT_INSTRUCTION_init_2 = """
        {
@@ -402,43 +402,3 @@ Important Rules:
         except Exception as e:
             logger.error(f"Failed to parse JSON: {e}")
             return {"error": "JSON parsing failed", "raw_response": text[:200]}
-
-
-# ============================================================
-# EXAMPLE USAGE
-# ============================================================
-
-if __name__ == "__main__":
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
-
-    # Initialize OCR engine
-    ocr = GeminiOCREngine()
-
-    # Example 1: Extract answer key only
-    print("=" * 60)
-    print("EXTRACTING ANSWER KEY")
-    print("=" * 60)
-    answer_key = ocr.extract_answer_key("answer_key.jpg")
-    print(json.dumps(answer_key, indent=2))
-
-    # Example 2: Extract student answers only
-    print("\n" + "=" * 60)
-    print("EXTRACTING STUDENT ANSWERS")
-    print("=" * 60)
-    student_answers = ocr.extract_student_answers("student_sheet.jpg")
-    print(json.dumps(student_answers, indent=2))
-
-    # Example 3: Grade student sheet
-    print("\n" + "=" * 60)
-    print("GRADING RESULTS")
-    print("=" * 60)
-    graded_result = ocr.grade_student_sheet(student_answers, answer_key)
-    print(json.dumps(graded_result, indent=2))
-
-    # Example 4: Complete pipeline
-    print("\n" + "=" * 60)
-    print("COMPLETE PIPELINE")
-    print("=" * 60)
-    # final_result = ocr.complete_grading_pipeline("student_sheet.jpg", "answer_key.jpg")
-    # print(json.dumps(final_result, indent=2))
