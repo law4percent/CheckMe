@@ -115,6 +115,16 @@ def _upload_to_firebase(
 
 
 
+def _group_sheets_by_assessment_uid(sheets: list[dict]) -> dict:
+    sheets_by_uid = {}
+    for sheet in sheets:
+        uid = sheet["answer_key_assessment_uid"]
+        if uid not in sheets_by_uid:
+            sheets_by_uid[uid] = []
+        sheets_by_uid[uid].append(sheet)
+    return sheets_by_uid
+
+
 def _save_in_json_file(json_data: dict, target_path: str) -> dict:
     """
         Save extracted answer key as JSON file.
@@ -284,19 +294,54 @@ def _get_JSON_of_answer_sheet(sheets: list, delay: int = 5) -> dict:
 
 
 def _grade_it(json_full_path) -> dict:
-    utils.file_existence_checkpoint(json_full_path, __name__)
+    # Step 1: check json existence
+    json_restult = utils.file_existence_checkpoint(json_full_path, __name__)
+    if json_restult["status"] == "error":
+        return json_restult
+    
+    # Step 2: Get json and convert it into dict like this:
+    # {
+    #     "assessment_uid": "XXXX1234",
+    #     "answers": {
+    #         "Q1": "A",
+    #         "Q2": "CPU",
+    #         "Q3": "unreadable",
+    #         ...
+    #         "Qn": "no_answer", <-- if blank or no any answer
+    #     }
+    # }
+    
+    # Step 3: Get the answers value and initialize it to answer_sheet
+    
+    
+    # Step 4: Get the answer 
+    
+    # Step 5: Start checking by counting the check
+    
+    count_check = 0
+    for n in range(1, total_number_of_questions+1):
+        if answer_sheet.get(f"Q{n}").strip() == answer_key.get(f"Q{n}").strip():
+            count_check += 1
+            
+
     return {
-        "status": "success",
-        "score" : score,
-        "is_final_score": is_final_score
+        "status"                    : "success",
+        "score"                     : count_check,
+        "is_final_score"            : is_final_score, # This can be done with check the assessment uid of the answer_key DB table
+        "answer_key_assessment_uid" : answer_key_assessment_uid
     }
 
 
-def _score_batch():
+def _score_batch(batch_size: int):
     pass
     # Step 1: fetch those sheets that have processed_score is 1
     
-    # Step 2: 
+    # Step 2: Group with assessment_uid
+    _group_sheets_by_assessment_uid()
+    
+    # Step 3: _grade_it()
+    
+    
 
 # ============================================================
 # MAIN PROCESS B FUNCTION
