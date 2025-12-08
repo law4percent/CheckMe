@@ -31,7 +31,6 @@ def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
 
     list_length = len(assessment_uids_list)
     if not assessment_uids_list:
-        print("No answer keys found in the database.")
         return {
             "status"    : "error",
             "message"   : "No answer keys found in the database."
@@ -73,7 +72,6 @@ def _check_point(*paths) -> None:
     for path in paths:
         if not os.path.exists(path):
             os.makedirs(path)
-            print(f"Folder '{path}' created.")
 
 
 def process_a(**kwargs):
@@ -97,8 +95,8 @@ def process_a(**kwargs):
     paths           = process_A_args["paths"]
     tile_width      = process_A_args["tile_width"]
 
-    print(f"{task_name} is now Running ✅")
-    logger.info(f"{task_name} is now Running ✅")
+    if save_logs:
+        logger.info(f"{task_name} is now Running ✅")
     
     _check_point(
         paths["answer_key_path"]["image_path"], 
@@ -122,7 +120,8 @@ def process_a(**kwargs):
         
         if not status_checker.is_set():
             if save_logs:
-                logger.error(f"{task_name} - Error occur in some process.")
+                logger.warning(f"{task_name} - Status checker indicates error in another process")
+                logger.info(f"{task_name} has stopped")
             exit()
         
         key = hardware.read_keypad(rows, cols, pc_mode)
@@ -157,23 +156,18 @@ def process_a(**kwargs):
                     essay_existence         = answer_key_data["essay_existence"]
                 )
                 if create_result["status"] == "error":
-                    # ========USE LCD DISPLAY==========
-                    print(f"{task_name} - Error: {create_result["message"]}")
-                    # =================================
                     if save_logs:
                         logger.error(f"{task_name} - {create_result["message"]}")
             
             # Step 2: Else just display
             elif answer_key_data["status"] == "error":
-                # ========USE LCD DISPLAY==========
-                print(f"{task_name} - Error: {answer_key_data["message"]}")
-                # =================================
                 if save_logs:
                     logger.error(f"{task_name} - {answer_key_data["message"]}")
                     
             elif answer_key_data["status"] == "cancelled": 
                 # ========USE LCD DISPLAY==========
                 print(f"{task_name} - {answer_key_data["status"]}")
+                time.sleep(3)
                 # =================================
         
         
@@ -198,7 +192,6 @@ def process_a(**kwargs):
 
             # Step 3: Just display
             if answer_sheets_data["status"] == "error":
-                print(f"{task_name} - Error: {answer_sheets_data["message"]}")
                 if save_logs:
                     logger.error(f"{task_name} - {answer_sheets_data["message"]}")
 
