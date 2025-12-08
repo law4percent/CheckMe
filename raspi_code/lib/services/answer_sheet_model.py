@@ -3,9 +3,8 @@
 Database model for answer_sheets table
 """
 
-import sqlite3
 from .models import get_connection
-
+from datetime import datetime
 
 def create_answer_sheet(
         answer_key_assessment_uid: str,
@@ -149,35 +148,93 @@ def get_unprocessed_sheets(limit: int = 5) -> dict:
         }
 
 
+def _get_latest_image(files: list[str]) -> str:
+    return max(files, key=lambda f: _to_datetime(_extract_datetime(f)))
+
+
+def _to_datetime(dt_string: str) -> datetime:
+    return datetime.strptime(dt_string, "%Y%m%d_%H%M%S")
+
+
+def _extract_datetime(filename: str) -> str:
+    """
+        Extracts the datetime string from filename: YYYYMMDD_HHMMSS
+    """
+    before_ext = filename.rsplit(".", 1)[0]          # remove .jpg
+    dt_string = before_ext.rsplit("_DT_", 1)[-1]     # get the part after _DT_
+    return dt_string
+
+
 def update_answer_key_by_image_path(
         img_full_path: str,
         json_file_name: str,
         json_full_path: str,
-        student_id: str
+        student_id: str,
+        answer_key_assessment_uid: str
     ) -> dict:
     """
-    Args:
-        img_full_path
-        json_file_name
-        json_full_path
-        student_id
+        Update answer key info based on the given image path.
+
+        Args:
+            img_full_path
+            json_file_name
+            json_full_path
+            student_id
+            answer_key_assessment_uid
     """
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # Check student ID existence to avoid duplication
-        try: 
-            pass
-        except Exception as e:
-            pass
-        
+
+        cursor.execute('''
+            SELECT img_full_path
+            FROM answer_sheets
+            WHERE student_id = ? AND answer_key_assessment_uid = ?
+        ''', (student_id, answer_key_assessment_uid))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        # If student already has entries, compare images and keep the latest
+        if rows:
+            collected_same_imgs = [row[0] for row in rows]
+            collected_same_imgs.append(img_full_path)
+
+            # Step 1: Determine the newest image
+            latest_img = _get_latest_image(collected_same_imgs)
+
+            # Step 2: Overwrite the stored image for the student
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE answer_sheets
+                SET img_full_path = ?, processed_score = 1
+                WHERE student_id = ? AND answer_key_assessment_uid = ?
+            ''', (latest_img, student_id, answer_key_assessment_uid))
+            conn.commit()
+            conn.close()
+
+            # Step 3: Do not update JSON paths because they belong to the local file system
+            # Skipped intentionally
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Fetching error - {e}. Source: {__name__}"
+        }
+
+    # Second update: json_file_name, json_full_path, student_id
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
         cursor.execute('''
             UPDATE answer_sheets
             SET 
                 json_file_name = ?,
                 json_full_path = ?,
-                student_id = ?
+                student_id = ?,
+                processed_score = 1
             WHERE img_full_path = ?
         ''', (
             json_file_name,
@@ -185,262 +242,15 @@ def update_answer_key_by_image_path(
             student_id,
             img_full_path
         ))
-        
+
         conn.commit()
         conn.close()
-        
+
         return {"status": "success"}
-    
-    except Exception as e:
-        return {
-            "status"    : "error",
-            "message"   : f"Faild to update json path and student id. {e}. Source: {__name__}"
-        }
 
-
-
-
-
-
-
-def get_answer_sheet_by_id(sheet_id: int) -> Optional[Dict]:
-    """
-    Fetch a single answer sheet by ID.
-    
-    Args:
-        sheet_id: Answer sheet ID
-    
-    Returns:
-        Answer sheet record or None
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT 
-                id,
-                assessment_uid,
-                student_id,
-                number_of_pages,
-                json_file_name,
-                json_path,
-                img_path,
-                score,
-                is_final_score,
-                is_image_uploaded,
-                saved_at,
-                image_uploaded_at
-            FROM answer_sheets
-            WHERE id = ?
-        ''', (sheet_id,))
-        
-        row = cursor.fetchone()
-        conn.close()
-        
-        if not row:
-            return None
-        
-        return {
-            "id": row[0],
-            "assessment_uid": row[1],
-            "student_id": row[2],
-            "number_of_pages": row[3],
-            "json_file_name": row[4],
-            "json_path": row[5],
-            "img_path": row[6],
-            "score": row[7],
-            "is_final_score": row[8],
-            "is_image_uploaded": row[9],
-            "saved_at": row[10],
-            "image_uploaded_at": row[11]
-        }
-    except Exception as e:
-        print(f"Error fetching sheet by ID: {e}")
-        return None
-
-
-def update_answer_sheet_after_ocr(
-    sheet_id: int,
-    student_id: str,
-    score: int,
-    is_final_score: bool
-) -> dict:
-    """
-    Update answer sheet after OCR processing.
-    
-    Args:
-        sheet_id: Answer sheet ID
-        student_id: Extracted student ID
-        score: Calculated score
-        is_final_score: Whether this is the final score
-    
-    Returns:
-        Status dictionary
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE answer_sheets
-            SET 
-                student_id = ?,
-                score = ?,
-                is_final_score = ?,
-                is_image_uploaded = 1,
-                image_uploaded_at = datetime('now', 'localtime')
-            WHERE id = ?
-        ''', (
-            student_id,
-            score,
-            1 if is_final_score else 0,
-            sheet_id
-        ))
-        
-        conn.commit()
-        conn.close()
-        
-        return {"status": "success"}
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e)
+            "message": f"Failed to update JSON path and student ID. {e}. Source: {__name__}"
         }
 
-
-def get_all_sheets_by_assessment(assessment_uid: str) -> List[Dict]:
-    """
-    Get all answer sheets for a specific assessment.
-    
-    Args:
-        assessment_uid: Assessment identifier
-    
-    Returns:
-        List of answer sheet records
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT 
-                id,
-                assessment_uid,
-                student_id,
-                number_of_pages,
-                json_file_name,
-                json_path,
-                img_path,
-                score,
-                is_final_score,
-                is_image_uploaded,
-                saved_at,
-                image_uploaded_at
-            FROM answer_sheets
-            WHERE assessment_uid = ?
-            ORDER BY saved_at DESC
-        ''', (assessment_uid,))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        sheets = []
-        for row in rows:
-            sheets.append({
-                "id": row[0],
-                "assessment_uid": row[1],
-                "student_id": row[2],
-                "number_of_pages": row[3],
-                "json_file_name": row[4],
-                "json_path": row[5],
-                "img_path": row[6],
-                "score": row[7],
-                "is_final_score": row[8],
-                "is_image_uploaded": row[9],
-                "saved_at": row[10],
-                "image_uploaded_at": row[11]
-            })
-        
-        return sheets
-    except Exception as e:
-        print(f"Error fetching sheets by assessment: {e}")
-        return []
-
-
-def delete_answer_sheet(sheet_id: int) -> dict:
-    """
-    Delete an answer sheet record.
-    
-    Args:
-        sheet_id: Answer sheet ID
-    
-    Returns:
-        Status dictionary
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('DELETE FROM answer_sheets WHERE id = ?', (sheet_id,))
-        
-        conn.commit()
-        conn.close()
-        
-        return {"status": "success"}
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
-
-
-def get_processing_stats() -> Dict:
-    """
-    Get statistics about answer sheet processing.
-    
-    Returns:
-        Dictionary with processing statistics
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # Total sheets
-        cursor.execute('SELECT COUNT(*) FROM answer_sheets')
-        total = cursor.fetchone()[0]
-        
-        # Processed sheets
-        cursor.execute('SELECT COUNT(*) FROM answer_sheets WHERE student_id IS NOT NULL')
-        processed = cursor.fetchone()[0]
-        
-        # Unprocessed sheets
-        cursor.execute('SELECT COUNT(*) FROM answer_sheets WHERE student_id IS NULL')
-        unprocessed = cursor.fetchone()[0]
-        
-        # Sheets with final scores
-        cursor.execute('SELECT COUNT(*) FROM answer_sheets WHERE is_final_score = 1')
-        final_scores = cursor.fetchone()[0]
-        
-        # Sheets needing manual grading (has essay)
-        cursor.execute('SELECT COUNT(*) FROM answer_sheets WHERE is_final_score = 0 AND student_id IS NOT NULL')
-        needs_manual = cursor.fetchone()[0]
-        
-        conn.close()
-        
-        return {
-            "total": total,
-            "processed": processed,
-            "unprocessed": unprocessed,
-            "final_scores": final_scores,
-            "needs_manual_grading": needs_manual
-        }
-    except Exception as e:
-        print(f"Error fetching stats: {e}")
-        return {
-            "total": 0,
-            "processed": 0,
-            "unprocessed": 0,
-            "final_scores": 0,
-            "needs_manual_grading": 0
-        }
