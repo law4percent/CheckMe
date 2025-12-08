@@ -1,6 +1,6 @@
 import os
 
-def path_existence_checkpoint(target_path) -> dict:
+def path_existence_checkpoint(target_path: str) -> dict:
     if not os.path.exists(target_path):
         return {
             "status"    : "error", 
@@ -9,7 +9,7 @@ def path_existence_checkpoint(target_path) -> dict:
     return {"status": "success"}
 
 
-def file_existence_checkpoint(file_path) -> dict:
+def file_existence_checkpoint(file_path: str) -> dict:
     if not os.path.isfile(file_path):
         return {
             "status"    : "error", 
