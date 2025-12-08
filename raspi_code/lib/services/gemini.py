@@ -51,11 +51,11 @@ Return JSON EXACTLY like this:
 {
   "assessment_uid": "XXXX1234",
   "answers": {
-    "question_1": "A",
-    "question_2": "CPU",
-    "question_3": "unreadable",
+    "Q1": "A",
+    "Q2": "CPU",
+    "Q3": "unreadable",
     ...
-    question_N": "no_answer",
+    "Qn": "no_answer", <-- if blank or no any answer
   }
 }
 """
@@ -263,39 +263,25 @@ Important Rules:
 6. Only extract the student's answer.
 7. If a student's answer is unreadable, return "unreadable".
 8. If a student's answer is blank or missing, return "no_answer".
-9. If the number of questions is not exactly {total_number_of_questions}:
+9. The total number of questions (Qn) must be exactly {total_number_of_questions}.
+10. If the number of questions is not exactly {total_number_of_questions}:
     You MUST still produce questions up to {total_number_of_questions}, and return JSON in this exact format:
 """
         STUDENT_INSTRUCTION_init_2 = """
        {
            "student_id": "XXXX2345",
            "answers": {
-               "question_1": "A",
-               "question_2": "no_answer",
-               "question_3": "unreadable",
+               "Q1": "A",
+               "Q2": "no_answer",   <-- if blank or no any answer
+               "Q3": "unreadable",
                ...
-               "question_12": "no_answer",  <-- missing: mark as no_answer
-               "question_13": "no_answer",  <-- missing: mark as no_answer
+               "Q12": "no_question",  <-- Question number 12 is missing or cannot find in image: mark as no_question
+               "Q13": "no_question",  <-- Question number 13 is missing or cannot find in image: mark as no_question
                ...
-               "question_30": "B",
-               "question_31": "D",
-               "question_32": "C",
+               "Q30": "B",
+               "Q31": "D",
                ...
-               "question_N": "CPU"
-           }
-       }
-
-   ELSE (when the number of questions matches exactly):
-       Return JSON in this exact format:
-
-       {
-           "student_id": "XXXX2345",
-           "answers": {
-               "question_1": "A",
-               "question_2": "no_answer",
-               "question_3": "unreadable",
-               ...
-               "question_N": "CPU"
+               "Qn": "CPU"
            }
        }
 """
