@@ -60,63 +60,6 @@ Return JSON EXACTLY like this:
 }
 """
 
-    STUDENT_INSTRUCTION = """
-You are an OCR system that extracts answers from an answer sheet image.
-
-The sheet contains:
-- A Student ID field at the top.
-- Student’s handwritten or circled answers.
-- Multiple possible sections:
-  - Section Number: Multiple Choice – Circle the correct answer (A, B, C, D)
-  - Section Number: True or False – Fill in the blank (T or F)
-  - Section Number: Multiple Choice – Fill in the blank (A, B, C, D)
-  - Section Number: Enumeration – Fill in the blank (text answers)
-
-Important Rules:
-1. Read the Student ID written at the top.
-2. Detect whether each answer is circled or written.
-3. For enumeration items, extract the text exactly as written.
-4. Maintain continuous numbering across sections (1, 2, 3, …).
-5. Do NOT include explanations or the question text.
-6. Only extract the student's answer.
-7. If a student's answer is unreadable, return "unreadable".
-8. If a student's answer is blank or missing, return "no_answer".
-9. If the number of questions is not exactly {exact_number_based_on_answer_key}:
-    You MUST still produce questions up to {exact_number_based_on_answer_key}, and return JSON in this exact format:
-
-       {
-           "student_id": "XXXX2345",
-           "answers": {
-               "question_1": "A",
-               "question_2": "no_answer",
-               "question_3": "unreadable",
-               ...
-               "question_12": "no_answer",  <-- missing: mark as no_answer
-               "question_13": "no_answer",  <-- missing: mark as no_answer
-               ...
-               "question_30": "B",
-               "question_31": "D",
-               "question_32": "C",
-               ...
-               "question_N": "CPU"
-           }
-       }
-
-   ELSE (when the number of questions matches exactly):
-       Return JSON in this exact format:
-
-       {
-           "student_id": "XXXX2345",
-           "answers": {
-               "question_1": "A",
-               "question_2": "no_answer",
-               "question_3": "unreadable",
-               ...
-               "question_N": "CPU"
-           }
-       }
-"""
-
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
 
@@ -166,10 +109,12 @@ Important Rules:
 
         image_base64 = self._encode_image(image_path)
 
+        STUDENT_INSTRUCTION = self._format_answer_sheet_prompt(exact_number_based_on_answer_key)
+
         if GENAI_AVAILABLE and self.model:
-            response_text = self._call_gemini_sdk(image_base64, self.STUDENT_INSTRUCTION)
+            response_text = self._call_gemini_sdk(image_base64, STUDENT_INSTRUCTION)
         else:
-            response_text = self._call_gemini_rest(image_base64, self.STUDENT_INSTRUCTION)
+            response_text = self._call_gemini_rest(image_base64, STUDENT_INSTRUCTION)
 
         return self._safe_parse_json(response_text)
 
@@ -294,6 +239,67 @@ Important Rules:
     # ============================================================
     # HELPER METHODS
     # ============================================================
+
+    def _format_answer_sheet_prompt(exact_number_based_on_answer_key: int) -> str:
+        
+        STUDENT_INSTRUCTION_init_1 = f"""
+You are an OCR system that extracts answers from an answer sheet image.
+
+The sheet contains:
+- A Student ID field at the top.
+- Student’s handwritten or circled answers.
+- Multiple possible sections:
+  - Section Number: Multiple Choice – Circle the correct answer (A, B, C, D)
+  - Section Number: True or False – Fill in the blank (T or F)
+  - Section Number: Multiple Choice – Fill in the blank (A, B, C, D)
+  - Section Number: Enumeration – Fill in the blank (text answers)
+
+Important Rules:
+1. Read the Student ID written at the top.
+2. Detect whether each answer is circled or written.
+3. For enumeration items, extract the text exactly as written.
+4. Maintain continuous numbering across sections (1, 2, 3, …).
+5. Do NOT include explanations or the question text.
+6. Only extract the student's answer.
+7. If a student's answer is unreadable, return "unreadable".
+8. If a student's answer is blank or missing, return "no_answer".
+9. If the number of questions is not exactly {exact_number_based_on_answer_key}:
+    You MUST still produce questions up to {exact_number_based_on_answer_key}, and return JSON in this exact format:
+"""
+        STUDENT_INSTRUCTION_init_2 = """
+       {
+           "student_id": "XXXX2345",
+           "answers": {
+               "question_1": "A",
+               "question_2": "no_answer",
+               "question_3": "unreadable",
+               ...
+               "question_12": "no_answer",  <-- missing: mark as no_answer
+               "question_13": "no_answer",  <-- missing: mark as no_answer
+               ...
+               "question_30": "B",
+               "question_31": "D",
+               "question_32": "C",
+               ...
+               "question_N": "CPU"
+           }
+       }
+
+   ELSE (when the number of questions matches exactly):
+       Return JSON in this exact format:
+
+       {
+           "student_id": "XXXX2345",
+           "answers": {
+               "question_1": "A",
+               "question_2": "no_answer",
+               "question_3": "unreadable",
+               ...
+               "question_N": "CPU"
+           }
+       }
+"""
+        return STUDENT_INSTRUCTION_init_1 + STUDENT_INSTRUCTION_init_2
 
     def _encode_image(self, path: str) -> str:
         """Encode image to base64."""
