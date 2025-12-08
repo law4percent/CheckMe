@@ -77,6 +77,14 @@ def _check_point(*paths) -> None:
 
 
 def process_a(**kwargs):
+    """
+        Main Process A function - Background OCR processing.
+        
+        Will responsible in getting the answer sheets and answer keys.
+        
+        Args:
+            **kwargs: Must contain 'process_A_args' dict
+    """
     process_A_args  = kwargs["process_A_args"]
     task_name       = process_A_args["task_name"]
     image_extension = process_A_args["image_extension"]

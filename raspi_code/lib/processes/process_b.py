@@ -8,7 +8,6 @@ import time
 import json
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
 from lib.services import answer_key_model, answer_sheet_model
@@ -18,23 +17,6 @@ from lib import logger_config
 import logging
 
 logger = logger_config.setup_logger(name=__name__, level=logging.DEBUG)
-
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-@dataclass
-class ProcessBConfig:
-    """Configuration for Process B."""
-    task_name: str
-    poll_interval: int = 5
-    retry_delay: int = 10
-    max_retries: int = 3
-    batch_size: int = 5
-    teacher_uid: Optional[str] = None
-    firebase_enabled: bool = False
-    status_checker: Optional[Any] = None
 
 
 @dataclass
@@ -58,21 +40,6 @@ class ProcessingMetrics:
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
-
-def _validate_config(args: dict) -> Dict[str, Any]:
-    """Validate required configuration arguments."""
-    required_keys = ["task_name", "poll_interval", "status_checker"]
-    
-    missing = [key for key in required_keys if key not in args]
-    if missing:
-        return {
-            "status": "error",
-            "message": f"Missing config: {', '.join(missing)}"
-        }
-    
-    return {"status": "success"}
-
-
 def _load_answer_key_from_json(json_path: str) -> Dict[str, Any]:
     """Load answer key from JSON file."""
     try:
@@ -396,7 +363,6 @@ def _process_batch(
         }
     
     # logger.info(f"Found {len(sheets)} unprocessed sheet(s)")
-    
     processed_count = 0
     failed_count    = 0
     
@@ -500,44 +466,25 @@ def _process_batch(
 # MAIN PROCESS B FUNCTION
 # ============================================================
 
-def process_b(**kwargs) -> Dict[str, Any]:
+def process_b(**kwargs):
     """
         Main Process B function - Background OCR processing.
         
-        Continuously monitors answer_sheets table and processes unprocessed records.
+        Continuously monitors answer_sheets table and processes unprocessed records with Gemini OCR.
         
         Args:
-            **kwargs: Must contain 'process_B_args' dict with configuration
-        
-        Returns:
-            dict: Status dictionary
+            **kwargs: Must contain 'process_B_args' dict
     """
-    # Extract and validate configuration
-    process_B_args = kwargs.get("process_B_args", {})
-    
-    validation = _validate_config(process_B_args)
-    if validation["status"] == "error":
-        logger.error(validation["message"])
-        return validation
-    
-    try:
-        config = ProcessBConfig(
-            task_name           = process_B_args["task_name"],
-            poll_interval       = process_B_args.get("poll_interval", 5),
-            retry_delay         = process_B_args.get("retry_delay", 10),
-            max_retries         = process_B_args.get("max_retries", 3),
-            batch_size          = process_B_args.get("batch_size", 5),
-            teacher_uid         = process_B_args.get("teacher_uid"),
-            firebase_enabled    = process_B_args.get("firebase_enabled", False),
-            status_checker      = process_B_args.get("status_checker")
-        )
-    except TypeError as e:
-        error_msg = f"Invalid configuration: {e}"
-        logger.error(error_msg)
-        if config.status_checker:
-            config.status_checker.clear()  # Signal other processes to stop
-            exit()
-    
+    process_B_args      = kwargs["process_B_args"]
+    task_name           = process_B_args["task_name"],
+    poll_interval       = process_B_args["poll_interval"],
+    retry_delay         = process_B_args["retry_delay"],
+    max_retries         = process_B_args["max_retries"],
+    batch_size          = process_B_args["batch_size"],
+    teacher_uid         = process_B_args["teacher_uid"],
+    firebase_enabled    = process_B_args["firebase_enabled"],
+    status_checker      = process_B_args["status_checker"]
+
     logger.info(f"{config.task_name} is now Running ✅")
     print(f"{config.task_name} is now Running ✅")
     
@@ -642,129 +589,3 @@ def process_b(**kwargs) -> Dict[str, Any]:
             "uptime": metrics.get_uptime()
         }
     }
-
-
-
-
-
-
-
-# ============================================================
-# MANUAL PROCESSING FUNCTION (FOR TESTING)
-# ============================================================
-
-def process_single_sheet_manual(
-        sheet_id: int,
-        teacher_uid: Optional[str] = None,
-        firebase_enabled: bool = False
-    ) -> Dict[str, Any]:
-    """
-        Manually process a single answer sheet by ID (for testing).
-        
-        Args:
-            sheet_id: Answer sheet ID from database
-            teacher_uid: Teacher's Firebase UID (optional)
-            firebase_enabled: Whether to sync to Firebase
-        
-        Returns:
-            Processing result
-    """
-    logger.info(f"Manual processing of sheet ID={sheet_id}")
-    
-    # Initialize OCR engine
-    try:
-        ocr_engine = GeminiOCREngine()
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to initialize OCR engine: {e}"
-        }
-    
-    # Fetch sheet record
-    try:
-        sheet = answer_sheet_model.get_answer_sheet_by_id(sheet_id)
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Database error: {e}"
-        }
-    
-    if not sheet:
-        return {
-            "status": "error",
-            "message": f"Sheet ID={sheet_id} not found"
-        }
-    
-    # Fetch answer key
-    assessment_uid = sheet["answer_key_assessment_uid"]
-    try:
-        answer_key_record = answer_key_model.get_answer_key_json_path_by_uid(assessment_uid)
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Database error fetching answer key: {e}"
-        }
-    
-    if not answer_key_record:
-        return {
-            "status": "error",
-            "message": f"Answer key not found for UID={assessment_uid}"
-        }
-    
-    # Load answer key JSON
-    answer_key_json = _load_answer_key_from_json(answer_key_record["json_full_path"])
-    if answer_key_json["status"] == "error":
-        return answer_key_json
-    
-    answer_key_data = answer_key_json["data"]
-    answer_key_data["has_essay"] = bool(answer_key_record.get("essay_existence", 0))
-    
-    # Create config for processing
-    config = ProcessBConfig(
-        task_name="Manual Processing",
-        teacher_uid=teacher_uid,
-        firebase_enabled=firebase_enabled
-    )
-    
-    # Process
-    result = _process_single_answer_sheet(
-        ocr_engine=ocr_engine,
-        sheet_record=sheet,
-        answer_key_data=answer_key_data,
-        config=config
-    )
-    
-    if result["status"] == "success":
-        update_result = _update_sheet_with_results(sheet_id, result)
-        if update_result["status"] == "success":
-            logger.info(f"✅ Sheet ID={sheet_id} processed successfully")
-            print(f"\n✅ Processing complete!")
-            print(f"  - Student ID: {result['student_id']}")
-            print(f"  - Score: {result['score']}")
-            print(f"  - Final Score: {'Yes' if result['is_final_score'] else 'No (has essay)'}")
-            print(f"  - JSON saved: {result['json_full_path']}")
-            print(f"  - Firebase: {result['firebase_status']['status']}")
-            return result
-        else:
-            return update_result
-    else:
-        return result
-
-
-if __name__ == "__main__":
-    # Test single sheet processing
-    # result = process_single_sheet_manual(
-    #     sheet_id=1,
-    #     teacher_uid="gbRaC4u7MSRWWRi9LerDQyjVzg22",
-    #     firebase_enabled=True
-    # )
-    # print(json.dumps(result, indent=2))
-    
-    # Or run full process
-    process_b(process_B_args={
-        "task_name": "Process B - OCR Worker",
-        "poll_interval": 5,
-        "teacher_uid": "gbRaC4u7MSRWWRi9LerDQyjVzg22",
-        "firebase_enabled": True,
-        "status_checker": None  # Replace with actual multiprocessing.Event()
-    })

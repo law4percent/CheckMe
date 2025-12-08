@@ -48,13 +48,15 @@ if __name__ == "__main__":
         },
         process_B_args = {
             "task_name"         : "Process B",
+            "poll_interval"     : 5,
+            "retry_delay"       : 10,
+            "max_retries"       : 3,
+            "batch_size"        : 5,
+            "teacher_uid"       : "gbRaC4u7MSRWWRi9LerDQyjVzg22", # This is for testing but later will get properly via letting the user login here in the system. I will add authentication feature here in the system. And once the user successfully login the system will get the teach_uid with their username credential.
+            "firebase_enabled"  : True,
+            "status_checker"    : status_checker,
             "pc_mode"           : PC_MODE,
             "save_logs"         : SAVE_LOGS,
-            "poll_interval"     : 5,
-            "paths"             : {"answer_key_path": ANSWER_KEY_PATH, "answer_sheet_path": ANSWER_SHEET_PATH},
-            "status_checker"    : status_checker,
-            "teacher_uid"       : "gbRaC4u7MSRWWRi9LerDQyjVzg22",
-            "firebase_enabled"  : True
         },
         process_C_args = {
             "task_name"         : "Process C",
