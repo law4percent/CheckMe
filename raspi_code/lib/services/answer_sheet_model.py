@@ -149,6 +149,60 @@ def get_unprocessed_sheets(limit: int = 5) -> dict:
         }
 
 
+def update_answer_key_by_image_path(
+        img_full_path: str,
+        json_file_name: str,
+        json_full_path: str,
+        student_id: str
+    ) -> dict:
+    """
+    Args:
+        img_full_path
+        json_file_name
+        json_full_path
+        student_id
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check student ID existence to avoid duplication
+        try: 
+            pass
+        except Exception as e:
+            pass
+        
+        cursor.execute('''
+            UPDATE answer_sheets
+            SET 
+                json_file_name = ?,
+                json_full_path = ?,
+                student_id = ?
+            WHERE img_full_path = ?
+        ''', (
+            json_file_name,
+            json_full_path,
+            student_id,
+            img_full_path
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"status": "success"}
+    
+    except Exception as e:
+        return {
+            "status"    : "error",
+            "message"   : f"Faild to update json path and student id. {e}. Source: {__name__}"
+        }
+
+
+
+
+
+
+
 def get_answer_sheet_by_id(sheet_id: int) -> Optional[Dict]:
     """
     Fetch a single answer sheet by ID.
