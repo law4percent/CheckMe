@@ -8,6 +8,7 @@ from . import camera
 from . import image_combiner
 from . import display
 from lib.services.gemini import GeminiOCREngine
+from lib.services import utils
 from datetime import datetime
 import json
 
@@ -21,24 +22,6 @@ import json
     6. Save extracted answer key as JSON
 """
 
-def _path_existence_checkpoint(target_path) -> dict:
-    if not os.path.exists(target_path):
-        return {
-            "status"    : "error", 
-            "message"   : f"{target_path} is not exist. Source: {__name__}."
-        }
-    return {"status": "success"}
-
-
-def _file_existence_checkpoint(file_path) -> dict:
-    if not os.path.isfile(file_path):
-        return {
-            "status"    : "error", 
-            "message"   : f"{file_path} file does not exist. Source: {__name__}."
-        }
-    return {"status": "success"}
-
-
 def _get_JSON_of_answer_key(image_path: str) -> dict:
     """
         Send image to Gemini API for OCR extraction of answer key.
@@ -51,7 +34,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
             Extracted JSON data of answer key
     """
     # Step 1: Check file existence
-    file_status = _file_existence_checkpoint(image_path)
+    file_status = utils.file_existence_checkpoint(image_path)
     if file_status["status"] == "error":
         return file_status
     
@@ -78,7 +61,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
 
 def _save_image(frame: any, file_name: str, target_path: str) -> dict:
     """Save image frame to disk."""
-    path_status = _path_existence_checkpoint(target_path)
+    path_status = utils.path_existence_checkpoint(target_path)
     if path_status["status"] == "error":
         return path_status
         
@@ -109,7 +92,7 @@ def _save_in_json_file(json_data: dict, target_path: str) -> dict:
             Path to saved JSON file, and status dictionary
     """
     # Step 1: Check the path existence
-    path_status = _path_existence_checkpoint(target_path)
+    path_status = utils.path_existence_checkpoint(target_path)
     if path_status["status"] == "error":
         return path_status
     

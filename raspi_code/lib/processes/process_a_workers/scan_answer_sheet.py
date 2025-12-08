@@ -6,15 +6,7 @@ from . import camera
 from . import image_combiner
 from datetime import datetime
 import os
-from lib.services import answer_key_model, answer_sheet_model
-
-def _path_existence_checkpoint(target_path) -> dict:
-    if not os.path.exists(target_path):
-        return {
-            "status"    : "error", 
-            "message"   : f"{target_path} is not exist. Source: {__name__}."
-        }
-    return {"status": "success"}
+from lib.services import answer_key_model, answer_sheet_model, utils
 
 
 def _ask_for_number_of_sheets(keypad_rows_and_cols: list, pc_mode: bool, limit: int = 50) -> dict:
@@ -119,7 +111,7 @@ def _naming_image_file(file_extension: str, is_combined_image: bool, current_she
 
 def _save_image(frame: any, file_name: str, target_path: str) -> dict:
     """Save image frame to disk."""
-    path_status = _path_existence_checkpoint(target_path)
+    path_status = utils.path_existence_checkpoint(target_path)
     if path_status["status"] == "error":
         return path_status
         
