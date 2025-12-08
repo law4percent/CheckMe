@@ -1,18 +1,18 @@
 import os
 
-def path_existence_checkpoint(target_path: str) -> dict:
+def path_existence_checkpoint(target_path: str, source: str) -> dict:
     if not os.path.exists(target_path):
         return {
             "status"    : "error", 
-            "message"   : f"{target_path} is not exist. Source: {__name__}."
+            "message"   : f"{target_path} does not exist. Source: {source}."
         }
     return {"status": "success"}
 
 
-def file_existence_checkpoint(file_path: str) -> dict:
+def file_existence_checkpoint(file_path: str, source: str) -> dict:
     if not os.path.isfile(file_path):
         return {
             "status"    : "error", 
-            "message"   : f"{file_path} file does not exist. Source: {__name__}."
+            "message"   : f"{file_path} file does not exist. Source: {source}."
         }
     return {"status": "success"}

@@ -111,7 +111,7 @@ def _naming_image_file(file_extension: str, is_combined_image: bool, current_she
 
 def _save_image(frame: any, file_name: str, target_path: str) -> dict:
     """Save image frame to disk."""
-    path_status = utils.path_existence_checkpoint(target_path)
+    path_status = utils.path_existence_checkpoint(target_path, __name__)
     if path_status["status"] == "error":
         return path_status
         
@@ -143,10 +143,16 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
     )
     if save_image["status"] == "error":
         return save_image
+    full_path = save_image["full_path"]
+    
+    image_file_validation_result =  utils.file_existence_checkpoint(full_path, __name__)
+    if image_file_validation_result["status"] == "error":
+        return image_file_validation_result
+
     return {
         "status"   : "success",
         "file_name": file_name,
-        "full_path": save_image["full_path"]
+        "full_path": full_path
     }
 
 

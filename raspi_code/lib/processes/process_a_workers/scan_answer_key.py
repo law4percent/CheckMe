@@ -34,7 +34,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
             Extracted JSON data of answer key
     """
     # Step 1: Check file existence
-    file_status = utils.file_existence_checkpoint(image_path)
+    file_status = utils.file_existence_checkpoint(image_path, __name__)
     if file_status["status"] == "error":
         return file_status
     
@@ -61,7 +61,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
 
 def _save_image(frame: any, file_name: str, target_path: str) -> dict:
     """Save image frame to disk."""
-    path_status = utils.path_existence_checkpoint(target_path)
+    path_status = utils.path_existence_checkpoint(target_path, __name__)
     if path_status["status"] == "error":
         return path_status
         
@@ -92,7 +92,7 @@ def _save_in_json_file(json_data: dict, target_path: str) -> dict:
             Path to saved JSON file, and status dictionary
     """
     # Step 1: Check the path existence
-    path_status = utils.path_existence_checkpoint(target_path)
+    path_status = utils.path_existence_checkpoint(target_path, __name__)
     if path_status["status"] == "error":
         return path_status
     
@@ -103,6 +103,11 @@ def _save_in_json_file(json_data: dict, target_path: str) -> dict:
         full_path = os.path.join(target_path, json_file_name)
         with open(full_path, 'w') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False)
+
+        json_file_validation_result = utils.file_existence_checkpoint(full_path, __name__)
+        if json_file_validation_result["status"] == "error":
+            return json_file_validation_result
+        
         return {
             "status"        : "success",
             "full_path"     : full_path,
@@ -189,10 +194,16 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
     )
     if save_image["status"] == "error":
         return save_image
+    full_path = save_image["full_path"]
+
+    image_file_validation_result = utils.file_existence_checkpoint(full_path, __name__)
+    if image_file_validation_result["status"] == "error":
+        return image_file_validation_result
+
     return {
         "status"   : "success",
         "file_name": file_name,
-        "full_path": save_image["full_path"]
+        "full_path": full_path
     }
 
 
