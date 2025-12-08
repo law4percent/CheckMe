@@ -147,13 +147,14 @@ def process_a(**kwargs):
             # Step 2: Save results to database
             if answer_key_data["status"] == "success":
                 create_result = answer_key_model.create_answer_key(
-                    assessment_uid          = answer_key_data["assessment_uid"],
-                    total_number_of_pages   = answer_key_data["total_number_of_pages "],
-                    json_file_name          = answer_key_data["json_details"]["file_name"],
-                    json_full_path          = answer_key_data["json_details"]["full_path"],
-                    img_file_name           = answer_key_data["image_details"]["file_name"],
-                    img_full_path           = answer_key_data["image_details"]["full_path"],
-                    essay_existence         = answer_key_data["essay_existence"]
+                    assessment_uid              = answer_key_data["assessment_uid"],
+                    total_number_of_pages       = answer_key_data["total_number_of_pages "],
+                    json_file_name              = answer_key_data["json_details"]["file_name"],
+                    json_full_path              = answer_key_data["json_details"]["full_path"],
+                    img_file_name               = answer_key_data["image_details"]["file_name"],
+                    img_full_path               = answer_key_data["image_details"]["full_path"],
+                    essay_existence             = answer_key_data["essay_existence"],
+                    total_number_of_questions   = answer_key_data["total_number_of_questions"]
                 )
                 if create_result["status"] == "error":
                     if save_logs:

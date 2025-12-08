@@ -8,14 +8,15 @@ from .models import get_connection
 
 
 def create_answer_key(
-    assessment_uid: str,
-    total_number_of_pages: int,
-    json_file_name: str,
-    json_full_path: str,
-    img_file_name: str,
-    img_full_path: str,
-    essay_existence: bool
-) -> dict:
+        assessment_uid: str,
+        total_number_of_pages: int,
+        json_file_name: str,
+        json_full_path: str,
+        img_file_name: str,
+        img_full_path: str,
+        essay_existence: bool,
+        total_number_of_questions: int
+    ) -> dict:
     """
         Creates a new answer key record in the database.
 
@@ -46,8 +47,9 @@ def create_answer_key(
                 json_full_path,
                 img_file_name,
                 img_full_path,
-                essay_existence
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                essay_existence,
+                total_number_of_questions
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             assessment_uid,
             total_number_of_pages,
@@ -55,7 +57,8 @@ def create_answer_key(
             json_full_path,
             img_file_name,
             img_full_path,
-            1 if essay_existence else 0
+            1 if essay_existence else 0,
+            total_number_of_questions
         ))
         
         conn.commit()

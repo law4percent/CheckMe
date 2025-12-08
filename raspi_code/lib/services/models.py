@@ -26,6 +26,7 @@ def create_table():
             img_file_name TEXT NOT NULL,
             img_full_path TEXT NOT NULL,
             essay_existence INTEGER NOT NULL,
+            total_number_of_questions INTEGER NOT NULL,
             saved_at TEXT DEFAULT (datetime('now', 'localtime'))
         )
     ''')

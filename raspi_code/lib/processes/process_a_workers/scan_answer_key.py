@@ -48,7 +48,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
             image_path: Path to answer key image
         
         Returns:
-            Extracted answer key
+            Extracted JSON data of answer key
     """
     # Step 1: Check file existence
     file_status = _file_existence_checkpoint(image_path)
@@ -60,13 +60,9 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
         JSON_data = gemini_engine.extract_answer_key(image_path)
         
         # Step 2: Check the assessment uid and answer key existence
-        assessment_uid_validation_result = _validate_the_assessment_uid_existence(JSON_data)
-        if assessment_uid_validation_result["status"] == "error":
-            return assessment_uid_validation_result
-        
-        answer_key_validation_result = _validate_the_answer_key_existence(JSON_data)
-        if answer_key_validation_result["status"] == "error":
-            return answer_key_validation_result
+        validation_result = _validate_the_keys_existence(JSON_data)
+        if validation_result["status"] == "error":
+            return validation_result
         
         return {
             "status"    : "success",
@@ -217,7 +213,7 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
     }
 
 
-def _validate_the_assessment_uid_existence(JSON_data: dict) -> dict:
+def _validate_the_keys_existence(JSON_data: dict) -> dict:
     assessment_uid = JSON_data.get("assessment_uid")
     if not assessment_uid or str(assessment_uid).strip() == "":
         return {
@@ -237,14 +233,7 @@ def _validate_the_assessment_uid_existence(JSON_data: dict) -> dict:
                 "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
             )
         }
-        
-    return {
-        "status"        : "success",
-        "assessment_uid": str(assessment_uid).strip()
-    }
     
-
-def _validate_the_answer_key_existence(JSON_data: dict) -> dict:
     answer_key = JSON_data.get("answer_key")
     if not answer_key or str(answer_key).strip() == "":
         return {
@@ -265,9 +254,10 @@ def _validate_the_answer_key_existence(JSON_data: dict) -> dict:
                 
             )
         }
-        
+    
     return {
         "status"        : "success",
+        "assessment_uid": str(assessment_uid).strip(),
         "answer_key"    : str(answer_key).strip()
     }
 
@@ -303,22 +293,24 @@ def _handle_single_page_workflow(
     JSON_of_answer_key = _get_JSON_of_answer_key(image_path=image_details["full_path"])
     if JSON_of_answer_key["status"] == "error":
         return JSON_of_answer_key
-    
+    JSON_data = JSON_of_answer_key["JSON_data"]
+
     # Step 4: Save in JSON file format
     json_details = _save_in_json_file(
-        json_data   = JSON_of_answer_key["JSON_data"],
+        json_data   = JSON_data,
         target_path = answer_key_json_path
     )
     if json_details["status"] == "error":
         return json_details
     
     return {
-        "status"                : "success",
-        "assessment_uid"        : json_details["assessment_uid"],
-        "total_number_of_pages" : total_number_of_pages,
-        "json_details"          : json_details,
-        "image_details"         : image_details,
-        "essay_existence"       : essay_existence
+        "status"                    : "success",
+        "assessment_uid"            : json_details["assessment_uid"],
+        "total_number_of_pages"     : total_number_of_pages,
+        "json_details"              : json_details,
+        "image_details"             : image_details,
+        "essay_existence"           : essay_existence,
+        "total_number_of_questions" : len(JSON_data["answers"])
     }
 
 
@@ -389,22 +381,24 @@ def _handle_multiple_pages_workflow(
     JSON_of_answer_key = _get_JSON_of_answer_key(image_path=image_details["full_path"])
     if JSON_of_answer_key["status"] == "error":
         return JSON_of_answer_key
+    JSON_data = JSON_of_answer_key["JSON_data"]
 
     # Step 7: Save in JSON file format    
     json_details = _save_in_json_file(
-        json_data   = JSON_of_answer_key["JSON_data"],
+        json_data   = JSON_data,
         target_path = answer_key_json_path
     )
     if json_details["status"] == "error":
         return json_details
     
     return {
-        "status"                : "success",
-        "assessment_uid"        : json_details["assessment_uid"],
-        "total_number_of_pages" : total_number_of_pages,
-        "json_details"          : json_details,
-        "image_details"         : image_details,
-        "essay_existence"       : essay_existence
+        "status"                    : "success",
+        "assessment_uid"            : json_details["assessment_uid"],
+        "total_number_of_pages"     : total_number_of_pages,
+        "json_details"              : json_details,
+        "image_details"             : image_details,
+        "essay_existence"           : essay_existence,
+        "total_number_of_questions" : len(JSON_data["answers"])
     }
 
 
@@ -457,6 +451,7 @@ def run(
                 - "image_details": Information about saved image files
                                 (contains keys "full_path" and "file_name").
                 - "essay_existence": Boolean indicating if the assessment contains an essay section.
+                - "total_number_of_questions": Number of questions in a questionnaire
                 - "message": Error message (if failed).
     """
     answer_key_image_path   = answer_key_paths["image_path"]
