@@ -165,7 +165,7 @@ def _extract_datetime(filename: str) -> str:
     return dt_string
 
 
-def update_answer_key_by_image_path(
+def update_answer_key_json_path_by_image_path(
         img_full_path: str,
         json_file_name: str,
         json_full_path: str,
@@ -254,3 +254,6 @@ def update_answer_key_by_image_path(
             "message": f"Failed to update JSON path and student ID. {e}. Source: {__name__}"
         }
 
+
+def update_answer_key_scores_by_image_path() -> dict:
+    pass

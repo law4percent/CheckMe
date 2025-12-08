@@ -342,7 +342,22 @@ def _score_batch(batch_size: int):
     # Step 3: _grade_it()
     
     
+    # Step 4: update the score, is_final_score, and processed_score by answer_key_assessment_uid and student_id
+    result = answer_sheet_model.update_answer_key_scores_by_image_path(
+        score                       = score,
+        is_final_score              = is_final_score,
+        answer_key_assessment_uid   = answer_key_assessment_uid,
+        student_id                  = student_id
+    )
+    if result["status"] == "error":
+        pass
+    
 
+def _update_firebase_rtdb(batch_size) -> list:
+    pass
+    
+    
+    
 # ============================================================
 # MAIN PROCESS B FUNCTION
 # ============================================================
@@ -409,7 +424,7 @@ def process_b(**kwargs):
         # Step 3: Update database json path and student id by image_full_path
         json_success = json_results["success"]
         for success in json_success:
-            update_db_result = answer_sheet_model.update_answer_key_by_image_path(
+            update_db_result = answer_sheet_model.update_answer_key_json_path_by_image_path(
                 img_full_path               = success["img_full_path"],
                 json_file_name              = success["json_file_name"],
                 json_full_path              = success["json_full_path"],
@@ -424,8 +439,11 @@ def process_b(**kwargs):
             for error in json_error:
                 logger.error(f"{task_name} - {error["message"]}")
         
+        
+        # Step 4. scoring
         _score_batch(batch_size)
-        # Step 3.2: Save to firebase
+        
+        # Step 5: Save to firebase
             # assessmentUid: "QWER1234"
             # isPartialScore: false
             # scannedAt: "11/25/2025 11:22:34"
