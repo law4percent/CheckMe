@@ -16,6 +16,7 @@ import AssessmentScoreTableScreen from '../screens/teacher/AssessmentScoreTableS
 import StudentLoginScreen from '../screens/student/LoginScreen';
 import StudentRegisterScreen from '../screens/student/RegisterScreen';
 import StudentDashboardScreen from '../screens/student/DashboardScreen';
+import ViewScoresScreen from '../screens/teacher/ViewScoresScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -40,6 +41,7 @@ const AppNavigator: React.FC = () => {
           <>
             {user.role === 'teacher' ? (
               <>
+                {/* FIXED: Main dashboard should be first */}
                 <Stack.Screen
                   name="TeacherDashboard"
                   component={TeacherDashboardScreen}
@@ -51,7 +53,14 @@ const AppNavigator: React.FC = () => {
                   options={{
                     headerShown: true,
                     title: 'Section Dashboard',
-                    headerBackTitle: 'Back'
+                    headerBackTitle: 'Back',
+                    headerStyle: {
+                      backgroundColor: '#171443',
+                    },
+                    headerTintColor: '#fff',
+                    headerTitleStyle: {
+                      fontWeight: 'bold',
+                    },
                   }}
                 />
                 <Stack.Screen
@@ -60,7 +69,31 @@ const AppNavigator: React.FC = () => {
                   options={{
                     headerShown: true,
                     title: 'Subject Dashboard',
-                    headerBackTitle: 'Back'
+                    headerBackTitle: 'Back',
+                    headerStyle: {
+                      backgroundColor: '#171443',
+                    },
+                    headerTintColor: '#fff',
+                    headerTitleStyle: {
+                      fontWeight: 'bold',
+                    },
+                  }}
+                />
+                {/* FIXED: ViewScores should come after the screens that navigate to it */}
+                <Stack.Screen
+                  name="ViewScores"
+                  component={ViewScoresScreen}
+                  options={{
+                    headerShown: true,
+                    title: 'Assessment Results',
+                    headerBackTitle: 'Back',
+                    headerStyle: {
+                      backgroundColor: '#171443',
+                    },
+                    headerTintColor: '#fff',
+                    headerTitleStyle: {
+                      fontWeight: 'bold',
+                    },
                   }}
                 />
                 <Stack.Screen
@@ -69,7 +102,14 @@ const AppNavigator: React.FC = () => {
                   options={{
                     headerShown: true,
                     title: 'Assessment Scores',
-                    headerBackTitle: 'Back'
+                    headerBackTitle: 'Back',
+                    headerStyle: {
+                      backgroundColor: '#171443',
+                    },
+                    headerTintColor: '#fff',
+                    headerTitleStyle: {
+                      fontWeight: 'bold',
+                    },
                   }}
                 />
               </>

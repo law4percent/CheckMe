@@ -114,6 +114,11 @@ export interface Assessment {
 
 // Navigation types
 export type RootStackParamList = {
+  ViewScores: {
+    assessmentUid: string;
+    assessmentName?: string;
+  };
+
   ChoosePortal: undefined;
   TeacherLogin: undefined;
   TeacherRegister: undefined;
