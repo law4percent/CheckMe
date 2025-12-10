@@ -53,8 +53,8 @@ TEACHER_UID = "GKVi81kM8dhoHra1zvM4EZJF9VC3"
 # Gemini API Configuration
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
 
-# Image storage paths
-IMAGE_DIR = "/home/pi/answer_checker/images"
+# Image storage paths - Use current user's home directory
+IMAGE_DIR = os.path.expanduser("~/answer_checker/images")
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
 # Camera Configuration
