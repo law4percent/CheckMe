@@ -1,3 +1,31 @@
+"""
+✓ Collage created: /home/checkme2025/answer_checker/images/collage_20251211_075115.jpg
+INFO:__main__:Sending collage to Gemini API...
+ERROR:__main__:JSON parse error: Unterminated string starting at: line 20 column 6 (char 1237)
+ERROR:__main__:Response text: ```json
+{
+  "assessmentUid": "QWER1234",
+  "studentId": "232080",
+  "score": 95,
+  "totalQuestions": 22,
+  "correctAnswers": 21,
+  "incorrectAnswers": 1,
+  "details": [
+    {"question": 1, "studentAnswer": "b", "correctAnswer": "b", "isCorrect": true},
+    {"question": 2, "studentAnswer": "c", "correctAnswer": "c", "isCorrect": true},
+    {"question": 3, "studentAnswer": "d", "correctAnswer": "c", "isCorrect": false},
+    {"question": 4, "studentAnswer": "d", "correctAnswer": "d", "isCorrect": true},
+    {"question": 5, "studentAnswer": "b", "correctAnswer": "b", "isCorrect": true},
+    {"question": 6, "studentAnswer": "c", "correctAnswer": "c", "isCorrect": true},
+    {"question": 7, "studentAnswer": "c", "correctAnswer": "c", "isCorrect": true},
+    {"question": 1, "studentAnswer": "Hardware interrupt", "correctAnswer": "Hardware interrupt", "isCorrect": true},
+    {"question": 2, "studentAnswer": "Interrupt Service Routine", "correctAnswer": "Interrupt Service Routine", "isCorrect": true},
+    {"question": 3, "studentAnswer": "Polling", "correctAnswer": "Polling", "isCorrect": true},
+    {"question": 4, "studentAnswer": "Interrupt Priority Register", "correctAnswer": "Interrupt Priority Register", "isCorrect": true},
+    {"question
+✗ Failed to get Gemini response
+"""
+
 #!/usr/bin/env python3
 """
 Answer Sheet Checker System for Raspberry Pi 4B
@@ -6,6 +34,7 @@ Components: 3x4 Keypad, Camera Module (PiCamera2)
 
 import RPi.GPIO as GPIO
 from picamera2 import Picamera2
+from libcamera import Transform
 import cv2
 import time
 import base64
@@ -32,7 +61,7 @@ except ImportError:
 # ==================== CONFIGURATION ====================
 
 # Gemini API Key - SET THIS DIRECTLY
-GEMINI_API_KEY = "AIzaSyCPim-O7BlupPYkuaUQmzLvimROp0TTVBY"  # Replace with your actual key
+GEMINI_API_KEY = "AIzaSyDvYrAvyHQ3N9MMLWtOKaU-G2BJQZN70WU"  # Replace with your actual key
 
 # 3x4 Keypad GPIO Configuration (adjust pins as needed)
 ROW_PINS = [5, 6, 13, 19]  # GPIO pins for rows
@@ -116,9 +145,13 @@ class CameraController:
         
         # Configure camera
         config = self.picam2.create_still_configuration(
-            main={"size": CAMERA_CONFIG["resolution"], "format": CAMERA_CONFIG["format"]},
-            transform={"hflip": 0, "vflip": 0}  # Adjust if image is flipped
+            main={
+                "size": CAMERA_CONFIG["resolution"],
+                "format": CAMERA_CONFIG["format"]
+            },
+            transform=Transform(hflip=False, vflip=False)
         )
+
         
         self.picam2.configure(config)
         logger.info("✓ Camera initialized")
@@ -277,7 +310,7 @@ Be accurate in reading both the UIDs and comparing answers.
         if GENAI_AVAILABLE:
             genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel(
-                "gemini-2.0-flash-exp",
+                "gemini-2.5-flash",
                 generation_config={
                     "temperature": 0.2,
                     "top_p": 0.9,
@@ -467,7 +500,7 @@ def main():
         while True:
             print("\n⌨️  Waiting for key press...")
             key = get_key()
-            
+            print("key ===>", key)
             if key == '*':
                 print("📋 ANSWER KEY MODE")
                 answer_key_path = camera.capture_image('answer_key')
