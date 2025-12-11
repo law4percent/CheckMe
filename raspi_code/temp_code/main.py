@@ -283,7 +283,9 @@ Your task:
 4. Calculate the total score (correct answers / total questions * 100)
 5. Identify which questions were answered correctly and incorrectly
 
-Return ONLY a JSON object in this exact format (no markdown, no explanation):
+CRITICAL: Return ONLY valid JSON with NO markdown formatting, NO code blocks, NO explanations.
+
+Format:
 {
   "assessmentUid": "extracted_assessment_uid",
   "studentId": "extracted_student_id",
@@ -310,11 +312,11 @@ Be accurate in reading both the UIDs and comparing answers.
         if GENAI_AVAILABLE:
             genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel(
-                "gemini-2.5-flash",
+                "gemini-2.0-flash-exp",
                 generation_config={
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "max_output_tokens": 2048,
+                    "temperature": 0.1,  # Lower for more consistent output
+                    "top_p": 0.8,
+                    "max_output_tokens": 8192,  # INCREASED from 2048
                 }
             )
             logger.info("Using google-generativeai SDK")
@@ -366,13 +368,13 @@ Be accurate in reading both the UIDs and comparing answers.
                     ]
                 }],
                 "generationConfig": {
-                    "temperature": 0.2,
-                    "topP": 0.9,
-                    "maxOutputTokens": 2048
+                    "temperature": 0.1,  # Lower for consistency
+                    "topP": 0.8,
+                    "maxOutputTokens": 8192  # INCREASED from 2048
                 }
             }
             
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response = requests.post(url, headers=headers, json=payload, timeout=90)
             
             if response.status_code == 200:
                 result = response.json()
@@ -386,38 +388,84 @@ Be accurate in reading both the UIDs and comparing answers.
             raise
     
     def _safe_parse_json(self, response_text: str) -> dict:
-        """Safely parse JSON from response"""
+        """Safely parse JSON from response with multiple cleanup strategies"""
         try:
+            # Strategy 1: Remove markdown code blocks
+            cleaned = response_text.strip()
+            
             # Remove markdown code blocks if present
-            cleaned = response_text.replace('```json', '').replace('```', '').strip()
-            return json.loads(cleaned)
+            if cleaned.startswith('```'):
+                # Find the first newline after ```json or ```
+                first_newline = cleaned.find('\n')
+                if first_newline != -1:
+                    cleaned = cleaned[first_newline + 1:]
+                # Remove trailing ```
+                if cleaned.endswith('```'):
+                    cleaned = cleaned[:-3]
+            
+            cleaned = cleaned.strip()
+            
+            # Strategy 2: Try direct parse
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
+            
+            # Strategy 3: Find JSON object boundaries
+            start_idx = cleaned.find('{')
+            end_idx = cleaned.rfind('}')
+            
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = cleaned[start_idx:end_idx + 1]
+                return json.loads(json_str)
+            
+            raise json.JSONDecodeError("No valid JSON found", cleaned, 0)
+            
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {e}")
-            logger.error(f"Response text: {response_text}")
+            logger.error(f"Response text (first 500 chars): {response_text[:500]}")
+            logger.error(f"Response text (last 200 chars): {response_text[-200:]}")
             return None
     
-    def check_collage(self, collage_path: str) -> dict:
-        """Check answer sheet using collage image"""
+    def check_collage(self, collage_path: str, max_retries: int = 3) -> dict:
+        """
+        Check answer sheet using collage image with retry logic
+        
+        Args:
+            collage_path: Path to collage image
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            Dictionary with results or None on failure
+        """
         logger.info("Sending collage to Gemini API...")
         
-        try:
-            image_base64 = self._encode_image(collage_path)
-            
-            if GENAI_AVAILABLE and self.model:
-                response_text = self._call_gemini_sdk(image_base64, self.CHECKING_PROMPT)
-            else:
-                response_text = self._call_gemini_rest(image_base64, self.CHECKING_PROMPT)
-            
-            result = self._safe_parse_json(response_text)
-            
-            if result:
-                logger.info("✓ Gemini API response received")
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Gemini check failed: {e}")
-            return None
+        for attempt in range(max_retries):
+            try:
+                image_base64 = self._encode_image(collage_path)
+                
+                if GENAI_AVAILABLE and self.model:
+                    response_text = self._call_gemini_sdk(image_base64, self.CHECKING_PROMPT)
+                else:
+                    response_text = self._call_gemini_rest(image_base64, self.CHECKING_PROMPT)
+                
+                result = self._safe_parse_json(response_text)
+                
+                if result:
+                    logger.info("✓ Gemini API response received and parsed")
+                    return result
+                else:
+                    logger.warning(f"Attempt {attempt + 1}/{max_retries}: Failed to parse JSON, retrying...")
+                    time.sleep(2)  # Wait before retry
+                    
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1}/{max_retries}: Gemini check failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)  # Wait before retry
+                else:
+                    logger.error("All retry attempts exhausted")
+        
+        return None
 
 # ==================== FIREBASE ====================
 
