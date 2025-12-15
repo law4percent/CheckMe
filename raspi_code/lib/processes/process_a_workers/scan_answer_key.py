@@ -101,7 +101,12 @@ def _save_in_json_file(json_data: dict, target_path: str) -> dict:
     assessment_uid = str(json_data["assessment_uid"]).strip()
     json_file_name = f"{assessment_uid}.json"
     try:
-        full_path = os.path.join(target_path, json_file_name)
+        full_path = utils.join_path_with_os_adaptability(
+            TARGET_PATH = target_path,
+            FILE_NAME   = json_file_name,
+            SOURCE      = __name__,
+            create_one  = False
+        )
         with open(full_path, 'w') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False)
 
@@ -457,6 +462,7 @@ def run(
             print("[*] SCAN | [#] CANCEL")
             # =================================
             frame = capture.capture_array()
+            frame = cv2.resize(frame, (FRAME_DIMENSIONS["width"], FRAME_DIMENSIONS["height"]))
             
             if SHOW_WINDOWS:
                 cv2.imshow("Answer Key Scanner", frame)
