@@ -10,11 +10,13 @@ import os
 from datetime import datetime
 from dataclasses import dataclass
 
-from lib.services import answer_key_model, answer_sheet_model, utils
+from lib.services import utils
 from lib.services.gemini import GeminiOCREngine
 from lib.services.firebase_rtdb import get_firebase_service
 from lib import logger_config
 import logging
+
+from raspi_code.lib.models import answer_key_model, answer_sheet_model
 
 logger = logger_config.setup_logger(name=__name__, level=logging.DEBUG)
 

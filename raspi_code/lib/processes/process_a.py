@@ -4,7 +4,7 @@ import time
 from .process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown, hardware, display
 from enum import Enum
 import os
-from lib.services import answer_key_model
+from raspi_code.lib.models import answer_key_model
 from lib import logger_config
 import logging
 

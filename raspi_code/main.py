@@ -1,6 +1,6 @@
 from lib.processes import process_a, process_b, process_c
 from multiprocessing import Process, Event
-from lib.services import models
+from lib.models import models
 
 def main(**kargs):
     models.create_table()

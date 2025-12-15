@@ -2,11 +2,11 @@
 import cv2
 import time
 from . import hardware
-from . import camera
-from . import image_combiner
+from lib.hardware import camera_contoller as camera
 from datetime import datetime
 import os
-from lib.services import answer_key_model, answer_sheet_model, utils
+from lib.services import utils, image_combiner
+from raspi_code.lib.models import answer_key_model, answer_sheet_model
 
 
 def _ask_for_number_of_sheets(keypad_rows_and_cols: list, pc_mode: bool, limit: int = 50) -> dict:

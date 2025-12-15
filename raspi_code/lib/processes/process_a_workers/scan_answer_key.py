@@ -3,12 +3,9 @@ import cv2
 import time
 import json
 import os
-from . import hardware
-from . import camera
-from . import image_combiner
-from . import display
+from lib.hardware import camera_contoller as camera
 from lib.services.gemini import GeminiOCREngine
-from lib.services import utils
+from lib.services import utils, image_combiner
 from datetime import datetime
 import json
 
