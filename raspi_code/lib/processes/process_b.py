@@ -16,27 +16,27 @@ from lib.services.firebase_rtdb import get_firebase_service
 from lib import logger_config
 import logging
 
-from raspi_code.lib.models import answer_key_model, answer_sheet_model
+from lib.model import answer_sheet_model
 
 logger = logger_config.setup_logger(name=__name__, level=logging.DEBUG)
 
 
-@dataclass
-class ProcessingMetrics:
-    """Track processing statistics."""
-    total_processed: int = 0
-    total_failed: int = 0
-    total_cycles: int = 0
-    start_time: float = 0.0
+# @dataclass
+# class ProcessingMetrics:
+#     """Track processing statistics."""
+#     total_processed: int = 0
+#     total_failed: int = 0
+#     total_cycles: int = 0
+#     start_time: float = 0.0
     
-    def record_success(self):
-        self.total_processed += 1
+#     def record_success(self):
+#         self.total_processed += 1
     
-    def record_failure(self):
-        self.total_failed += 1
+#     def record_failure(self):
+#         self.total_failed += 1
     
-    def get_uptime(self) -> float:
-        return time.time() - self.start_time
+#     def get_uptime(self) -> float:
+#         return time.time() - self.start_time
 
 
 # ============================================================
@@ -376,83 +376,72 @@ def process_b(**kwargs):
         Args:
             **kwargs: Must contain 'process_B_args' dict
     """
-    process_B_args      = kwargs["process_B_args"]
-    task_name           = process_B_args["task_name"],
-    poll_interval       = process_B_args["poll_interval"],
-    retry_delay         = process_B_args["retry_delay"],
-    max_retries         = process_B_args["max_retries"],
-    batch_size          = process_B_args["batch_size"],
-    teacher_uid         = process_B_args["teacher_uid"],
-    firebase_enabled    = process_B_args["firebase_enabled"],
-    status_checker      = process_B_args["status_checker"],
-    pc_mode             = process_B_args["pc_mode"]
-    save_logs           = process_B_args["save_logs"]
+    process_B_args  = kwargs["process_B_args"]
+    TASK_NAME       = process_B_args["TASK_NAME"],
+    BATCH_SIZE      = process_B_args["BATCH_SIZE"],
+    TEACHER_UID     = process_B_args["TEACHER_UID"],
+    status_checker  = process_B_args["status_checker"],
+    PRODUCTION_MODE = process_B_args["PRODUCTION_MODE"]
+    SAVE_LOGS       = process_B_args["SAVE_LOGS"]
 
-    if save_logs:
-        logger.info(f"{task_name} is now Running ✅")
-        if firebase_enabled and teacher_uid:
-            logger.info(f"Firebase sync enabled for teacher: {teacher_uid}")
-        else:
-            logger.info("Firebase sync disabled")
-    
-    # Initialize metrics
-    metrics = ProcessingMetrics(start_time=time.time())
-    
-    # Main processing loop
-    running = True
-    
-    while running:
-        time.sleep(poll_interval)
-        # Check if other processes signaled to stop
-        if not status_checker.is_set():
-            if save_logs:
-                logger.warning(f"{task_name} - Status checker indicates error in another process")
-                logger.info(f"{task_name} has stopped")
-            running = False
-            break
-        
-        metrics.total_cycles += 1
-        if save_logs:
-            logger.info(f"=== Processing Cycle {metrics.total_cycles} ===")
-        
-        # Step 1: Fetch data from db
-        sheets_result = answer_sheet_model.get_unprocessed_sheets(limit=batch_size)
-        if sheets_result["status"] == "error":
-            if save_logs:
-                logger.error(f"{task_name} - {sheets_result["message"]}")
-            continue
-        sheets = sheets_result["sheets"]
+    # retry_delay         = process_B_args["retry_delay"],
+    # max_retries         = process_B_args["max_retries"],
 
-        # Step 2: Extract one batch images to text to json with gemini OCR
-        json_results = _get_JSON_of_answer_sheet(sheets, batch_size)
-        
-        # Step 3: Update database json path and student id by image_full_path
-        json_success = json_results["success"]
-        for success in json_success:
-            update_db_result = answer_sheet_model.update_answer_key_json_path_by_image_path(
-                img_full_path               = success["img_full_path"],
-                json_file_name              = success["json_file_name"],
-                json_full_path              = success["json_full_path"],
-                student_id                  = success["student_id"],
-                answer_key_assessment_uid   = success["answer_key_assessment_uid"]
-            )
-            if update_db_result["status"] == "error" and save_logs:
-                logger.error(f"{task_name} - {update_db_result["message"]}")
+    if SAVE_LOGS:
+        logger.info(f"{TASK_NAME} is now Running ✅")
+    
+    while True:
+        try:
+            time.sleep(5)
+            # Check if other processes signaled to stop
+            if not status_checker.is_set():
+                if SAVE_LOGS:
+                    logger.warning(f"{TASK_NAME} - Status checker indicates error in another process")
+                    logger.info(f"{TASK_NAME} has stopped")
+                break
             
-        if save_logs:
-            json_error = json_results["error"]
-            for error in json_error:
-                logger.error(f"{task_name} - {error["message"]}")
+            # Step 1: Fetch data from db
+            sheets_result = answer_sheet_model.get_unprocessed_sheets(limit=BATCH_SIZE)
+            if sheets_result["status"] == "error":
+                if SAVE_LOGS:
+                    logger.error(f"{TASK_NAME} - {sheets_result["message"]}")
+                continue
+            sheets = sheets_result["sheets"]
+
+            # Step 2: Extract one batch images to text to json with gemini OCR
+            json_results = _get_JSON_of_answer_sheet(sheets, BATCH_SIZE)
+            
+            # Step 3: Update database json path and student id by image_full_path
+            json_success = json_results["success"]
+            for success in json_success:
+                update_db_result = answer_sheet_model.update_answer_key_json_path_by_image_path(
+                    img_full_path               = success["img_full_path"],
+                    json_file_name              = success["json_file_name"],
+                    json_full_path              = success["json_full_path"],
+                    student_id                  = success["student_id"],
+                    answer_key_assessment_uid   = success["answer_key_assessment_uid"]
+                )
+                if update_db_result["status"] == "error" and SAVE_LOGS:
+                    logger.error(f"{TASK_NAME} - {update_db_result["message"]}")
+                
+            if SAVE_LOGS:
+                json_error = json_results["error"]
+                for error in json_error:
+                    logger.error(f"{TASK_NAME} - {error["message"]}")
+            
+            
+            # Step 4. scoring
+            _score_batch(BATCH_SIZE)
+            
+            _update_firebase_rtdb(BATCH_SIZE)
+            # Step 5: Save to firebase
+                # assessmentUid: "QWER1234"
+                # isPartialScore: false
+                # scannedAt: "11/25/2025 11:22:34"
+                # score: 23
+                # studentId: 2352352
         
-        
-        # Step 4. scoring
-        _score_batch(batch_size)
-        
-        _update_firebase_rtdb(batch_size)
-        # Step 5: Save to firebase
-            # assessmentUid: "QWER1234"
-            # isPartialScore: false
-            # scannedAt: "11/25/2025 11:22:34"
-            # score: 23
-            # studentId: 2352352
+        except Exception as e:
+            if SAVE_LOGS:
+                logger.warning(f"{TASK_NAME} - {e} Source: {__name__}")
         

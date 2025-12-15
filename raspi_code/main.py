@@ -42,21 +42,18 @@ if __name__ == "__main__":
             "TILE_WIDTH"        : 600,                          # This is experimental for gridding image
             "PRODUCTION_MODE"   : PRODUCTION_MODE,
             "SAVE_LOGS"         : SAVE_LOGS,
-            "show_windows"      : True,
+            "SHOW_WINDOWS"      : True,
             "PATHS"             : {"answer_key_path": ANSWER_KEY_PATH, "answer_sheet_path": ANSWER_SHEET_PATH},
             "status_checker"    : status_checker,
             "FRAME_DIMENSIONS"  : {"width": 1920, "heght": 1080} # This is experimental
         },
         process_B_args = {
-            "task_name"         : "Process B",
-            "poll_interval"     : 5,
-            "retry_delay"       : 10,
-            "max_retries"       : 3,
-            "batch_size"        : 5,
-            "teacher_uid"       : TEST_TEACHER_UID, # This is for testing but later will get properly via letting the user login here in the system. I will add authentication feature here in the system. And once the user successfully login the system will get the teach_uid with their username credential.
+            "TASK_NAME"         : "Process B",
+            "BATCH_SIZE"        : 5,
+            "TEACHER_UID"       : TEST_TEACHER_UID, # This is for testing but later will get properly via letting the user login here in the system. I will add authentication feature here in the system. And once the user successfully login the system will get the teach_uid with their username credential.
             "status_checker"    : status_checker,
             "PRODUCTION_MODE"   : PRODUCTION_MODE,
-            "save_logs"         : SAVE_LOGS,
+            "SAVE_LOGS"         : SAVE_LOGS,
         },
         process_C_args = {
             "task_name"         : "Process C",
