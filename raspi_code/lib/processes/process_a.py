@@ -128,7 +128,7 @@ def process_a(**kwargs):
             current_stage, current_display_options = display.handle_display(key=key, current_stage=current_stage, module_name="process_a")
             continue
         
-        if key == '1':
+        if key == Options.SCAN_ANSWER_KEY.value:
             # Step 1: Scan answer key
             answer_key_data = scan_answer_key.run(
                 scan_key        = keypad.scan_key, 
@@ -168,7 +168,7 @@ def process_a(**kwargs):
                 # ========================================
         
         
-        elif key == '2':
+        elif key == Options.SCAN_ANSWER_SHEET.value:
             # Step 1: Choose answer key from database via assessment_uid
             selection_result = _choose_answer_key_from_db(keypad.scan_key)
             if selection_result["status"] == "error":
@@ -192,12 +192,12 @@ def process_a(**kwargs):
                     logger.error(f"{TASK_NAME} - {answer_sheets_data["message"]}")
 
 
-        elif key == '3':
+        elif key == Options.SETTINGS.value:
             # ======= WIP =======
             settings.run()
             
 
-        elif key == '4':
+        elif key == Options.SHUTDOWN.value:
             # ======= WIP =======
             shutdown.run()
             
