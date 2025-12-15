@@ -222,6 +222,7 @@ def _get_JSON_of_answer_sheet(sheets: list, delay: int = 5) -> dict:
     """
     collect_error = []
     collect_success = []
+    
     for sheet in sheets:
         time.sleep(delay)
         # 1. Get data
@@ -408,7 +409,10 @@ def process_b(**kwargs):
                 continue
             sheets = sheets_result["sheets"]
 
-            # Step 2: Extract one batch images to text to json with gemini OCR
+            # Step 2: Extract one batch images to text to json with gemini OCR - 
+            # CRITICAL AREA
+            # - ADD retry 
+            # - ADD validation if its not then retry       
             json_results = _get_JSON_of_answer_sheet(sheets, BATCH_SIZE)
             
             # Step 3: Update database json path and student id by image_full_path
