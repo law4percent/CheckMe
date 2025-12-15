@@ -11,6 +11,7 @@ from lib.hardware import (
     keypad_controller as keypad,
     lcd_controller as display
 )
+from lib.services import utils
 
 logger = logger_config.setup_logger(name=__name__, level=logging.DEBUG)
 
@@ -73,13 +74,6 @@ def _choose_answer_key_from_db(scan_key: any) -> dict:
             }
 
 
-# ====== WIP ======
-def _path_checkpoint(*paths) -> None:
-    for path in paths:
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-
 def process_a(**kwargs):
     """
         Main Process A function - Background OCR processing.
@@ -103,12 +97,13 @@ def process_a(**kwargs):
     if SAVE_LOGS:
         logger.info(f"{TASK_NAME} is now Running ✅")
     
-    _path_checkpoint(
+    utils.path_exist_else_create_checkpoint(
         PATHS["answer_key_path"]["image_path"], 
         PATHS["answer_sheet_path"]["image_path"], 
         PATHS["answer_key_path"]["json_path"], 
         PATHS["answer_sheet_path"]["json_path"]
     )
+
     current_stage, current_display_options = display.initialize_display()
     keypad.setup_keypad()
 
