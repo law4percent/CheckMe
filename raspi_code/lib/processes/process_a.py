@@ -1,14 +1,19 @@
 # lib/processes/process_a.py
-from multiprocessing import Queue
 import time
-from .process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown, hardware, display
+from .process_a_workers import scan_answer_key, scan_answer_sheet, settings, shutdown
 from enum import Enum
 import os
-from raspi_code.lib.models import answer_key_model
-from lib import logger_config
 import logging
 
+from lib.model import answer_key_model
+from lib import logger_config
+from lib.hardware import (
+    keypad_controller as keypad,
+    lcd_controller as display
+)
+
 logger = logger_config.setup_logger(name=__name__, level=logging.DEBUG)
+
 
 class Options(Enum):
     SCAN_ANSWER_KEY     = '1'
@@ -68,7 +73,8 @@ def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
             }
 
 
-def _check_point(*paths) -> None:
+# ====== WIP ======
+def _path_checkpoint(*paths) -> None:
     for path in paths:
         if not os.path.exists(path):
             os.makedirs(path)
@@ -84,47 +90,42 @@ def process_a(**kwargs):
             **kwargs: Must contain 'process_A_args' dict
     """
     process_A_args  = kwargs["process_A_args"]
-    task_name       = process_A_args["task_name"]
-    image_extension = process_A_args["image_extension"]
+    TASK_NAME       = process_A_args["TASK_NAME"]
+    IMAGE_EXTENSION = process_A_args["IMAGE_EXTENSION"]
+    TILE_WIDTH      = process_A_args["TILE_WIDTH"]
+    PRODUCTION_MODE = process_A_args["PRODUCTION_MODE"]
+    SAVE_LOGS       = process_A_args["SAVE_LOGS"]
+    SHOW_WINDOWS    = process_A_args["SHOW_WINDOWS"]
+    PATHS           = process_A_args["PATHS"]
     status_checker  = process_A_args["status_checker"]
-    pc_mode         = process_A_args["pc_mode"]
-    save_logs       = process_A_args["save_logs"]
-    camera_index    = process_A_args["camera_index"]
-    show_windows    = process_A_args["show_windows"]
-    keypad_pins     = process_A_args["keypad_pins"]
-    paths           = process_A_args["paths"]
-    tile_width      = process_A_args["tile_width"]
+    FRAME_DIMENSIONS= process_A_args["FRAME_DIMENSIONS"]
 
-    if save_logs:
-        logger.info(f"{task_name} is now Running ✅")
+    if SAVE_LOGS:
+        logger.info(f"{TASK_NAME} is now Running ✅")
     
-    _check_point(
-        paths["answer_key_path"]["image_path"], 
-        paths["answer_sheet_path"]["image_path"], 
-        paths["answer_key_path"]["json_path"], 
-        paths["answer_sheet_path"]["json_path"]
+    _path_checkpoint(
+        PATHS["answer_key_path"]["image_path"], 
+        PATHS["answer_sheet_path"]["image_path"], 
+        PATHS["answer_key_path"]["json_path"], 
+        PATHS["answer_sheet_path"]["json_path"]
     )
     current_stage, current_display_options = display.initialize_display()
-    rows, cols = hardware.setup_keypad_pins(
-        pc_mode, 
-        ROW_PINS = keypad_pins["ROWS"], 
-        COL_PINS = keypad_pins["COLS"]
-    )
-    
+    keypad.setup_keypad()
+
     while True:
         time.sleep(0.1)
-        # ========USE LCD DISPLAY==========
+        # ======== WIP: USE LCD DISPLAY ==========
         print(f"{current_display_options[0]}{current_display_options[1]}")
         print("[*]UP or [#]DOWN")
-        # =================================
+        # ========================================
         
         if not status_checker.is_set():
-            if save_logs:
-                logger.warning(f"{task_name} - Status checker indicates error in another process")
-                logger.info(f"{task_name} has stopped")
+            if SAVE_LOGS:
+                logger.warning(f"{TASK_NAME} - Status checker indicates error in another process")
+                logger.info(f"{TASK_NAME} has stopped")
             exit()
         
-        key = hardware.read_keypad(rows, cols, pc_mode)
+        key = keypad.scan_key()
         if key == None:
             continue
 
@@ -135,13 +136,13 @@ def process_a(**kwargs):
         if key == '1':
             # Step 1: Scan answer key
             answer_key_data = scan_answer_key.run(
-                keypad_rows_and_cols    = [rows, cols], 
-                camera_index            = camera_index,
-                show_windows            = show_windows, 
-                answer_key_paths        = paths["answer_key_path"],
-                pc_mode                 = pc_mode,
-                image_extension         = image_extension,
-                tile_width              = tile_width
+                scan_key        = keypad.scan_key, 
+                SHOW_WINDOWS    = SHOW_WINDOWS, 
+                PATHS           = PATHS["answer_key_path"],
+                PRODUCTION_MODE = PRODUCTION_MODE,
+                IMAGE_EXTENSION = IMAGE_EXTENSION,
+                TILE_WIDTH      = TILE_WIDTH,
+                FRAME_DIMENSIONS= FRAME_DIMENSIONS
             )
 
             # Step 2: Save results to database
@@ -157,19 +158,19 @@ def process_a(**kwargs):
                     total_number_of_questions   = answer_key_data["total_number_of_questions"]
                 )
                 if create_result["status"] == "error":
-                    if save_logs:
-                        logger.error(f"{task_name} - {create_result["message"]}")
+                    if SAVE_LOGS:
+                        logger.error(f"{TASK_NAME} - {create_result["message"]}")
             
             # Step 2: Else just display
             elif answer_key_data["status"] == "error":
-                if save_logs:
-                    logger.error(f"{task_name} - {answer_key_data["message"]}")
+                if SAVE_LOGS:
+                    logger.error(f"{TASK_NAME} - {answer_key_data["message"]}")
                     
             elif answer_key_data["status"] == "cancelled": 
-                # ========USE LCD DISPLAY==========
-                print(f"{task_name} - {answer_key_data["status"]}")
+                # ======== WIP: USE LCD DISPLAY ==========
+                print(f"{TASK_NAME} - {answer_key_data["status"]}")
                 time.sleep(3)
-                # =================================
+                # ========================================
         
         
         elif key == '2':
@@ -183,28 +184,26 @@ def process_a(**kwargs):
             answer_sheets_data = scan_answer_sheet.run(
                 keypad_rows_and_cols    = [rows, cols], 
                 camera_index            = camera_index,
-                show_windows            = show_windows, 
-                answer_sheet_paths      = paths["answer_sheet_path"],
+                show_windows            = SHOW_WINDOWS, 
+                answer_sheet_paths      = PATHS["answer_sheet_path"],
                 selected_assessment_uid = selected_assessment_uid,
                 pc_mode                 = pc_mode,
-                image_extension         = image_extension,
-                tile_width              = tile_width
+                image_extension         = IMAGE_EXTENSION,
+                tile_width              = TILE_WIDTH
             )
 
             # Step 3: Just display
             if answer_sheets_data["status"] == "error":
-                if save_logs:
-                    logger.error(f"{task_name} - {answer_sheets_data["message"]}")
+                if SAVE_LOGS:
+                    logger.error(f"{TASK_NAME} - {answer_sheets_data["message"]}")
 
 
         elif key == '3':
-            continue
-            # Not yet implement
+            # ======= WIP =======
             settings.run()
             
 
         elif key == '4':
-            continue
-            # Not yet implement
+            # ======= WIP =======
             shutdown.run()
             

@@ -1,8 +1,4 @@
 # lib/services/answer_key_model.py
-"""
-Database model for answer_keys table
-"""
-
 from typing import Optional, List, Dict
 from .models import get_connection
 
@@ -78,10 +74,10 @@ def create_answer_key(
 
 def get_all_answer_keys() -> dict:
     """
-    Fetch all assessment UIDs from answer_keys table.
-    
-    Returns:
-        List of assessment UIDs
+        Fetch all assessment UIDs from answer_keys table.
+        
+        Returns:
+            List of assessment UIDs
     """
     try:
         conn    = get_connection()
@@ -143,13 +139,13 @@ def get_answer_key_json_path_by_uid(assessment_uid: str) -> Optional[Dict]:
 
 def get_has_essay_by_assessment_uid(assessment_uid: str) -> bool:
     """
-    Check if an assessment has essay questions.
-    
-    Args:
-        assessment_uid: Assessment identifier
-    
-    Returns:
-        True if has essay, False otherwise
+        Check if an assessment has essay questions.
+        
+        Args:
+            assessment_uid: Assessment identifier
+        
+        Returns:
+            True if has essay, False otherwise
     """
     try:
         conn = get_connection()
@@ -175,13 +171,13 @@ def get_has_essay_by_assessment_uid(assessment_uid: str) -> bool:
 
 def get_answer_key_by_id(key_id: int) -> Optional[Dict]:
     """
-    Fetch answer key record by ID.
-    
-    Args:
-        key_id: Answer key ID
-    
-    Returns:
-        Answer key record or None
+        Fetch answer key record by ID.
+        
+        Args:
+            key_id: Answer key ID
+        
+        Returns:
+            Answer key record or None
     """
     try:
         conn = get_connection()
@@ -221,13 +217,13 @@ def get_answer_key_by_id(key_id: int) -> Optional[Dict]:
 
 
 def update_answer_key(
-    key_id: int,
-    assessment_uid: Optional[str] = None,
-    number_of_pages: Optional[int] = None,
-    json_path: Optional[str] = None,
-    img_path: Optional[str] = None,
-    has_essay: Optional[bool] = None
-) -> dict:
+        key_id: int,
+        assessment_uid: Optional[str] = None,
+        number_of_pages: Optional[int] = None,
+        json_path: Optional[str] = None,
+        img_path: Optional[str] = None,
+        has_essay: Optional[bool] = None
+    ) -> dict:
     """
     Update an answer key record.
     
@@ -291,13 +287,13 @@ def update_answer_key(
 
 def delete_answer_key(key_id: int) -> dict:
     """
-    Delete an answer key record.
-    
-    Args:
-        key_id: Answer key ID
-    
-    Returns:
-        Status dictionary
+        Delete an answer key record.
+        
+        Args:
+            key_id: Answer key ID
+        
+        Returns:
+            Status dictionary
     """
     try:
         conn = get_connection()
@@ -318,13 +314,13 @@ def delete_answer_key(key_id: int) -> dict:
 
 def delete_answer_key_by_uid(assessment_uid: str) -> dict:
     """
-    Delete an answer key by assessment UID.
-    
-    Args:
-        assessment_uid: Assessment identifier
-    
-    Returns:
-        Status dictionary
+        Delete an answer key by assessment UID.
+        
+        Args:
+            assessment_uid: Assessment identifier
+        
+        Returns:
+            Status dictionary
     """
     try:
         conn = get_connection()
@@ -345,10 +341,10 @@ def delete_answer_key_by_uid(assessment_uid: str) -> dict:
 
 def get_all_answer_keys_full() -> List[Dict]:
     """
-    Fetch all answer key records with full details.
-    
-    Returns:
-        List of answer key records
+        Fetch all answer key records with full details.
+        
+        Returns:
+            List of answer key records
     """
     try:
         conn = get_connection()

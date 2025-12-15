@@ -11,6 +11,7 @@ def get_connection(db_path='database'):
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+
 def create_table():
     conn = get_connection()
     cursor = conn.cursor()

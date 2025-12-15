@@ -1,6 +1,10 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
+raspi_code/lib/__pycache__
+raspi_code/lib/hardware/__pycache__
+raspi_code/lib/models/__pycache__
 raspi_code/lib/processes/__pycache__
+raspi_code/lib/processes/process_a_workers/__pycache__
 raspi_code/lib/services/__pycache__
 raspi_code/venv
 raspi_code/credentials/.env

@@ -1,18 +1,48 @@
 import os
 
-def path_existence_checkpoint(target_path: str, source: str) -> dict:
-    if not os.path.exists(target_path):
+def normalize_path(path) -> str:
+    """Ensure we always get a clean string path."""
+    if isinstance(path, tuple):
+        path = os.path.join(*path)
+    return str(path)
+
+
+def path_existence_checkpoint(PATH: str, SOURCE: str) -> dict:
+    PATH = normalize_path(PATH)
+
+    if not os.path.exists(PATH):
         return {
-            "status"    : "error", 
-            "message"   : f"{target_path} does not exist. Source: {source}."
+            "status": "error",
+            "message": f"{PATH} does not exist. Source: {SOURCE}"
         }
     return {"status": "success"}
 
 
-def file_existence_checkpoint(file_path: str, source: str) -> dict:
-    if not os.path.isfile(file_path):
+def file_existence_checkpoint(PATH: str, SOURCE: str) -> dict:
+    PATH = normalize_path(PATH)
+
+    if not os.path.isfile(PATH):
         return {
-            "status"    : "error", 
-            "message"   : f"{file_path} file does not exist. Source: {source}."
+            "status": "error",
+            "message": f"{PATH} file does not exist. Source: {SOURCE}"
         }
     return {"status": "success"}
+
+
+def path_exist_else_create_checkpoint(*paths) -> None:
+    for path in paths:
+        path = normalize_path(path)
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+
+
+def join_path_with_os_adaptability(TARGET_PATH: str, FILE_NAME: str, SOURCE: str, create_one: bool = True) -> str:
+    TARGET_PATH = normalize_path(TARGET_PATH)
+
+    if not os.path.exists(TARGET_PATH):
+        if create_one:
+            path_exist_else_create_checkpoint(TARGET_PATH)
+        else:
+            raise FileNotFoundError(f"{TARGET_PATH} does not exist. Source: {SOURCE}")
+
+    return os.path.join(TARGET_PATH, FILE_NAME)

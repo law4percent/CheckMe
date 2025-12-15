@@ -3,11 +3,11 @@ import cv2
 import time
 import json
 import os
+from datetime import datetime
+
 from lib.hardware import camera_contoller as camera
 from lib.services.gemini import GeminiOCREngine
 from lib.services import utils, image_combiner
-from datetime import datetime
-import json
 
 """
     Complete Answer Key Scanning Pipeline:
@@ -63,7 +63,12 @@ def _save_image(frame: any, file_name: str, target_path: str) -> dict:
         return path_status
         
     try:
-        full_path = os.path.join(target_path, file_name)
+        full_path = utils.join_path_with_os_adaptability(
+            TARGET_PATH = target_path,
+            FILE_NAME   = file_name,
+            SOURCE      = __name__,
+            create_one  = False
+        )
         cv2.imwrite(full_path, frame)
         return {
             "status"    : "success",
@@ -129,22 +134,18 @@ def _naming_image_file(file_extension: str, is_combined_image: bool, current_cou
     return f"img{current_count}_DT_{now}.{file_extension}"
 
 
-def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
-    rows, cols = keypad_rows_and_cols
+def _ask_for_number_of_pages(scan_key) -> dict:
     while True:
         time.sleep(0.1)
         # ========USE LCD DISPLAY==========
         print("How many pages? [1-9] or [#] Cancel")
         # =================================
-        key = hardware.read_keypad(rows, cols, pc_mode)
-        if key is None:
+        key = scan_key()
+        if key is None or key in ['0', '*']:
             continue
 
         if key == '#':
             return {"status": "cancelled"}
-        
-        if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-            continue
 
         total_number_of_pages = int(key)
         return {
@@ -153,15 +154,15 @@ def _ask_for_number_of_pages(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
         }
 
 
-def _ask_for_essay_existence(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
-    rows, cols = keypad_rows_and_cols
+def _ask_for_essay_existence(scan_key) -> dict:
     while True:
         time.sleep(0.1)
         # ========USE LCD DISPLAY==========
         print("Is there an essay? [*] YES or [#] NO")
         # =================================
-        key = hardware.read_keypad(rows, cols, pc_mode)
-        if key is None:
+
+        key = scan_key()
+        if key is None or key not in ['#', '*']:
             continue
 
         if key == '#':
@@ -376,14 +377,14 @@ def _handle_multiple_pages_workflow(
     }
 
 
-def _ask_for_prerequisites(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
+def _ask_for_prerequisites(scan_key) -> dict:
     # Ask for number of pages
-    pages_result = _ask_for_number_of_pages(keypad_rows_and_cols, pc_mode)
+    pages_result = _ask_for_number_of_pages(scan_key)
     if pages_result["status"] == "cancelled":
         return pages_result
 
     # Ask for essay existence
-    essay_result = _ask_for_essay_existence(keypad_rows_and_cols, pc_mode)
+    essay_result = _ask_for_essay_existence(scan_key)
     if essay_result["status"] == "cancelled":
         return essay_result
     
@@ -394,26 +395,30 @@ def _ask_for_prerequisites(keypad_rows_and_cols: list, pc_mode: bool) -> dict:
     }
 
 
+def _evaluate_key(except_keys, ):
+    return
+
+
 def run(
-        keypad_rows_and_cols: list,
-        camera_index: int,
-        show_windows: bool, 
-        answer_key_paths: dict,
-        pc_mode: bool,
-        image_extension: str,
-        tile_width: int
+        scan_key,
+        SHOW_WINDOWS: bool, 
+        PATHS: dict,
+        PRODUCTION_MODE: bool,
+        IMAGE_EXTENSION: str,
+        TILE_WIDTH: int,
+        FRAME_DIMENSIONS: dict 
     ) -> dict:
     """
         Main scanning workflow for answer key.
         Assessment UID is read from the paper by Gemini.
         
         Args:
-            keypad_rows_and_cols: [rows, cols] for keypad
-            camera_index: Camera device index
-            show_windows: Whether to display camera feed
-            answer_key_paths: Path to save scanned images
-            pc_mode: Testing mode for development
-            image_extension: Image file extension (e.g., 'jpg', 'png').
+            scan_key: scan_key() function
+            SHOW_WINDOWS: Whether to display camera feed
+            PATHS: Path to save scanned images of answer keys
+            PRODUCTION_MODE: Testing mode or for production mode
+            IMAGE_EXTENSION: Image file extension (e.g., 'jpg', 'png').
+            TILE_WIDTH: Grid dimension
         
         Returns:
             dict: A dictionary containing:
@@ -428,88 +433,89 @@ def run(
                 - "total_number_of_questions": Number of questions in a questionnaire
                 - "message": Error message (if failed).
     """
-    answer_key_image_path   = answer_key_paths["image_path"]
-    answer_key_json_path    = answer_key_paths["json_path"]
-    rows, cols              = keypad_rows_and_cols
-    collected_image_names   = []
-    count_page              = 1
-    result                  = {"status": "waiting"}
+    image_path      = PATHS["image_path"]
+    json_path       = PATHS["json_path"]
+    collected_images= []
+    count_page      = 1
+    result          = {"status": "waiting"}
 
     # Step 1: Initialize Camera
-    camera_result = camera.initialize_camera(camera_index)
-    if camera_result["status"] == "error":
-        return camera_result
-    capture = camera_result["capture"]
+    config_result = camera.config_camera(FRAME_DIMENSIONS)
+    if config_result["status"] == "error":
+        return config_result
+    capture = config_result["capture"]
     
     # Step 2: Get prerequisites
-    prerequisites = _ask_for_prerequisites(keypad_rows_and_cols, pc_mode)
+    prerequisites = _ask_for_prerequisites(scan_key)
     if prerequisites["status"] == "cancelled":
-        camera.cleanup(capture, show_windows)
+        camera.cleanup_camera(capture)
         return prerequisites
     total_number_of_pages   = prerequisites["total_number_of_pages"]
     essay_existence         = prerequisites["essay_existence"]
 
-    while True:
-        time.sleep(0.1) # <-- Reduce CPU usage and debounce keypad inpud but still experimental
-        # ========USE LCD DISPLAY==========
-        print("[*] SCAN | [#] CANCEL")
-        # =================================
+    try:
+        while True:
+            time.sleep(0.1)
+            # ========USE LCD DISPLAY==========
+            print("[*] SCAN | [#] CANCEL")
+            # =================================
+            frame = capture.capture_array()
+            
+            if SHOW_WINDOWS:
+                cv2.imshow("Answer Key Scanner", frame)
+                cv2.waitKey(1)
 
-        ret, frame = capture.read()
-        if not ret:
-            result = {
-                "status"    : "error",
-                "message"   : f"Failed to capture frame. Source: {__name__}."
-            }
-            break
-        
-        if show_windows:
-            cv2.imshow("Answer Key Scanner", frame)
-            cv2.waitKey(1)
+            key = scan_key()
 
-        key = hardware.read_keypad(rows, cols, pc_mode)
-
-        if key is None or key not in ['*', '#']:
-            continue
-
-        if key == '#':
-            result = {"status": "cancelled"}
-            break
-
-        # Step 3: Process according to number of pages
-        # ========== SINGLE PAGE WORKFLOW ==========
-        if total_number_of_pages == 1:
-            result = _handle_single_page_workflow(
-                key                     = key,
-                frame                   = frame,
-                answer_key_image_path   = answer_key_image_path,
-                answer_key_json_path    = answer_key_json_path, 
-                essay_existence         = essay_existence,
-                total_number_of_pages   = total_number_of_pages,
-                image_extension         = image_extension
-            )
-            if result["status"] == "waiting":
+            if key is None or key not in ['*', '#']:
                 continue
-            break
-        
-        # ========== MULTIPLE PAGES WORKFLOW ==========
-        else:
-            result = _handle_multiple_pages_workflow(
-                key                     = key,
-                frame                   = frame,
-                answer_key_image_path   = answer_key_image_path,
-                answer_key_json_path    = answer_key_json_path,
-                essay_existence         = essay_existence,
-                current_page_count      = count_page,
-                total_number_of_pages   = total_number_of_pages,
-                collected_image_names   = collected_image_names,
-                image_extension         = image_extension,
-                tile_width              = tile_width
-            )
-            if result["status"] == "waiting":
-                count_page = result["next_page"]
-                continue
-            break
 
-    camera.cleanup(capture, show_windows)
-    return result
+            if key == '#':
+                result = {"status": "cancelled"}
+                break
+
+            # Step 3: Process according to number of pages
+            # ========== SINGLE PAGE WORKFLOW ==========
+            if total_number_of_pages == 1:
+                result = _handle_single_page_workflow(
+                    key                     = key,
+                    frame                   = frame,
+                    answer_key_image_path   = image_path,
+                    answer_key_json_path    = json_path, 
+                    essay_existence         = essay_existence,
+                    total_number_of_pages   = total_number_of_pages,
+                    image_extension         = IMAGE_EXTENSION
+                )
+                if result["status"] == "waiting":
+                    continue
+                break
+            
+            # ========== MULTIPLE PAGES WORKFLOW ==========
+            else:
+                result = _handle_multiple_pages_workflow(
+                    key                     = key,
+                    frame                   = frame,
+                    answer_key_image_path   = image_path,
+                    answer_key_json_path    = json_path,
+                    essay_existence         = essay_existence,
+                    current_page_count      = count_page,
+                    total_number_of_pages   = total_number_of_pages,
+                    collected_image_names   = collected_images,
+                    image_extension         = IMAGE_EXTENSION,
+                    tile_width              = TILE_WIDTH
+                )
+                if result["status"] == "waiting":
+                    count_page = result["next_page"]
+                    continue
+                break
+
+    except Exception as e:
+        camera.cleanup_camera(capture)
+        return {
+            "status"    : "error",
+            "message"   : f"{e} Source: {__name__}"
+        }
+
+    finally:
+        camera.cleanup_camera(capture)
+        return result

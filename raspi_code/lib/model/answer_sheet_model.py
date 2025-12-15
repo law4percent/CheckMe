@@ -1,8 +1,4 @@
 # lib/services/answer_sheet_model.py
-"""
-Database model for answer_sheets table
-"""
-
 from .models import get_connection
 from datetime import datetime
 
