@@ -238,28 +238,28 @@ def _validate_the_json_result(JSON_data: dict) -> dict:
 
 
 def _handle_single_page_workflow(
-        key: str,
-        frame: any,
-        answer_key_image_path: str,
-        answer_key_json_path: str,
-        essay_existence: bool,
-        total_number_of_pages: int,
-        image_extension: str
+        KEY: str,
+        FRAME: any,
+        IMAGE_PATH: str,
+        JSON_PATH: str,
+        ESSAY_EXISTENCE: bool,
+        TOTAL_NUMBER_OF_PAGES: int,
+        IMAGE_EXTENSION: str
     ) -> dict:
     # ========USE LCD DISPLAY==========
     print(f"Put the answer key.")
     # =================================
     
     # Step 1: Check the key
-    if key != '*':
+    if KEY != '*':
         return {"status": "waiting"}
 
     # Step 2: Save in image file format
     image_details = _save_in_image_file(
-        frame               = frame, 
-        target_path         = answer_key_image_path, 
-        current_page_count  = total_number_of_pages,
-        image_extension     = image_extension
+        frame               = FRAME, 
+        target_path         = IMAGE_PATH, 
+        current_page_count  = TOTAL_NUMBER_OF_PAGES,
+        image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
         return image_details
@@ -273,7 +273,7 @@ def _handle_single_page_workflow(
     # Step 4: Save in JSON file format
     json_details = _save_in_json_file(
         json_data   = JSON_data,
-        target_path = answer_key_json_path
+        target_path = JSON_PATH
     )
     if json_details["status"] == "error":
         return json_details
@@ -281,72 +281,72 @@ def _handle_single_page_workflow(
     return {
         "status"                    : "success",
         "assessment_uid"            : json_details["assessment_uid"],
-        "total_number_of_pages"     : total_number_of_pages,
+        "total_number_of_pages"     : TOTAL_NUMBER_OF_PAGES,
         "json_details"              : json_details,
         "image_details"             : image_details,
-        "essay_existence"           : essay_existence,
+        "essay_existence"           : ESSAY_EXISTENCE,
         "total_number_of_questions" : len(JSON_data["answers"])
     }
 
 
 def _handle_multiple_pages_workflow(
-        key: str,
-        frame: any,
-        answer_key_image_path: str,
-        answer_key_json_path: str,
-        essay_existence: bool,
-        current_page_count: int,
-        total_number_of_pages: int,
-        collected_image_names: list,
-        image_extension: str,
-        tile_width: int
+        KEY: str,
+        FRAME: any,
+        IMAGE_PATH: str,
+        JSON_PATH: str,
+        ESSAY_EXISTENCE: bool,
+        CURRENT_PAGE_COUNT: int,
+        TOTAL_NUMBER_OF_PAGES: int,
+        COLLEDTED_IMAGES: list,
+        IMAGE_EXTENSION: str,
+        TILE_WIDTH: int
     ) -> dict:
     # ========USE LCD DISPLAY==========
     ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
-    extension = ordinal_map.get(current_page_count, 'th')
-    print(f"Put the {current_page_count}{extension} page.")
+    extension = ordinal_map.get(CURRENT_PAGE_COUNT, 'th')
+    print(f"Put the {CURRENT_PAGE_COUNT}{extension} page.")
     # =================================
     
     # Step 1: Check the key
-    if key != '*':
+    if KEY != '*':
         return {
             "status"    : "waiting", 
-            "next_page" : current_page_count
+            "next_page" : CURRENT_PAGE_COUNT
         }
         
     # Step 2: Save in image file format
     image_details = _save_in_image_file(
-        frame               = frame, 
-        target_path         = answer_key_image_path, 
-        current_page_count  = current_page_count,
-        image_extension     = image_extension
+        frame               = FRAME, 
+        target_path         = IMAGE_PATH, 
+        current_page_count  = CURRENT_PAGE_COUNT,
+        image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
         return image_details
-    collected_image_names.append(image_details["full_path"])
+    COLLEDTED_IMAGES.append(image_details["full_path"])
     
     # Step 3: Check if the page count is still less than to total pages else proceed to combined all collected images
-    if current_page_count < total_number_of_pages:
+    if CURRENT_PAGE_COUNT < TOTAL_NUMBER_OF_PAGES:
         return {
             "status"    : "waiting", 
-            "next_page" : current_page_count + 1
+            "next_page" : CURRENT_PAGE_COUNT + 1
         }
     
     # ========USE LCD DISPLAY==========
-    print(f"Combining {current_page_count} pages... please wait")
+    print(f"Combining {CURRENT_PAGE_COUNT} pages... please wait")
     time.sleep(3)
     # =================================
     
     # Step 4: Combine images
-    combined_image_result = image_combiner.combine_images_into_grid(collected_image_names, tile_width)
+    combined_image_result = image_combiner.combine_images_into_grid(COLLEDTED_IMAGES, TILE_WIDTH)
     if combined_image_result["status"] == "error":
         return combined_image_result
     
     # Step 5: Save in image file format
     image_details = _save_in_image_file(
         frame               = combined_image_result["frame"], 
-        target_path         = answer_key_image_path,
-        image_extension     = image_extension,
+        target_path         = IMAGE_PATH,
+        image_extension     = IMAGE_EXTENSION,
         is_combined_image   = True
     )
     if image_details["status"] == "error":
@@ -361,7 +361,7 @@ def _handle_multiple_pages_workflow(
     # Step 7: Save in JSON file format    
     json_details = _save_in_json_file(
         json_data   = JSON_data,
-        target_path = answer_key_json_path
+        target_path = JSON_PATH
     )
     if json_details["status"] == "error":
         return json_details
@@ -369,10 +369,10 @@ def _handle_multiple_pages_workflow(
     return {
         "status"                    : "success",
         "assessment_uid"            : json_details["assessment_uid"],
-        "total_number_of_pages"     : total_number_of_pages,
+        "total_number_of_pages"     : TOTAL_NUMBER_OF_PAGES,
         "json_details"              : json_details,
         "image_details"             : image_details,
-        "essay_existence"           : essay_existence,
+        "essay_existence"           : ESSAY_EXISTENCE,
         "total_number_of_questions" : len(JSON_data["answers"])
     }
 
@@ -393,10 +393,6 @@ def _ask_for_prerequisites(scan_key) -> dict:
         "total_number_of_pages"     : pages_result["total_number_of_pages"],
         "essay_existence"           : essay_result["essay_existence"]
     }
-
-
-def _evaluate_key(except_keys, ):
-    return
 
 
 def run(
@@ -433,17 +429,18 @@ def run(
                 - "total_number_of_questions": Number of questions in a questionnaire
                 - "message": Error message (if failed).
     """
-    image_path      = PATHS["image_path"]
-    json_path       = PATHS["json_path"]
+    IMAGE_PATH      = PATHS["image_path"]
+    JSON_PATH       = PATHS["json_path"]
     collected_images= []
     count_page      = 1
     result          = {"status": "waiting"}
 
-    # Step 1: Initialize Camera
+    # Step 1: Initialize Camera & start camera
     config_result = camera.config_camera(FRAME_DIMENSIONS)
     if config_result["status"] == "error":
         return config_result
     capture = config_result["capture"]
+    capture.start()
     
     # Step 2: Get prerequisites
     prerequisites = _ask_for_prerequisites(scan_key)
@@ -478,13 +475,13 @@ def run(
             # ========== SINGLE PAGE WORKFLOW ==========
             if total_number_of_pages == 1:
                 result = _handle_single_page_workflow(
-                    key                     = key,
-                    frame                   = frame,
-                    answer_key_image_path   = image_path,
-                    answer_key_json_path    = json_path, 
-                    essay_existence         = essay_existence,
-                    total_number_of_pages   = total_number_of_pages,
-                    image_extension         = IMAGE_EXTENSION
+                    KEY                     = key,
+                    FRAME                   = frame,
+                    IMAGE_PATH              = IMAGE_PATH,
+                    JSON_PATH               = JSON_PATH, 
+                    ESSAY_EXISTENCE         = essay_existence,
+                    TOTAL_NUMBER_OF_PAGES   = total_number_of_pages,
+                    IMAGE_EXTENSION         = IMAGE_EXTENSION
                 )
                 if result["status"] == "waiting":
                     continue
@@ -493,16 +490,16 @@ def run(
             # ========== MULTIPLE PAGES WORKFLOW ==========
             else:
                 result = _handle_multiple_pages_workflow(
-                    key                     = key,
-                    frame                   = frame,
-                    answer_key_image_path   = image_path,
-                    answer_key_json_path    = json_path,
-                    essay_existence         = essay_existence,
-                    current_page_count      = count_page,
-                    total_number_of_pages   = total_number_of_pages,
-                    collected_image_names   = collected_images,
-                    image_extension         = IMAGE_EXTENSION,
-                    tile_width              = TILE_WIDTH
+                    KEY                     = key,
+                    FRAME                   = frame,
+                    IMAGE_PATH              = IMAGE_PATH,
+                    JSON_PATH               = JSON_PATH,
+                    ESSAY_EXISTENCE         = essay_existence,
+                    CURRENT_PAGE_COUNT      = count_page,
+                    TOTAL_NUMBER_OF_PAGES   = total_number_of_pages,
+                    COLLEDTED_IMAGES        = collected_images,
+                    IMAGE_EXTENSION         = IMAGE_EXTENSION,
+                    TILE_WIDTH              = TILE_WIDTH
                 )
                 if result["status"] == "waiting":
                     count_page = result["next_page"]
