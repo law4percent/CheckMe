@@ -58,14 +58,11 @@ def _ask_for_number_of_pages(scan_key) -> dict:
         print("How many pages per answer sheet? [1-9] or [#] Cancel")
         # =================================
         key = scan_key()
-        if key is None:
+        if key is None or key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
             continue
 
         if key == '#':
             return {"status": "cancelled"}
-
-        if key not in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-            continue
 
         total_number_of_pages_per_sheet = int(key)
         return {
@@ -112,7 +109,12 @@ def _save_image(frame: any, file_name: str, target_path: str) -> dict:
         return path_status
         
     try:
-        full_path = os.path.join(target_path, file_name)
+        full_path = utils.join_path_with_os_adaptability(
+            TARGET_PATH = target_path,
+            FILE_NAME   = file_name,
+            SOURCE      = __name__,
+            create_one  = False
+        )
         cv2.imwrite(full_path, frame)
         return {
             "status"    : "success",
@@ -153,114 +155,113 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
 
 
 def _handle_single_page_answer_sheet_workflow(
-        key: str, 
-        frame: any, 
-        answer_sheet_image_path: str, 
-        answer_sheet_json_path: str,
-        current_sheet_count: int, 
-        total_number_of_pages_per_sheet: int,
-        selected_assessment_uid: str, 
-        essay_existence: bool,
-        image_extension: str
+        KEY: str, 
+        FRAME: any, 
+        IMAGE_PATH: str, 
+        JSON_PATH: str,
+        CURRENT_SHEET_COUNT: int, 
+        TOTAL_NUMBER_OF_PAGES_PER_SHEET: int,
+        SELECTED_ASSESSMENT_UID: str, 
+        ESSAY_EXISTENCE: bool,
+        IMAGE_EXTENSION: str
     ) -> dict:
     """Handle single-page answer sheet workflow."""
     # Step 1: Check key input
-    if key != '*':
+    if KEY != '*':
         return {"status": "waiting"}
     
     # Step 2: Save in image file format
     image_details = _save_in_image_file(
-        frame               = frame, 
-        target_path         = answer_sheet_image_path, 
-        current_sheet_count = current_sheet_count,
-        image_extension     = image_extension
+        frame               = FRAME, 
+        target_path         = IMAGE_PATH, 
+        current_sheet_count = CURRENT_SHEET_COUNT,
+        image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
         return image_details
     
-    json_details = {"target_path": answer_sheet_json_path}
+    json_details = {"target_path": JSON_PATH}
     return {
         "status"                            : "success",
-        "answer_key_assessment_uid"         : selected_assessment_uid,
-        "total_number_of_pages_per_sheet"   : total_number_of_pages_per_sheet,
+        "answer_key_assessment_uid"         : SELECTED_ASSESSMENT_UID,
+        "total_number_of_pages_per_sheet"   : TOTAL_NUMBER_OF_PAGES_PER_SHEET,
         "json_details"                      : json_details,
         "image_details"                     : image_details,
-        "is_final_score"                    : not essay_existence,
+        "is_final_score"                    : not ESSAY_EXISTENCE,
     }
 
 
 def _handle_multi_page_answer_sheet_workflow(
-        key: str, 
-        frame: any,
-        answer_sheet_image_path: str, 
-        answer_sheet_json_path: str,
-        current_count_sheets: int, 
-        total_number_of_pages_per_sheet: int,
-        selected_assessment_uid: str, 
-        essay_existence: bool,
-        current_count_page: int,
-        collected_image_names: list,
-        image_extension: str,
-        tile_width: int
+        KEY: str, 
+        FRAME: any,
+        IMAGE_PATH: str, 
+        JSON_PATH: str,
+        CURRENT_COUNT_SHEETS: int, 
+        TOTAL_NUMBER_OF_PAGES_PER_SHEET: int,
+        SELECTED_ASSESSMENT_UID: str, 
+        ESSAY_EXISTENCE: bool,
+        CURRENT_COUNT_PAGE: int,
+        COLLECTED_IMAGES: list,
+        IMAGE_EXTENSION: str,
+        TILE_WIDTH: int
     ) -> dict:
     """Handle multi-page answer sheet workflow."""
     # Step 1: Check key input
-    if key != '*':
+    if KEY != '*':
         return {
             "status"    : "waiting",
-            "next_page" : current_count_page,
+            "next_page" : CURRENT_COUNT_PAGE,
         }
     
     # Step 2: Save individual page
     image_details = _save_in_image_file(
-        frame               = frame, 
-        target_path         = answer_sheet_image_path, 
-        current_count_page  = current_count_page,
-        image_extension     = image_extension
+        frame               = FRAME, 
+        target_path         = IMAGE_PATH, 
+        current_count_page  = CURRENT_COUNT_PAGE,
+        image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
         return image_details
     
     # Step 3: Collect the remaining pages
-    collected_image_names.append(image_details["full_path"])
+    COLLECTED_IMAGES.append(image_details["full_path"])
 
     # Step 4: Check if all pages are completed
-    if current_count_page < total_number_of_pages_per_sheet:
+    if CURRENT_COUNT_PAGE < TOTAL_NUMBER_OF_PAGES_PER_SHEET:
         return {
             "status"    : "waiting",
-            "next_page" : current_count_page + 1
+            "next_page" : CURRENT_COUNT_PAGE + 1
         }
     
     # ========USE LCD DISPLAY==========
-    print(f"Combining {total_number_of_pages_per_sheet} pages... please wait")
+    print(f"Combining {TOTAL_NUMBER_OF_PAGES_PER_SHEET} pages... please wait")
     time.sleep(3)
     # =================================
     
     # Step 5: All pages collected, combine them
-    combined_image_result = image_combiner.combine_images_into_grid(collected_image_names, tile_width)
+    combined_image_result = image_combiner.combine_images_into_grid(COLLECTED_IMAGES, TILE_WIDTH)
     if combined_image_result["status"] == "error":
         return combined_image_result
     
-    
     image_details = _save_in_image_file(
         frame               = combined_image_result["frame"], 
-        target_path         = answer_sheet_image_path,
-        image_extension     = image_extension,
+        target_path         = IMAGE_PATH,
+        image_extension     = IMAGE_EXTENSION,
         is_combined_image   = True
     )
     if image_details["status"] == "error":
         return image_details
     
-    json_details = {"target_path": answer_sheet_json_path}
+    json_details = {"target_path": JSON_PATH}
     return {
         "status"                            : "success",
-        "answer_key_assessment_uid"         : selected_assessment_uid,
-        "total_number_of_pages_per_sheet"   : total_number_of_pages_per_sheet,
+        "answer_key_assessment_uid"         : SELECTED_ASSESSMENT_UID,
+        "total_number_of_pages_per_sheet"   : TOTAL_NUMBER_OF_PAGES_PER_SHEET,
         "json_details"                      : json_details,
         "image_details"                     : image_details,
-        "is_final_score"                    : not essay_existence,
+        "is_final_score"                    : not ESSAY_EXISTENCE,
         "next_page"                         : 1,  # Reset for next sheet
-        "next_sheet"                        : current_count_sheets + 1
+        "next_sheet"                        : CURRENT_COUNT_SHEETS + 1
     }
 
 
@@ -362,13 +363,8 @@ def run(
             print(f"{progress} Press [*] to CAPTURE or [#] to EXIT")
             # =================================
 
-            ret, frame = capture.read()
-            if not ret:
-                result = {
-                    "status"    : "error",
-                    "message"   : f"Failed to capture frame. Source: {__name__}."
-                }
-                break
+            frame = capture.capture_array()
+            frame = cv2.resize(frame, (FRAME_DIMENSIONS["width"], FRAME_DIMENSIONS["height"]))
             
             if SHOW_WINDOWS:
                 cv2.imshow("Answer Sheet Scanner", frame)
@@ -386,15 +382,15 @@ def run(
             # Handle single-page answer sheets
             if TOTAL_NUMBER_OF_PAGES_PER_SHEET == 1:
                 result = _handle_single_page_answer_sheet_workflow(
-                    key                             = key,
-                    frame                           = frame,
-                    answer_sheet_image_path         = IMAGE_PATH,
-                    answer_sheet_json_path          = JSON_PATH, 
-                    current_sheet_count             = count_sheets,
-                    total_number_of_pages_per_sheet = TOTAL_NUMBER_OF_PAGES_PER_SHEET,
-                    selected_assessment_uid         = SELECTED_ASSESSMENT_UID,
-                    essay_existence                 = ESSAY_EXISTENCE,
-                    image_extension                 = IMAGE_EXTENSION
+                    KEY                             = key,
+                    FRAME                           = frame,
+                    IMAGE_PATH                      = IMAGE_PATH,
+                    JSON_PATH                       = JSON_PATH, 
+                    CURRENT_SHEET_COUNT             = count_sheets,
+                    TOTAL_NUMBER_OF_PAGES_PER_SHEET = TOTAL_NUMBER_OF_PAGES_PER_SHEET,
+                    SELECTED_ASSESSMENT_UID         = SELECTED_ASSESSMENT_UID,
+                    ESSAY_EXISTENCE                 = ESSAY_EXISTENCE,
+                    IMAGE_EXTENSION                 = IMAGE_EXTENSION
                 )
                 if result["status"] == "waiting":
                     continue
@@ -423,18 +419,18 @@ def run(
             # Handle multi-page answer sheets
             else:
                 result = _handle_multi_page_answer_sheet_workflow(
-                    key                             = key,
-                    frame                           = frame,
-                    answer_sheet_image_path         = IMAGE_PATH,
-                    answer_sheet_json_path          = JSON_PATH,
-                    current_count_sheets            = count_sheets,
-                    total_number_of_pages_per_sheet = TOTAL_NUMBER_OF_PAGES_PER_SHEET,
-                    selected_assessment_uid         = SELECTED_ASSESSMENT_UID,
-                    essay_existence                 = ESSAY_EXISTENCE,
-                    current_count_page              = count_page_per_sheet,
-                    collected_image_names           = collected_images,
-                    image_extension                 = IMAGE_EXTENSION,
-                    tile_width                      = TILE_WIDTH
+                    KEY                             = key,
+                    FRAME                           = frame,
+                    IMAGE_PATH                      = IMAGE_PATH,
+                    JSON_PATH                       = JSON_PATH,
+                    CURRENT_COUNT_SHEETS            = count_sheets,
+                    TOTAL_NUMBER_OF_PAGES_PER_SHEET = TOTAL_NUMBER_OF_PAGES_PER_SHEET,
+                    SELECTED_ASSESSMENT_UID         = SELECTED_ASSESSMENT_UID,
+                    ESSAY_EXISTENCE                 = ESSAY_EXISTENCE,
+                    CURRENT_COUNT_PAGE              = count_page_per_sheet,
+                    COLLECTED_IMAGES                = collected_images,
+                    IMAGE_EXTENSION                 = IMAGE_EXTENSION,
+                    TILE_WIDTH                      = TILE_WIDTH
                 )
                 
                 if result["status"] == "waiting":
