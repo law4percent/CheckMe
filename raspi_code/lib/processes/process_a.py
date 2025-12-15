@@ -22,7 +22,7 @@ class Options(Enum):
     SHUTDOWN            = '4'
     
 
-def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
+def _choose_answer_key_from_db(scan_key: any) -> dict:
     """
         Let the user choose an answer key from the database using the keypad.
         Only shows assessment_uid for selection.
@@ -53,7 +53,7 @@ def _choose_answer_key_from_db(rows: str, cols: str, pc_mode: bool) -> dict:
         # =================================
 
         # Read keypad input
-        key = hardware.read_keypad(rows=rows, cols=cols, pc_mode=pc_mode)
+        key = scan_key()
         if key == '0':
             return {"status": "cancelled"}
         
@@ -175,21 +175,20 @@ def process_a(**kwargs):
         
         elif key == '2':
             # Step 1: Choose answer key from database via assessment_uid
-            selection_result = _choose_answer_key_from_db(rows, cols, pc_mode)
+            selection_result = _choose_answer_key_from_db(keypad.scan_key)
             if selection_result["status"] == "error":
                 continue 
-            selected_assessment_uid = selection_result["selected_assessment_uid"]
             
             # Step 2: Scan answer sheets and save to DB
             answer_sheets_data = scan_answer_sheet.run(
-                keypad_rows_and_cols    = [rows, cols], 
-                camera_index            = camera_index,
-                show_windows            = SHOW_WINDOWS, 
-                answer_sheet_paths      = PATHS["answer_sheet_path"],
-                selected_assessment_uid = selected_assessment_uid,
-                pc_mode                 = pc_mode,
-                image_extension         = IMAGE_EXTENSION,
-                tile_width              = TILE_WIDTH
+                scan_key                = keypad.scan_key,
+                SHOW_WINDOWS            = SHOW_WINDOWS, 
+                PATHS                   = PATHS["answer_sheet_path"],
+                SELECTED_ASSESSMENT_UID = selection_result["selected_assessment_uid"],
+                PRODUCTION_MODE         = PRODUCTION_MODE,
+                IMAGE_EXTENSION         = IMAGE_EXTENSION,
+                TILE_WIDTH              = TILE_WIDTH,
+                FRAME_DIMENSIONS        = FRAME_DIMENSIONS
             )
 
             # Step 3: Just display

@@ -164,6 +164,7 @@ def get_has_essay_by_assessment_uid(assessment_uid: str) -> bool:
             return False
         
         return bool(row[0])
+    
     except Exception as e:
         print(f"Error checking essay status: {e}")
         return False
