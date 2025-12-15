@@ -2,6 +2,5 @@ google-genai==1.52.0
 firebase-admin==7.1.0
 gpiozero==2.0.1
 numpy<=2.3.0
-# opencv-python==4.12.0.88 <---- unnecessary because Raspberry Pi’s has built-in OpenCV
 python-dotenv==1.0.1
 picamera2
