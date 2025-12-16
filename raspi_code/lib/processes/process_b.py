@@ -209,7 +209,7 @@ def _validate_the_json_result(JSON_data: dict, total_number_of_questions: int) -
     }
 
 
-def _get_JSON_of_answer_sheet(sheets: list, delay: int = 5) -> dict:
+def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
     """
         Send image to Gemini API for OCR extraction of answer sheet.
         Gemini reads the assessment UID directly from the paper.
@@ -224,7 +224,7 @@ def _get_JSON_of_answer_sheet(sheets: list, delay: int = 5) -> dict:
     collect_success = []
     
     for sheet in sheets:
-        time.sleep(delay)
+        time.sleep(5)
         # 1. Get data
         total_number_of_questions   = int(sheet["total_number_of_questions"])
         answer_sheet_img_full_path  = sheet["img_full_path"]
@@ -244,7 +244,19 @@ def _get_JSON_of_answer_sheet(sheets: list, delay: int = 5) -> dict:
         try:
             # 3. feed the image to OCR gemini
             gemini_engine = GeminiOCREngine()
-            JSON_data = gemini_engine.extract_answer_sheet(answer_sheet_img_full_path, total_number_of_questions)
+            JSON_data = gemini_engine.extract_answer_sheet(answer_sheet_img_full_path, total_number_of_questions, MAX_RETRY)
+
+            # 4. Verify the result
+            keys_result = _validate_the_json_result(JSON_data, total_number_of_questions)
+            if keys_result["status"] == "error":
+                collect_error.append(
+                    {
+                        "img_file"  : answer_sheet_img_full_path,
+                        "message"   : keys_result["message"],
+                    }
+                )
+                continue
+
         except Exception as e:
             collect_error.append(
                 {
@@ -254,17 +266,6 @@ def _get_JSON_of_answer_sheet(sheets: list, delay: int = 5) -> dict:
             )
             continue
             
-        # 4. Verify the result
-        keys_result = _validate_the_json_result(JSON_data, total_number_of_questions)
-        if keys_result["status"] == "error":
-            collect_error.append(
-                {
-                    "img_file"  : answer_sheet_img_full_path,
-                    "message"   : keys_result["message"],
-                }
-            )
-            continue
-        
         # 5. Save into json file
         save_result = {}
         json_target_path = str(sheet["json_target_path"])
@@ -384,6 +385,7 @@ def process_b(**kwargs):
     status_checker  = process_B_args["status_checker"],
     PRODUCTION_MODE = process_B_args["PRODUCTION_MODE"]
     SAVE_LOGS       = process_B_args["SAVE_LOGS"]
+    MAX_RETRY       = process_B_args["MAX_RETRY"]
 
     # retry_delay         = process_B_args["retry_delay"],
     # max_retries         = process_B_args["max_retries"],
@@ -409,11 +411,8 @@ def process_b(**kwargs):
                 continue
             sheets = sheets_result["sheets"]
 
-            # Step 2: Extract one batch images to text to json with gemini OCR - 
-            # CRITICAL AREA
-            # - ADD retry 
-            # - ADD validation if its not then retry       
-            json_results = _get_JSON_of_answer_sheet(sheets, BATCH_SIZE)
+            # Step 2: Extract one batch images to text to json with gemini
+            json_results = _get_JSON_of_answer_sheet(sheets, MAX_RETRY)
             
             # Step 3: Update database json path and student id by image_full_path
             json_success = json_results["success"]

@@ -4,13 +4,13 @@ def normalize_path(path) -> str:
     """Ensure we always get a clean string path."""
     if isinstance(path, tuple):
         path = os.path.join(*path)
-    return str(path)
+    return os.path.abspath(str(path))
 
 
 def path_existence_checkpoint(PATH: str, SOURCE: str) -> dict:
     PATH = normalize_path(PATH)
 
-    if not os.path.exists(PATH):
+    if not os.path.isdir(PATH):
         return {
             "status": "error",
             "message": f"{PATH} does not exist. Source: {SOURCE}"
@@ -48,7 +48,7 @@ def join_path_with_os_adaptability(TARGET_PATH: str, FILE_NAME: str, SOURCE: str
     return os.path.join(TARGET_PATH, FILE_NAME)
 
 
-def cleanup_temporary_images(image_paths: list[str]) -> None:
+def cleanup_temporary_images(image_paths: list) -> None:
     """
     Delete temporary image files.
     
