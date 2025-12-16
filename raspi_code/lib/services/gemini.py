@@ -148,7 +148,7 @@ Important Rules:
 8. If a student's answer is blank or missing, return "no_answer".
 9. The total number of questions (Qn) must be exactly {total_number_of_questions}.
 10. If the number of questions is not exactly {total_number_of_questions}:
-    You MUST still produce questions up to {total_number_of_questions}.
+    You MUST still produce questions up to {total_number_of_questions} and give no_question value for the missing questoins.
 
 Return JSON in this exact format:
 {{
@@ -157,7 +157,8 @@ Return JSON in this exact format:
         "Q1": "A",
         "Q2": "no_answer",
         "Q3": "unreadable",
-        "Q12": "no_question",
+        "Q4": "no_question",
+        continue...
         "Q{total_number_of_questions}": "CPU"
     }}
 }}
