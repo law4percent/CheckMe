@@ -93,6 +93,7 @@ def process_a(**kwargs):
     PATHS           = process_A_args["PATHS"]
     status_checker  = process_A_args["status_checker"]
     FRAME_DIMENSIONS= process_A_args["FRAME_DIMENSIONS"]
+    MAX_RETRY       = process_A_args["MAX_RETRY"]
 
     if SAVE_LOGS:
         logger.info(f"{TASK_NAME} is now Running ✅")
@@ -137,7 +138,8 @@ def process_a(**kwargs):
                 PRODUCTION_MODE = PRODUCTION_MODE,
                 IMAGE_EXTENSION = IMAGE_EXTENSION,
                 TILE_WIDTH      = TILE_WIDTH,
-                FRAME_DIMENSIONS= FRAME_DIMENSIONS
+                FRAME_DIMENSIONS= FRAME_DIMENSIONS,
+                MAX_RETRY       = MAX_RETRY
             )
 
             # Step 2: Save results to database

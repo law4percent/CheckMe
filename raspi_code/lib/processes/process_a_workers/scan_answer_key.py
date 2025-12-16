@@ -19,7 +19,7 @@ from lib.services import utils, image_combiner
     6. Save extracted answer key as JSON
 """
 
-def _get_JSON_of_answer_key(image_path: str) -> dict:
+def _get_JSON_of_answer_key(image_path: str, MAX_RETRY: int) -> dict:
     """
         Send image to Gemini API for OCR extraction of answer key.
         Gemini reads the assessment UID directly from the paper.
@@ -37,7 +37,7 @@ def _get_JSON_of_answer_key(image_path: str) -> dict:
     
     try:
         gemini_engine = GeminiOCREngine()
-        JSON_data = gemini_engine.extract_answer_key(image_path)
+        JSON_data = gemini_engine.extract_answer_key(image_path, MAX_RETRY)
         
         # Step 2: Check the assessment uid and answer key existence
         validation_result = _validate_the_json_result(JSON_data)
@@ -210,10 +210,11 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
 
 
 def _validate_the_json_result(JSON_data: dict) -> dict:
-    if "assessment_uid" not in JSON_data or "answer_key" not in JSON_data:
+    """Validate the JSON response from Gemini OCR."""
+    if "assessment_uid" not in JSON_data or "answers" not in JSON_data:
         return {
             "status"    : "error",
-            "message"   : f"assessment_uid or answer_key does not exist. Something problem in the prompt or weak prompt. Source: {__name__}"
+            "message"   : f"assessment_uid or answers does not exist in extraction. Source: {__name__}"
         }
     
     assessment_uid = JSON_data.get("assessment_uid")
@@ -224,9 +225,9 @@ def _validate_the_json_result(JSON_data: dict) -> dict:
                 f"assessment_uid not found in the paper. Source: {__name__}\n"
                 "==================== POSSIBLE REASONS =======================\n"
                 "[1] Prompt Quality: The prompt sent to Gemini may be unclear.\n"
-                "[2] Image Quality: The image might be blurry.\n"
-                "[3] Font Size: The text may be too small.\n"
-                "[4] Font Style: The font might be difficult to read.\n"
+                "[2] Image Quality: The image might be blurry or low resolution.\n"
+                "[3] Font Size: The text may be too small to read.\n"
+                "[4] Font Style: The font might be difficult to OCR.\n"
                 "[5] Instructions: The paper instructions may be unclear.\n"
                 "[6] Formatting: The answer key may be poorly formatted.\n"
                 "============================================================\n\n"
@@ -236,8 +237,16 @@ def _validate_the_json_result(JSON_data: dict) -> dict:
             )
         }
     
+    # Additional validation: Check if answers dict is valid
+    answers = JSON_data.get("answers", {})
+    if not answers or not isinstance(answers, dict):
+        return {
+            "status": "error",
+            "message": f"No valid answers found in response. Source: {__name__}"
+        }
+    
     return {
-        "status"        : "success",
+        "status": "success",
         "assessment_uid": str(assessment_uid).strip()
     }
 
@@ -249,7 +258,8 @@ def _handle_single_page_workflow(
         JSON_PATH: str,
         ESSAY_EXISTENCE: bool,
         TOTAL_NUMBER_OF_PAGES: int,
-        IMAGE_EXTENSION: str
+        IMAGE_EXTENSION: str,
+        MAX_RETRY: int
     ) -> dict:
     # ========USE LCD DISPLAY==========
     print(f"Put the answer key.")
@@ -270,7 +280,10 @@ def _handle_single_page_workflow(
         return image_details
     
     # Step 3: Get the JSON of answer key with Gemini OCR
-    JSON_of_answer_key = _get_JSON_of_answer_key(image_path=image_details["full_path"])
+    JSON_of_answer_key = _get_JSON_of_answer_key(
+        image_path  = image_details["full_path"], 
+        MAX_RETRY   = MAX_RETRY
+    )
     if JSON_of_answer_key["status"] == "error":
         return JSON_of_answer_key
     JSON_data = JSON_of_answer_key["JSON_data"]
@@ -302,9 +315,10 @@ def _handle_multiple_pages_workflow(
         ESSAY_EXISTENCE: bool,
         CURRENT_PAGE_COUNT: int,
         TOTAL_NUMBER_OF_PAGES: int,
-        COLLEDTED_IMAGES: list,
+        COLLECTED_IMAGES: list,
         IMAGE_EXTENSION: str,
-        TILE_WIDTH: int
+        TILE_WIDTH: int,
+        MAX_RETRY: int
     ) -> dict:
     # ========USE LCD DISPLAY==========
     ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
@@ -327,8 +341,9 @@ def _handle_multiple_pages_workflow(
         image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
-    COLLEDTED_IMAGES.append(image_details["full_path"])
+    COLLECTED_IMAGES.append(image_details["full_path"])
     
     # Step 3: Check if the page count is still less than to total pages else proceed to combined all collected images
     if CURRENT_PAGE_COUNT < TOTAL_NUMBER_OF_PAGES:
@@ -343,8 +358,9 @@ def _handle_multiple_pages_workflow(
     # =================================
     
     # Step 4: Combine images
-    combined_image_result = image_combiner.combine_images_into_grid(COLLEDTED_IMAGES, TILE_WIDTH)
+    combined_image_result = image_combiner.combine_images_into_grid(COLLECTED_IMAGES, TILE_WIDTH)
     if combined_image_result["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return combined_image_result
     
     # Step 5: Save in image file format
@@ -355,11 +371,16 @@ def _handle_multiple_pages_workflow(
         is_combined_image   = True
     )
     if image_details["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
     
-    # Step 6: Get the JSON of answer key with Gemini OCR
-    JSON_of_answer_key = _get_JSON_of_answer_key(image_path=image_details["full_path"])
+    # Step 6: Get the JSON of answer key with Gemini OCR]
+    JSON_of_answer_key = _get_JSON_of_answer_key(
+        image_path  = image_details["full_path"], 
+        MAX_RETRY   = MAX_RETRY
+    )
     if JSON_of_answer_key["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return JSON_of_answer_key
     JSON_data = JSON_of_answer_key["JSON_data"]
 
@@ -369,7 +390,11 @@ def _handle_multiple_pages_workflow(
         target_path = JSON_PATH
     )
     if json_details["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return json_details
+    
+    # Step 8: Cleanup temporary individual page images
+    utils.cleanup_temporary_images(COLLECTED_IMAGES)
     
     return {
         "status"                    : "success",
@@ -407,7 +432,8 @@ def run(
         PRODUCTION_MODE: bool,
         IMAGE_EXTENSION: str,
         TILE_WIDTH: int,
-        FRAME_DIMENSIONS: dict 
+        FRAME_DIMENSIONS: dict,
+        MAX_RETRY: int
     ) -> dict:
     """
         Main scanning workflow for answer key.
@@ -487,7 +513,8 @@ def run(
                     JSON_PATH               = JSON_PATH, 
                     ESSAY_EXISTENCE         = essay_existence,
                     TOTAL_NUMBER_OF_PAGES   = total_number_of_pages,
-                    IMAGE_EXTENSION         = IMAGE_EXTENSION
+                    IMAGE_EXTENSION         = IMAGE_EXTENSION,
+                    MAX_RETRY               = MAX_RETRY
                 )
                 if result["status"] == "waiting":
                     continue
@@ -503,9 +530,10 @@ def run(
                     ESSAY_EXISTENCE         = essay_existence,
                     CURRENT_PAGE_COUNT      = count_page,
                     TOTAL_NUMBER_OF_PAGES   = total_number_of_pages,
-                    COLLEDTED_IMAGES        = collected_images,
+                    COLLECTED_IMAGES        = collected_images,
                     IMAGE_EXTENSION         = IMAGE_EXTENSION,
-                    TILE_WIDTH              = TILE_WIDTH
+                    TILE_WIDTH              = TILE_WIDTH,
+                    MAX_RETRY               = MAX_RETRY
                 )
                 if result["status"] == "waiting":
                     count_page = result["next_page"]

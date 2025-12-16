@@ -43,7 +43,7 @@ Important Rules:
 1. Ignore instructions for students.
 2. Ignore explanations or choices.
 3. Extract ONLY the correct answer.
-4. Keep continuous numbering: 1, 2, 3...N Exacltly as in the test.
+4. Keep continuous numbering: 1, 2, 3...N Exactly as in the test.
 5. If unreadable, return `"unreadable"`
 6. At the top, there is a unique Assessment UID code (alphanumeric).
 
@@ -84,7 +84,7 @@ Return JSON EXACTLY like this:
     # ANSWER KEY EXTRACTION
     # ============================================================
 
-    def extract_answer_key(self, image_path: str) -> Dict:
+    def extract_answer_key(self, image_path: str, MAX_RETRY: int) -> Dict:
         """Extract teacher's answer key from image."""
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY not set in environment")
@@ -92,9 +92,9 @@ Return JSON EXACTLY like this:
         image_base64 = self._encode_image(image_path)
 
         if GENAI_AVAILABLE and self.model:
-            response_text = self._call_gemini_sdk(image_base64, self.TEACHER_INSTRUCTION)
+            response_text = self._call_gemini_sdk(image_base64, self.TEACHER_INSTRUCTION, MAX_RETRY)
         else:
-            response_text = self._call_gemini_rest(image_base64, self.TEACHER_INSTRUCTION)
+            response_text = self._call_gemini_rest(image_base64, self.TEACHER_INSTRUCTION, MAX_RETRY)
 
         return self._safe_parse_json(response_text)
 
@@ -102,7 +102,7 @@ Return JSON EXACTLY like this:
     # STUDENT ANSWER EXTRACTION
     # ============================================================
 
-    def extract_answer_sheet(self, image_path: str, total_number_of_questions: int) -> Dict:
+    def extract_answer_sheet(self, image_path: str, total_number_of_questions: int, MAX_RETRY: int) -> Dict:
         """Extract student answers from answer sheet image."""
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY not set in environment")
@@ -112,9 +112,9 @@ Return JSON EXACTLY like this:
         STUDENT_INSTRUCTION = self._format_answer_sheet_prompt(total_number_of_questions)
 
         if GENAI_AVAILABLE and self.model:
-            response_text = self._call_gemini_sdk(image_base64, STUDENT_INSTRUCTION)
+            response_text = self._call_gemini_sdk(image_base64, STUDENT_INSTRUCTION, MAX_RETRY)
         else:
-            response_text = self._call_gemini_rest(image_base64, STUDENT_INSTRUCTION)
+            response_text = self._call_gemini_rest(image_base64, STUDENT_INSTRUCTION, MAX_RETRY)
 
         return self._safe_parse_json(response_text)
 
@@ -122,14 +122,15 @@ Return JSON EXACTLY like this:
     # HELPER METHODS
     # ============================================================
 
+    @staticmethod
     def _format_answer_sheet_prompt(total_number_of_questions: int) -> str:
-        
-        STUDENT_INSTRUCTION_init_1 = f"""
+        """Generate the prompt for student answer sheet extraction."""
+        return f"""
 You are an OCR system that extracts answers from an answer sheet image.
 
 The sheet contains:
 - A Student ID field at the top.
-- Student’s handwritten or circled answers.
+- Student's handwritten or circled answers.
 - Multiple possible sections:
   - Section Number: Multiple Choice – Circle the correct answer (A, B, C, D)
   - Section Number: True or False – Fill in the blank (T or F)
@@ -147,34 +148,27 @@ Important Rules:
 8. If a student's answer is blank or missing, return "no_answer".
 9. The total number of questions (Qn) must be exactly {total_number_of_questions}.
 10. If the number of questions is not exactly {total_number_of_questions}:
-    You MUST still produce questions up to {total_number_of_questions}, and return JSON in this exact format:
+    You MUST still produce questions up to {total_number_of_questions}.
+
+Return JSON in this exact format:
+{{
+    "student_id": "XXXX2345",
+    "answers": {{
+        "Q1": "A",
+        "Q2": "no_answer",
+        "Q3": "unreadable",
+        "Q12": "no_question",
+        "Q{total_number_of_questions}": "CPU"
+    }}
+}}
 """
-        STUDENT_INSTRUCTION_init_2 = """
-       {
-           "student_id": "XXXX2345",
-           "answers": {
-               "Q1": "A",
-               "Q2": "no_answer",   <-- if blank or no any answer
-               "Q3": "unreadable",
-               ...
-               "Q12": "no_question",  <-- Question number 12 is missing or cannot find in image: mark as no_question
-               "Q13": "no_question",  <-- Question number 13 is missing or cannot find in image: mark as no_question
-               ...
-               "Q30": "B",
-               "Q31": "D",
-               ...
-               "Qn": "CPU"
-           }
-       }
-"""
-        return STUDENT_INSTRUCTION_init_1 + STUDENT_INSTRUCTION_init_2
 
     def _encode_image(self, path: str) -> str:
         """Encode image to base64."""
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 
-    def _call_gemini_sdk(self, image_b64: str, instruction: str) -> str:
+    def _call_gemini_sdk(self, image_b64: str, instruction: str, MAX_RETRY: int) -> str:
         """Call Gemini API using SDK with retry logic."""
         contents = [
             instruction,
@@ -184,11 +178,11 @@ Important Rules:
             }
         ]
 
-        for attempt in range(3):
+        for attempt in range(MAX_RETRY):
             try:
                 response = self.model.generate_content(
-                    contents=contents,
-                    generation_config={"temperature": 0.2}
+                    contents            = contents,
+                    generation_config   = {"temperature": 0.2}
                 )
 
                 if not response.text.strip():
@@ -209,7 +203,7 @@ Important Rules:
 
         return '{"error": "Gemini SDK failed after retries"}'
 
-    def _call_gemini_rest(self, image_b64: str, instruction: str) -> str:
+    def _call_gemini_rest(self, image_b64: str, instruction: str, MAX_RETRY: int) -> str:
         """Call Gemini API using REST endpoint."""
         # Use v1 stable endpoint instead of v1beta
         url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent"
@@ -229,14 +223,14 @@ Important Rules:
             ]
         }
 
-        for attempt in range(3):
+        for attempt in range(MAX_RETRY):
             try:
                 response = requests.post(
                     url, 
-                    params={"key": self.api_key},
-                    json=payload, 
-                    headers=headers, 
-                    timeout=30
+                    params  = {"key": self.api_key},
+                    json    = payload, 
+                    headers = headers, 
+                    timeout = 30
                 )
 
                 response.raise_for_status()
@@ -245,14 +239,20 @@ Important Rules:
                     return response.json()["candidates"][0]["content"]["parts"][0]["text"]
                 except (KeyError, IndexError, TypeError) as e:
                     logger.error(f"Bad REST response format: {e}")
-                    return json.dumps({"error": "Bad REST response format"})
+                    return json.dumps({
+                        "status": "error",
+                        "message": "Bad REST response format"
+                    })
                     
             except requests.exceptions.RequestException as e:
                 logger.error(f"REST API error (attempt {attempt+1}/3): {e}")
                 if attempt < 2:
                     time.sleep(2 + random.randint(1, 3))
                     continue
-                return json.dumps({"error": f"REST API failed: {str(e)}"})
+                return json.dumps({
+                    "status": "error", 
+                    "message": f"REST API failed: {str(e)}"
+                })
 
     @staticmethod
     def _normalize_answer(answer: str) -> str:
@@ -269,4 +269,7 @@ Important Rules:
             return json.loads(cleaned)
         except Exception as e:
             logger.error(f"Failed to parse JSON: {e}")
-            return {"error": "JSON parsing failed", "raw_response": text[:200]}
+            return {
+                "status": "error", 
+                "message": f"JSON parsing failed.\nraw_response: {text[:200]}"
+            }

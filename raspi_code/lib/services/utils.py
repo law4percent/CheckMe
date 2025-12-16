@@ -46,3 +46,19 @@ def join_path_with_os_adaptability(TARGET_PATH: str, FILE_NAME: str, SOURCE: str
             raise FileNotFoundError(f"{TARGET_PATH} does not exist. Source: {SOURCE}")
 
     return os.path.join(TARGET_PATH, FILE_NAME)
+
+
+def cleanup_temporary_images(image_paths: list[str]) -> None:
+    """
+    Delete temporary image files.
+    
+    Args:
+        image_paths: List of image file paths to delete
+    """
+    for img_path in image_paths:
+        try:
+            if os.path.exists(img_path):
+                os.remove(img_path)
+                print(f"Cleaned up temporary image: {img_path}")
+        except Exception as e:
+            print(f"Warning: Could not delete {img_path}: {e}")

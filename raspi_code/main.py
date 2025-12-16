@@ -33,6 +33,7 @@ if __name__ == "__main__":
     ANSWER_SHEET_PATH   = {"json_path": "answer_sheets/json", "image_path": "answer_sheets/images"}
     status_checker      = Event()
     TEST_TEACHER_UID    = "gbRaC4u7MSRWWRi9LerDQyjVzg22"
+    MAX_RETRY           = 3
     status_checker.set()
 
     main(
@@ -45,7 +46,8 @@ if __name__ == "__main__":
             "SHOW_WINDOWS"      : True,
             "PATHS"             : {"answer_key_path": ANSWER_KEY_PATH, "answer_sheet_path": ANSWER_SHEET_PATH},
             "status_checker"    : status_checker,
-            "FRAME_DIMENSIONS"  : {"width": 1920, "heght": 1080} # This is experimental
+            "FRAME_DIMENSIONS"  : {"width": 1920, "heght": 1080}, # This is experimental
+            "MAX_RETRY"         : MAX_RETRY
         },
         process_B_args = {
             "TASK_NAME"         : "Process B",
@@ -54,6 +56,7 @@ if __name__ == "__main__":
             "status_checker"    : status_checker,
             "PRODUCTION_MODE"   : PRODUCTION_MODE,
             "SAVE_LOGS"         : SAVE_LOGS,
+            "MAX_RETRY"         : MAX_RETRY
         },
         process_C_args = {
             "task_name"         : "Process C",
