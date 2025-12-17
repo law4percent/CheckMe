@@ -155,6 +155,10 @@ def process_a(**kwargs):
                     total_number_of_questions   = answer_key_data["total_number_of_questions"]
                 )
                 if create_result["status"] == "error":
+                    # ======== WIP: USE LCD DISPLAY ==========
+                    print(f"{answer_key_data["status"]}: Failed to scan answer key")
+                    time.sleep(3)
+                    # ========================================
                     if SAVE_LOGS:
                         logger.error(f"{TASK_NAME} - {create_result["message"]}")
             
@@ -165,7 +169,7 @@ def process_a(**kwargs):
                     
             elif answer_key_data["status"] == "cancelled": 
                 # ======== WIP: USE LCD DISPLAY ==========
-                print(f"{TASK_NAME} - {answer_key_data["status"]}")
+                print(f"{answer_key_data["status"]}")
                 time.sleep(3)
                 # ========================================
         
@@ -174,6 +178,10 @@ def process_a(**kwargs):
             # Step 1: Choose answer key from database via assessment_uid
             selection_result = _choose_answer_key_from_db(keypad.scan_key)
             if selection_result["status"] == "error":
+                # ======== WIP: USE LCD DISPLAY ==========
+                print(f"{TASK_NAME} - {selection_result["status"]}")
+                time.sleep(3)
+                # ========================================
                 continue 
             
             # Step 2: Scan answer sheets and save to DB
@@ -190,8 +198,18 @@ def process_a(**kwargs):
 
             # Step 3: Just display
             if answer_sheets_data["status"] == "error":
+                # ======== WIP: USE LCD DISPLAY ==========
+                print(f"{answer_sheets_data["status"]}: Failed to scan answer sheet.")
+                time.sleep(3)
+                # ========================================
                 if SAVE_LOGS:
                     logger.error(f"{TASK_NAME} - {answer_sheets_data["message"]}")
+
+            elif answer_sheets_data["status"] == "cancelled": 
+                # ======== WIP: USE LCD DISPLAY ==========
+                print(f"{answer_sheets_data["status"]}")
+                time.sleep(3)
+                # ========================================
 
 
         elif key == Options.SETTINGS.value:

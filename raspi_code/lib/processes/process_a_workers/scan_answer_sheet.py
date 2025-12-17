@@ -406,9 +406,6 @@ def run(
                 # =================================
                 count_sheets = scan_result["next_sheet"]
 
-                
-
-
             # ============== Handle multi-page answer sheets ==============
             elif TOTAL_NUMBER_OF_PAGES_PER_SHEET > 1 and key == '*':
                 scan_result = _handle_multi_page_answer_sheet_workflow(
