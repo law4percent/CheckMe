@@ -37,16 +37,15 @@ def _get_JSON_of_answer_key(image_path: str, MAX_RETRY: int) -> dict:
     
     try:
         gemini_engine = GeminiOCREngine()
-        JSON_data = gemini_engine.extract_answer_key(image_path, MAX_RETRY)
+        extraction_result = gemini_engine.extract_answer_key(image_path, MAX_RETRY)
         
-        # Step 2: Check the assessment uid and answer key existence
-        validation_result = _validate_the_json_result(JSON_data)
-        if validation_result["status"] == "error":
-            return validation_result
-        
+        # Step 2: Check the status
+        if extraction_result["status"] == "error":
+            return extraction_result
+
         return {
             "status"    : "success",
-            "JSON_data" : JSON_data
+            "JSON_data" : extraction_result["result"]
         }
     
     except Exception as e:
@@ -206,48 +205,6 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
         "status"   : "success",
         "file_name": file_name,
         "full_path": full_path
-    }
-
-
-def _validate_the_json_result(JSON_data: dict) -> dict:
-    """Validate the JSON response from Gemini OCR."""
-    if "assessment_uid" not in JSON_data or "answers" not in JSON_data:
-        return {
-            "status"    : "error",
-            "message"   : f"assessment_uid or answers does not exist in extraction. Source: {__name__}"
-        }
-    
-    assessment_uid = JSON_data.get("assessment_uid")
-    if not assessment_uid or str(assessment_uid).strip() == "":
-        return {
-            "status"    : "error",
-            "message"   : (
-                f"assessment_uid not found in the paper. Source: {__name__}\n"
-                "==================== POSSIBLE REASONS =======================\n"
-                "[1] Prompt Quality: The prompt sent to Gemini may be unclear.\n"
-                "[2] Image Quality: The image might be blurry or low resolution.\n"
-                "[3] Font Size: The text may be too small to read.\n"
-                "[4] Font Style: The font might be difficult to OCR.\n"
-                "[5] Instructions: The paper instructions may be unclear.\n"
-                "[6] Formatting: The answer key may be poorly formatted.\n"
-                "============================================================\n\n"
-                "++++++++++++++++++++++++ JSON DATA +++++++++++++++++++++++++\n"
-                f"{JSON_data}\n"
-                "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-            )
-        }
-    
-    # Additional validation: Check if answers dict is valid
-    answers = JSON_data.get("answers", {})
-    if not answers or not isinstance(answers, dict):
-        return {
-            "status": "error",
-            "message": f"No valid answers found in response. Source: {__name__}"
-        }
-    
-    return {
-        "status": "success",
-        "assessment_uid": str(assessment_uid).strip()
     }
 
 

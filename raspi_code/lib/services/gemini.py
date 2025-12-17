@@ -138,8 +138,10 @@ Return JSON EXACTLY like this:
                 "message": f"Missing 'assessment_uid' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
             }
 
-        return result
-
+        return {
+            "status": "success",
+            "result": result
+        }
     # ============================================================
     # STUDENT ANSWER EXTRACTION
     # ============================================================
@@ -193,12 +195,14 @@ Return JSON EXACTLY like this:
                 "message": f"Missing 'answers' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
             }
         
-        # ============ Under investigation ============
         if "student_id" not in result:
             logger.warning("Missing 'student_id' field in response")
             result["student_id"] = "unknown"
         
-        return result
+        return {
+            "status": "success",
+            "result": result
+        }
 
     # ============================================================
     # HELPER METHODS
