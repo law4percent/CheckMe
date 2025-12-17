@@ -221,6 +221,7 @@ def _handle_multi_page_answer_sheet_workflow(
         image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
     
     # Step 3: Collect the remaining pages
@@ -241,6 +242,7 @@ def _handle_multi_page_answer_sheet_workflow(
     # Step 5: All pages collected, combine them
     combined_image_result = image_combiner.combine_images_into_grid(COLLECTED_IMAGES, TILE_WIDTH)
     if combined_image_result["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return combined_image_result
     
     image_details = _save_in_image_file(
@@ -250,9 +252,11 @@ def _handle_multi_page_answer_sheet_workflow(
         is_combined_image   = True
     )
     if image_details["status"] == "error":
+        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
     
     json_details = {"target_path": JSON_PATH}
+    utils.cleanup_temporary_images(COLLECTED_IMAGES)
     return {
         "status"                            : "success",
         "answer_key_assessment_uid"         : SELECTED_ASSESSMENT_UID,
@@ -377,6 +381,8 @@ def run(
 
             if key == '#':
                 result = {"status": "cancelled"}
+                if len(collected_images) > 0:
+                    utils.cleanup_temporary_images(collected_images)
                 break
 
             # Handle single-page answer sheets

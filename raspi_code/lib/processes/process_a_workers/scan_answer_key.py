@@ -458,6 +458,8 @@ def run(
 
             if key == '#':
                 result = {"status": "cancelled"}
+                if len(collected_images) > 0:
+                    utils.cleanup_temporary_images(collected_images)
                 break
 
             # Step 3: Process according to number of pages
