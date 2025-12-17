@@ -392,7 +392,7 @@ def run(
     JSON_PATH       = PATHS["json_path"]
     collected_images= []
     count_page      = 1
-    result          = {"status": "waiting"}
+    scan_result     = {"status": "waiting"}
 
     # Step 1: Initialize Camera & start camera
     config_result = camera.config_camera(FRAME_DIMENSIONS)
@@ -412,9 +412,20 @@ def run(
     try:
         while True:
             time.sleep(0.1)
+            if total_number_of_pages == 1:
+                # ========USE LCD DISPLAY==========
+                print(f"Put the answer key.")
+                # =================================
+            elif total_number_of_pages > 1:
+                # ========USE LCD DISPLAY==========
+                ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
+                extension = ordinal_map.get(count_page, 'th')
+                print(f"Put the {count_page}{extension} page.")
+                # =================================
             # ========USE LCD DISPLAY==========
             print("[*] SCAN | [#] CANCEL")
             # =================================
+
             frame = capture.capture_array()
             frame = cv2.resize(frame, (FRAME_DIMENSIONS["width"], FRAME_DIMENSIONS["height"]))
             
@@ -428,7 +439,7 @@ def run(
                 continue
 
             if key == '#':
-                result = {"status": "cancelled"}
+                scan_result = {"status": "cancelled"}
                 if len(collected_images) > 0:
                     utils.cleanup_temporary_images(collected_images)
                 break
@@ -436,7 +447,7 @@ def run(
             # Step 3: Process according to number of pages
             # ========== SINGLE PAGE WORKFLOW ==========
             if total_number_of_pages == 1 and key == '*':
-                result = _handle_single_page_workflow(
+                scan_result = _handle_single_page_workflow(
                     FRAME                   = frame,
                     IMAGE_PATH              = IMAGE_PATH,
                     JSON_PATH               = JSON_PATH, 
@@ -447,15 +458,10 @@ def run(
                 )
                 break
             
-            elif total_number_of_pages == 1 and key != '*':
-                # ========USE LCD DISPLAY==========
-                print(f"Put the answer key.")
-                # =================================
-            
 
             # ========== MULTIPLE PAGES WORKFLOW ==========
             elif total_number_of_pages > 1 and key == '*':
-                result = _handle_multiple_pages_workflow(
+                scan_result = _handle_multiple_pages_workflow(
                     FRAME                   = frame,
                     IMAGE_PATH              = IMAGE_PATH,
                     JSON_PATH               = JSON_PATH,
@@ -467,20 +473,13 @@ def run(
                     TILE_WIDTH              = TILE_WIDTH,
                     MAX_RETRY               = MAX_RETRY
                 )
-                if result["status"] == "waiting":
-                    count_page          = result["next_page"]
-                    collected_images    = result["collected_images"]
+                if scan_result["status"] == "waiting":
+                    count_page          = scan_result["next_page"]
+                    collected_images    = scan_result["collected_images"]
                     continue
                 if len(collected_images) > 0:
                     utils.cleanup_temporary_images(collected_images)
                 break
-
-            elif total_number_of_pages > 1 and key != '*':
-                # ========USE LCD DISPLAY==========
-                ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
-                extension = ordinal_map.get(count_page, 'th')
-                print(f"Put the {count_page}{extension} page.")
-                # =================================
 
     except Exception as e:
         camera.cleanup_camera(capture)
@@ -491,4 +490,4 @@ def run(
 
     finally:
         camera.cleanup_camera(capture)
-        return result
+        return scan_result
