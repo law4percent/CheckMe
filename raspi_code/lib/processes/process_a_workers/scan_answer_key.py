@@ -218,15 +218,8 @@ def _handle_single_page_workflow(
         IMAGE_EXTENSION: str,
         MAX_RETRY: int
     ) -> dict:
-    # ========USE LCD DISPLAY==========
-    print(f"Put the answer key.")
-    # =================================
-    
-    # Step 1: Check the key
-    if KEY != '*':
-        return {"status": "waiting"}
 
-    # Step 2: Save in image file format
+    # Step 1: Save in image file format
     image_details = _save_in_image_file(
         frame               = FRAME, 
         target_path         = IMAGE_PATH, 
@@ -236,7 +229,7 @@ def _handle_single_page_workflow(
     if image_details["status"] == "error":
         return image_details
     
-    # Step 3: Get the JSON of answer key with Gemini OCR
+    # Step 2: Get the JSON of answer key with Gemini OCR
     JSON_of_answer_key = _get_JSON_of_answer_key(
         image_path  = image_details["full_path"], 
         MAX_RETRY   = MAX_RETRY
@@ -245,7 +238,7 @@ def _handle_single_page_workflow(
         return JSON_of_answer_key
     JSON_data = JSON_of_answer_key["JSON_data"]
 
-    # Step 4: Save in JSON file format
+    # Step 3: Save in JSON file format
     json_details = _save_in_json_file(
         json_data   = JSON_data,
         target_path = JSON_PATH
@@ -277,20 +270,7 @@ def _handle_multiple_pages_workflow(
         TILE_WIDTH: int,
         MAX_RETRY: int
     ) -> dict:
-    # ========USE LCD DISPLAY==========
-    ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
-    extension = ordinal_map.get(CURRENT_PAGE_COUNT, 'th')
-    print(f"Put the {CURRENT_PAGE_COUNT}{extension} page.")
-    # =================================
-    
-    # Step 1: Check the key
-    if KEY != '*':
-        return {
-            "status"    : "waiting", 
-            "next_page" : CURRENT_PAGE_COUNT
-        }
-        
-    # Step 2: Save in image file format
+    # Step 1: Save in image file format
     image_details = _save_in_image_file(
         frame               = FRAME, 
         target_path         = IMAGE_PATH, 
@@ -298,11 +278,10 @@ def _handle_multiple_pages_workflow(
         image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
     COLLECTED_IMAGES.append(image_details["full_path"])
     
-    # Step 3: Check if the page count is still less than to total pages else proceed to combined all collected images
+    # Step 2: Check if the page count is still less than to total pages else proceed to combined all collected images
     if CURRENT_PAGE_COUNT < TOTAL_NUMBER_OF_PAGES:
         return {
             "status"            : "waiting", 
@@ -315,13 +294,12 @@ def _handle_multiple_pages_workflow(
     time.sleep(3)
     # =================================
     
-    # Step 4: Combine images
+    # Step 3: Combine images
     combined_image_result = image_combiner.combine_images_into_grid(COLLECTED_IMAGES, TILE_WIDTH)
     if combined_image_result["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return combined_image_result
     
-    # Step 5: Save in image file format
+    # Step 4: Save in image file format
     image_details = _save_in_image_file(
         frame               = combined_image_result["frame"], 
         target_path         = IMAGE_PATH,
@@ -329,30 +307,24 @@ def _handle_multiple_pages_workflow(
         is_combined_image   = True
     )
     if image_details["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
     
-    # Step 6: Get the JSON of answer key with Gemini OCR]
+    # Step 5: Get the JSON of answer key with Gemini OCR]
     JSON_of_answer_key = _get_JSON_of_answer_key(
         image_path  = image_details["full_path"], 
         MAX_RETRY   = MAX_RETRY
     )
     if JSON_of_answer_key["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return JSON_of_answer_key
     JSON_data = JSON_of_answer_key["JSON_data"]
 
-    # Step 7: Save in JSON file format    
+    # Step 6: Save in JSON file format    
     json_details = _save_in_json_file(
         json_data   = JSON_data,
         target_path = JSON_PATH
     )
     if json_details["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return json_details
-    
-    # Step 8: Cleanup temporary individual page images
-    utils.cleanup_temporary_images(COLLECTED_IMAGES)
     
     return {
         "status"                    : "success",
@@ -465,7 +437,7 @@ def run(
 
             # Step 3: Process according to number of pages
             # ========== SINGLE PAGE WORKFLOW ==========
-            if total_number_of_pages == 1:
+            if total_number_of_pages == 1 and key == '*':
                 result = _handle_single_page_workflow(
                     KEY                     = key,
                     FRAME                   = frame,
@@ -476,12 +448,16 @@ def run(
                     IMAGE_EXTENSION         = IMAGE_EXTENSION,
                     MAX_RETRY               = MAX_RETRY
                 )
-                if result["status"] == "waiting":
-                    continue
                 break
             
+            elif total_number_of_pages == 1 and key != '*':
+                # ========USE LCD DISPLAY==========
+                print(f"Put the answer key.")
+                # =================================
+            
+
             # ========== MULTIPLE PAGES WORKFLOW ==========
-            else:
+            elif total_number_of_pages > 1 and key == '*':
                 result = _handle_multiple_pages_workflow(
                     KEY                     = key,
                     FRAME                   = frame,
@@ -499,10 +475,16 @@ def run(
                     count_page          = result["next_page"]
                     collected_images    = result["collected_images"]
                     continue
-
                 if len(collected_images) > 0:
                     utils.cleanup_temporary_images(collected_images)
                 break
+
+            elif total_number_of_pages > 1 and key != '*':
+                # ========USE LCD DISPLAY==========
+                ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
+                extension = ordinal_map.get(count_page, 'th')
+                print(f"Put the {count_page}{extension} page.")
+                # =================================
 
     except Exception as e:
         camera.cleanup_camera(capture)
