@@ -305,8 +305,9 @@ def _handle_multiple_pages_workflow(
     # Step 3: Check if the page count is still less than to total pages else proceed to combined all collected images
     if CURRENT_PAGE_COUNT < TOTAL_NUMBER_OF_PAGES:
         return {
-            "status"    : "waiting", 
-            "next_page" : CURRENT_PAGE_COUNT + 1
+            "status"            : "waiting", 
+            "next_page"         : CURRENT_PAGE_COUNT + 1,
+            "collected_images"  : COLLECTED_IMAGES
         }
     
     # ========USE LCD DISPLAY==========
@@ -495,8 +496,12 @@ def run(
                     MAX_RETRY               = MAX_RETRY
                 )
                 if result["status"] == "waiting":
-                    count_page = result["next_page"]
+                    count_page          = result["next_page"]
+                    collected_images    = result["collected_images"]
                     continue
+
+                if len(collected_images) > 0:
+                    utils.cleanup_temporary_images(collected_images)
                 break
 
     except Exception as e:
