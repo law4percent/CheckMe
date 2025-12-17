@@ -61,7 +61,7 @@ def create_answer_sheet(
         }
 
 
-def get_unprocessed_sheets(limit: int = 5) -> dict:
+def get_fields_by_empty_student_id(limit: int = 5) -> dict:
     """
         Fetch answer sheets that have not been processed yet.
 
@@ -76,16 +76,10 @@ def get_unprocessed_sheets(limit: int = 5) -> dict:
 
             - "status": Indicates whether the operation was successful or resulted in an error.
             - "sheets": List of answer sheet objects, each containing:
-                - "id"
                 - "answer_key_assessment_uid"
-                - "json_file_name"
-                - "json_full_path"
                 - "json_target_path"
                 - "img_full_path"
-                - "is_final_score"
-                - "student_id"
-                - "score"
-                - "saved_at"
+                - "total_number_of_questions"
         """
     try:
         conn = get_connection()
@@ -93,16 +87,9 @@ def get_unprocessed_sheets(limit: int = 5) -> dict:
         
         cursor.execute('''
             SELECT 
-                s.id,
                 s.answer_key_assessment_uid,
-                s.json_file_name,
-                s.json_full_path,
                 s.json_target_path,
                 s.img_full_path,
-                s.is_final_score,
-                s.student_id,
-                s.score,
-                s.saved_at,
                 k.total_number_of_questions
             FROM answer_sheets s
             JOIN answer_keys k
@@ -119,17 +106,10 @@ def get_unprocessed_sheets(limit: int = 5) -> dict:
         sheets = []
         for row in rows:
             sheets.append({
-                "id"                        : row[0],
-                "answer_key_assessment_uid" : row[1],
-                "json_file_name"            : row[2],
-                "json_full_path"            : row[3],
-                "json_target_path"          : row[4],
-                "img_full_path"             : row[5],
-                "is_final_score"            : row[6],
-                "student_id"                : row[7],
-                "score"                     : row[8],
-                "saved_at"                  : row[9],
-                "total_number_of_questions" : row[10]
+                "answer_key_assessment_uid" : row[0],
+                "json_target_path"          : row[1],
+                "img_full_path"             : row[2],
+                "total_number_of_questions" : row[3]
             })
         
         return {
@@ -168,7 +148,6 @@ def update_answer_key_json_path_by_image_path(
         student_id: str,
         answer_key_assessment_uid: str,
         processed_score: int,
-        processed_rtdb: int,
         processed_image_uploaded: int
     ) -> dict:
     """
@@ -213,13 +192,11 @@ def update_answer_key_json_path_by_image_path(
                 SET 
                     img_full_path = ?, 
                     processed_score = ?, 
-                    processed_rtdb = ?,
                     processed_image_uploaded = ?
                 WHERE student_id = ? AND answer_key_assessment_uid = ?
             ''', (
                 latest_img, 
-                processed_score, 
-                processed_rtdb,
+                processed_score,
                 processed_image_uploaded,
                 student_id, 
                 answer_key_assessment_uid
@@ -242,7 +219,6 @@ def update_answer_key_json_path_by_image_path(
                         json_full_path = ?,
                         student_id = ?,
                         processed_score = ?,
-                        processed_rtdb = ?,
                         processed_image_uploaded = ?
                     WHERE img_full_path = ?
                 ''', (
@@ -250,7 +226,6 @@ def update_answer_key_json_path_by_image_path(
                     json_full_path,
                     student_id,
                     processed_score,
-                    processed_rtdb,
                     processed_image_uploaded,
                     img_full_path
                 ))
@@ -274,4 +249,34 @@ def update_answer_key_json_path_by_image_path(
 
 
 def update_answer_key_scores_by_image_path() -> dict:
-    pass
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE answer_sheets
+            SET 
+                student_id = ?,
+                processed_score = ?,
+                processed_rtdb = ?,
+                processed_image_uploaded = ?
+            WHERE img_full_path = ?
+        ''', (
+            json_file_name,
+            json_full_path,
+        ))
+
+        conn.commit()
+        conn.close()
+
+        return {"status": "success"}
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to update JSON path and student ID. {e}. Source: {__name__}"
+        }
+    
+
+def get_fields_by_processed_score_is_1(limit: int):
+    return
