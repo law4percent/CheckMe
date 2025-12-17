@@ -184,9 +184,10 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
     
     for sheet in sheets:
         time.sleep(5)
+        json_data = {}
         # 1. Get data
         total_number_of_questions   = int(sheet["total_number_of_questions"])
-        answer_sheet_img_full_path  = sheet["img_full_path"]
+        answer_sheet_img_full_path  = str(sheet["img_full_path"])
         
 
         # 2. Verify the image file existence
@@ -214,6 +215,7 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
                     }
                 )
                 continue
+            json_data = extraction_result["result"]
 
         except Exception as e:
             collect_error.append(
@@ -224,10 +226,10 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
             )
             continue
             
-        # 5. Save into json file
+        # 5. Save as json file
         save_result = {}
         json_target_path = str(sheet["json_target_path"])
-        save_result = _save_in_json_file(json_data=extraction_result, target_path=json_target_path)
+        save_result = _save_in_json_file(json_data=json_data, target_path=json_target_path)
         if save_result["status"] == "error":
             collect_error.append(
                 {
@@ -244,8 +246,10 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
                 "json_full_path"            : save_result["full_path"],
                 "student_id"                : save_result["student_id"],
                 "img_full_path"             : answer_sheet_img_full_path,
-                "json_data"                 : extraction_result,
-                "answer_key_assessment_uid" : sheet["answer_key_assessment_uid"]
+                "answer_key_assessment_uid" : str(sheet["answer_key_assessment_uid"]),
+                "processed_score"           : 1,
+                "processed_rtdb"            : 1,
+                "processed_image_uploaded"  : 1
             }
         )
         
@@ -370,25 +374,30 @@ def process_b(**kwargs):
             sheets = sheets_result["sheets"]
 
             # Step 2: Extract one batch images to text to json with gemini
-            json_results = _get_JSON_of_answer_sheet(sheets, MAX_RETRY)
+            extraction_results = _get_JSON_of_answer_sheet(sheets, MAX_RETRY)
             
             # Step 3: Update database json path and student id by image_full_path
-            json_success = json_results["success"]
-            for success in json_success:
+            success_sheets = extraction_results["success"]
+            for success_sheet in success_sheets:
                 update_db_result = answer_sheet_model.update_answer_key_json_path_by_image_path(
-                    img_full_path               = success["img_full_path"],
-                    json_file_name              = success["json_file_name"],
-                    json_full_path              = success["json_full_path"],
-                    student_id                  = success["student_id"],
-                    answer_key_assessment_uid   = success["answer_key_assessment_uid"]
+                    img_full_path               = success_sheet["img_full_path"],
+                    json_file_name              = success_sheet["json_file_name"],
+                    json_full_path              = success_sheet["json_full_path"],
+                    student_id                  = success_sheet["student_id"],
+                    answer_key_assessment_uid   = success_sheet["answer_key_assessment_uid"],
+                    processed_score             = success_sheet["processed_score"],
+                    processed_rtdb              = success_sheet["processed_rtdb"],
+                    processed_image_uploaded    = success_sheet["processed_image_uploaded"]
                 )
                 if update_db_result["status"] == "error" and SAVE_LOGS:
                     logger.error(f"{TASK_NAME} - {update_db_result["message"]}")
                 
             if SAVE_LOGS:
-                json_error = json_results["error"]
-                for error in json_error:
-                    logger.error(f"{TASK_NAME} - {error["message"]}")
+                error_sheets = extraction_results["error"]
+                if len(error_sheets) > 0:
+                    logger.error(f"{TASK_NAME} - {BATCH_SIZE} sheets")
+                    for error_sheet in error_sheets:
+                        logger.error(f"{TASK_NAME} - {error_sheet["message"]}")
             
             
             # Step 4. scoring

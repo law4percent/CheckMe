@@ -47,7 +47,7 @@ def create_table():
             student_id TEXT UNIQUE,                                                         -- will adjust later by process_b() : format [4201400] and will save to RTDB
             score INTEGER DEFAULT 0,                                                        -- will adjust later by process_b() and will save to RTDB
             processed_score INTEGER DEFAULT 0,                                              -- will adjust later by process_b(): means 0 not yet 1 means ready 2 means done
-            is_image_uploaded INTEGER DEFAULT 0,                                            -- will adjust later by process_c()
+            processed_image_uploaded INTEGER DEFAULT 0,                                     -- will adjust later by process_c() but in process_b() - means 0 not yet 1 means ready 2 means done
             saved_at TEXT DEFAULT (datetime('now', 'localtime')),                           -- will fetch later by process_b() and will save to RTDB as scannedAt
             image_uploaded_at TEXT,                                                         -- will adjust later by process_c()
             processed_rtdb INTEGER DEFAULT 0,                                               -- will adjust later by process_b(): means 0 not yet 1 means ready 2 means done

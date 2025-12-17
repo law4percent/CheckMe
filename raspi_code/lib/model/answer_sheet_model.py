@@ -166,7 +166,10 @@ def update_answer_key_json_path_by_image_path(
         json_file_name: str,
         json_full_path: str,
         student_id: str,
-        answer_key_assessment_uid: str
+        answer_key_assessment_uid: str,
+        processed_score: int,
+        processed_rtdb: int,
+        processed_image_uploaded: int
     ) -> dict:
     """
         Update answer key info based on the given image path.
@@ -177,10 +180,13 @@ def update_answer_key_json_path_by_image_path(
             json_full_path
             student_id
             answer_key_assessment_uid
+            processed_score
+            processed_rtdb
     """
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
+        # Step 1: Check for duplication
+        conn    = get_connection()
+        cursor  = conn.cursor()
 
         cursor.execute('''
             SELECT img_full_path
@@ -188,10 +194,10 @@ def update_answer_key_json_path_by_image_path(
             WHERE student_id = ? AND answer_key_assessment_uid = ?
         ''', (student_id, answer_key_assessment_uid))
 
-        rows = cursor.fetchall()
+        rows = cursor.fetchall() # is it fetchall? but student_id cannot be duplicated because it is set unique in DB 
         conn.close()
 
-        # If student already has entries, compare images and keep the latest
+        # If student_id is already exist and has already entries, then compare images and keep the latest
         if rows:
             collected_same_imgs = [row[0] for row in rows]
             collected_same_imgs.append(img_full_path)
@@ -199,51 +205,66 @@ def update_answer_key_json_path_by_image_path(
             # Step 1: Determine the newest image
             latest_img = _get_latest_image(collected_same_imgs)
 
-            # Step 2: Overwrite the stored image for the student
-            conn = get_connection()
-            cursor = conn.cursor()
+            # Step 2: Overwrite the stored old image for the student and mark again as 1 the processed_score and processed_rtdb
+            conn    = get_connection()
+            cursor  = conn.cursor()
             cursor.execute('''
                 UPDATE answer_sheets
-                SET img_full_path = ?, processed_score = 1, processed_rtdb = 1
+                SET 
+                    img_full_path = ?, 
+                    processed_score = ?, 
+                    processed_rtdb = ?,
+                    processed_image_uploaded = ?
                 WHERE student_id = ? AND answer_key_assessment_uid = ?
-            ''', (latest_img, student_id, answer_key_assessment_uid))
+            ''', (
+                latest_img, 
+                processed_score, 
+                processed_rtdb,
+                processed_image_uploaded,
+                student_id, 
+                answer_key_assessment_uid
+            ))
             conn.commit()
             conn.close()
 
-            # Step 3: Do not update JSON paths because they belong to the local file system
-            # Skipped intentionally
+            return {"status": "success"}
+        
+        else:
+            # Else then update all the entries where img_full_path is match
+            try:
+                conn = get_connection()
+                cursor = conn.cursor()
 
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Fetching error - {e}. Source: {__name__}"
-        }
+                cursor.execute('''
+                    UPDATE answer_sheets
+                    SET 
+                        json_file_name = ?,
+                        json_full_path = ?,
+                        student_id = ?,
+                        processed_score = ?,
+                        processed_rtdb = ?,
+                        processed_image_uploaded = ?
+                    WHERE img_full_path = ?
+                ''', (
+                    json_file_name,
+                    json_full_path,
+                    student_id,
+                    processed_score,
+                    processed_rtdb,
+                    processed_image_uploaded,
+                    img_full_path
+                ))
 
-    # Second update: json_file_name, json_full_path, student_id
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
+                conn.commit()
+                conn.close()
 
-        cursor.execute('''
-            UPDATE answer_sheets
-            SET 
-                json_file_name = ?,
-                json_full_path = ?,
-                student_id = ?,
-                processed_score = 1,
-                processed_rtdb = 1
-            WHERE img_full_path = ?
-        ''', (
-            json_file_name,
-            json_full_path,
-            student_id,
-            img_full_path
-        ))
+                return {"status": "success"}
 
-        conn.commit()
-        conn.close()
-
-        return {"status": "success"}
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to update JSON path and student ID. {e}. Source: {__name__}"
+                }
 
     except Exception as e:
         return {

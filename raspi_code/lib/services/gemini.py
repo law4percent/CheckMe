@@ -12,6 +12,7 @@ import json
 import logging
 from typing import Dict
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -47,7 +48,7 @@ Important Rules:
 5. If unreadable, return `"unreadable"`
 6. At the top, there is a unique Assessment UID code (alphanumeric).
 
-Return JSON EXACTLY like this:
+Return JSON in this exact format:
 {
   "assessment_uid": "XXXX1234",
   "answers": {
@@ -128,20 +129,21 @@ Return JSON EXACTLY like this:
         if "answers" not in result:
             return {
                 "status": "error",
-                "message": f"Missing 'answers' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
+                "message": f"Missing 'answers' field in API response.\nraw_response:\n{result}\nSource: {__name__}"
             }
         
         if "assessment_uid" not in result:
             logger.warning("Missing 'assessment_uid' field in response")
             return {
                 "status": "error",
-                "message": f"Missing 'assessment_uid' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
+                "message": f"Missing 'assessment_uid' field in API response.\nraw_response:\n{result}\nSource: {__name__}"
             }
 
         return {
             "status": "success",
             "result": result
         }
+    
     # ============================================================
     # STUDENT ANSWER EXTRACTION
     # ============================================================
@@ -192,7 +194,7 @@ Return JSON EXACTLY like this:
         if "answers" not in result:
             return {
                 "status": "error",
-                "message": f"Missing 'answers' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
+                "message": f"Missing 'answers' field in API response.\nraw_response:\n{str(result)[:200]}\nSource: {__name__}"
             }
         
         answers = result["answers"]
@@ -200,12 +202,17 @@ Return JSON EXACTLY like this:
             if f"Q{n}" not in answers:
                 return {
                     "status"    : "error",
-                    "message"   : f"Missing: Q{n}. \nraw_response: {str(result)[:200]} Source: {__name__}"
+                    "message"   : f"Missing: Q{n}. \nraw_response:\n{result}\nSource: {__name__}"
                 }
 
         if "student_id" not in result:
             logger.warning("Missing 'student_id' field in response")
-            result["student_id"] = "unknown"
+            now = datetime.now().strftime("%Y%m%d_%H%M%S")
+            result["student_id"] = f"unknown_id_{now}"
+            # return {
+            #     "status": "error",
+            #     "message": f"Missing 'student_id' field in API response.\nraw_response:\n{result}\nSource: {__name__}"
+            # }
         
         return {
             "status": "success",
