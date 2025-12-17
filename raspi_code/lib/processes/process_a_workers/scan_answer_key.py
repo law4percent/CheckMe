@@ -209,7 +209,6 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
 
 
 def _handle_single_page_workflow(
-        KEY: str,
         FRAME: any,
         IMAGE_PATH: str,
         JSON_PATH: str,
@@ -258,7 +257,6 @@ def _handle_single_page_workflow(
 
 
 def _handle_multiple_pages_workflow(
-        KEY: str,
         FRAME: any,
         IMAGE_PATH: str,
         JSON_PATH: str,
@@ -439,7 +437,6 @@ def run(
             # ========== SINGLE PAGE WORKFLOW ==========
             if total_number_of_pages == 1 and key == '*':
                 result = _handle_single_page_workflow(
-                    KEY                     = key,
                     FRAME                   = frame,
                     IMAGE_PATH              = IMAGE_PATH,
                     JSON_PATH               = JSON_PATH, 
@@ -459,7 +456,6 @@ def run(
             # ========== MULTIPLE PAGES WORKFLOW ==========
             elif total_number_of_pages > 1 and key == '*':
                 result = _handle_multiple_pages_workflow(
-                    KEY                     = key,
                     FRAME                   = frame,
                     IMAGE_PATH              = IMAGE_PATH,
                     JSON_PATH               = JSON_PATH,
