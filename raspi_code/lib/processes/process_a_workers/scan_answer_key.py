@@ -288,7 +288,7 @@ def _handle_multiple_pages_workflow(
         }
     
     # ========USE LCD DISPLAY==========
-    print(f"Combining {CURRENT_PAGE_COUNT} pages... please wait")
+    print(f"Combining the {CURRENT_PAGE_COUNT} pages... please wait")
     time.sleep(3)
     # =================================
     
@@ -406,21 +406,21 @@ def run(
     if prerequisites["status"] == "cancelled":
         camera.cleanup_camera(capture)
         return prerequisites
-    total_number_of_pages   = prerequisites["total_number_of_pages"]
-    essay_existence         = prerequisites["essay_existence"]
+    TOTAL_NUMBER_OF_PAGES   = prerequisites["total_number_of_pages"]
+    ESSAY_EXISTENCE         = prerequisites["essay_existence"]
 
     try:
         while True:
             time.sleep(0.1)
-            if total_number_of_pages == 1:
+            if TOTAL_NUMBER_OF_PAGES == 1:
                 # ========USE LCD DISPLAY==========
-                print(f"Put the answer key.")
+                print(f"[{count_page}/{TOTAL_NUMBER_OF_PAGES}] Put the {count_page}{extension} page.")
                 # =================================
-            elif total_number_of_pages > 1:
+            elif TOTAL_NUMBER_OF_PAGES > 1:
                 # ========USE LCD DISPLAY==========
                 ordinal_map = {1: 'st', 2: 'nd', 3: 'rd'}
                 extension = ordinal_map.get(count_page, 'th')
-                print(f"Put the {count_page}{extension} page.")
+                print(f"[{count_page}/{TOTAL_NUMBER_OF_PAGES}] Put the {count_page}{extension} page.")
                 # =================================
             # ========USE LCD DISPLAY==========
             print("[*] SCAN | [#] CANCEL")
@@ -446,13 +446,13 @@ def run(
 
             # Step 3: Process according to number of pages
             # ========== SINGLE PAGE WORKFLOW ==========
-            if total_number_of_pages == 1 and key == '*':
+            if TOTAL_NUMBER_OF_PAGES == 1 and key == '*':
                 scan_result = _handle_single_page_workflow(
                     FRAME                   = frame,
                     IMAGE_PATH              = IMAGE_PATH,
                     JSON_PATH               = JSON_PATH, 
-                    ESSAY_EXISTENCE         = essay_existence,
-                    TOTAL_NUMBER_OF_PAGES   = total_number_of_pages,
+                    ESSAY_EXISTENCE         = ESSAY_EXISTENCE,
+                    TOTAL_NUMBER_OF_PAGES   = TOTAL_NUMBER_OF_PAGES,
                     IMAGE_EXTENSION         = IMAGE_EXTENSION,
                     MAX_RETRY               = MAX_RETRY
                 )
@@ -460,14 +460,14 @@ def run(
             
 
             # ========== MULTIPLE PAGES WORKFLOW ==========
-            elif total_number_of_pages > 1 and key == '*':
+            elif TOTAL_NUMBER_OF_PAGES > 1 and key == '*':
                 scan_result = _handle_multiple_pages_workflow(
                     FRAME                   = frame,
                     IMAGE_PATH              = IMAGE_PATH,
                     JSON_PATH               = JSON_PATH,
-                    ESSAY_EXISTENCE         = essay_existence,
+                    ESSAY_EXISTENCE         = ESSAY_EXISTENCE,
                     CURRENT_PAGE_COUNT      = count_page,
-                    TOTAL_NUMBER_OF_PAGES   = total_number_of_pages,
+                    TOTAL_NUMBER_OF_PAGES   = TOTAL_NUMBER_OF_PAGES,
                     COLLECTED_IMAGES        = collected_images,
                     IMAGE_EXTENSION         = IMAGE_EXTENSION,
                     TILE_WIDTH              = TILE_WIDTH,

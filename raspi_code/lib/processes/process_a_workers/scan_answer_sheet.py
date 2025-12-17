@@ -155,7 +155,6 @@ def _save_in_image_file(frame: any, target_path: str, image_extension: str, is_c
 
 
 def _handle_single_page_answer_sheet_workflow(
-        KEY: str, 
         FRAME: any, 
         IMAGE_PATH: str, 
         JSON_PATH: str,
@@ -166,17 +165,16 @@ def _handle_single_page_answer_sheet_workflow(
         IMAGE_EXTENSION: str
     ) -> dict:
     """Handle single-page answer sheet workflow."""
-    # Step 1: Check key input
-    if KEY != '*':
-        return {"status": "waiting"}
     
-    # Step 2: Save in image file format
+    # Step 1: Save in image file format
     image_details = _save_in_image_file(
         frame               = FRAME, 
         target_path         = IMAGE_PATH, 
         current_sheet_count = CURRENT_SHEET_COUNT,
         image_extension     = IMAGE_EXTENSION
     )
+
+    # Step 2: Validate
     if image_details["status"] == "error":
         return image_details
     
@@ -188,11 +186,11 @@ def _handle_single_page_answer_sheet_workflow(
         "json_details"                      : json_details,
         "image_details"                     : image_details,
         "is_final_score"                    : not ESSAY_EXISTENCE,
+        "next_sheet"                        : CURRENT_SHEET_COUNT + 1
     }
 
 
 def _handle_multi_page_answer_sheet_workflow(
-        KEY: str, 
         FRAME: any,
         IMAGE_PATH: str, 
         JSON_PATH: str,
@@ -206,14 +204,7 @@ def _handle_multi_page_answer_sheet_workflow(
         TILE_WIDTH: int
     ) -> dict:
     """Handle multi-page answer sheet workflow."""
-    # Step 1: Check key input
-    if KEY != '*':
-        return {
-            "status"    : "waiting",
-            "next_page" : CURRENT_COUNT_PAGE,
-        }
-    
-    # Step 2: Save individual page
+    # Step 1: Save individual page
     image_details = _save_in_image_file(
         frame               = FRAME, 
         target_path         = IMAGE_PATH, 
@@ -221,30 +212,30 @@ def _handle_multi_page_answer_sheet_workflow(
         image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
     
-    # Step 3: Collect the remaining pages
+    # Step 2: Collect the remaining pages
     COLLECTED_IMAGES.append(image_details["full_path"])
 
-    # Step 4: Check if all pages are completed
+    # Step 3: Check if all pages are completed
     if CURRENT_COUNT_PAGE < TOTAL_NUMBER_OF_PAGES_PER_SHEET:
         return {
-            "status"    : "waiting",
-            "next_page" : CURRENT_COUNT_PAGE + 1
+            "status"            : "waiting",
+            "next_page"         : CURRENT_COUNT_PAGE + 1,
+            "collected_images"  : COLLECTED_IMAGES
         }
     
     # ========USE LCD DISPLAY==========
-    print(f"Combining {TOTAL_NUMBER_OF_PAGES_PER_SHEET} pages... please wait")
+    print(f"Combining the {TOTAL_NUMBER_OF_PAGES_PER_SHEET} pages... please wait")
     time.sleep(3)
     # =================================
     
-    # Step 5: All pages collected, combine them
+    # Step 4: All pages collected, combine them
     combined_image_result = image_combiner.combine_images_into_grid(COLLECTED_IMAGES, TILE_WIDTH)
     if combined_image_result["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return combined_image_result
     
+    # Step 5: Save combined pages
     image_details = _save_in_image_file(
         frame               = combined_image_result["frame"], 
         target_path         = IMAGE_PATH,
@@ -252,11 +243,9 @@ def _handle_multi_page_answer_sheet_workflow(
         is_combined_image   = True
     )
     if image_details["status"] == "error":
-        utils.cleanup_temporary_images(COLLECTED_IMAGES)
         return image_details
     
     json_details = {"target_path": JSON_PATH}
-    utils.cleanup_temporary_images(COLLECTED_IMAGES)
     return {
         "status"                            : "success",
         "answer_key_assessment_uid"         : SELECTED_ASSESSMENT_UID,
@@ -264,7 +253,7 @@ def _handle_multi_page_answer_sheet_workflow(
         "json_details"                      : json_details,
         "image_details"                     : image_details,
         "is_final_score"                    : not ESSAY_EXISTENCE,
-        "next_page"                         : 1,  # Reset for next sheet
+        "next_page"                         : 1,
         "next_sheet"                        : CURRENT_COUNT_SHEETS + 1
     }
 
@@ -326,7 +315,7 @@ def run(
     count_sheets        = 1
     count_page_per_sheet= 1
     collected_images    = []
-    result              = {"status": "waiting"}
+    scan_result         = {"status": "waiting"}
 
     # Step 1: Initialize Camera & start camera
     config_result = camera.config_camera(FRAME_DIMENSIONS)
@@ -352,19 +341,18 @@ def run(
         # Step 3: Scan answer sheets based on number of sheets and pages
         while count_sheets <= TOTAL_NUMBER_OF_SHEETS:
             time.sleep(0.1)
-            progress = f"[{count_sheets}/{TOTAL_NUMBER_OF_SHEETS}]"
-            
-            if TOTAL_NUMBER_OF_PAGES_PER_SHEET > 1:
+
+            if TOTAL_NUMBER_OF_PAGES_PER_SHEET == 1:
                 # ========USE LCD DISPLAY==========
-                print(f"\n{progress} Sheet {count_sheets} - Page {count_page_per_sheet}/{TOTAL_NUMBER_OF_PAGES_PER_SHEET}")
+                print(f"\n[{count_sheets}/{TOTAL_NUMBER_OF_SHEETS}] Sheet {count_sheets} - Page 1/1")
+                # print(f"[{count_page}/{TOTAL_NUMBER_OF_PAGES}] Put the {count_page}{extension} page.")
                 # =================================
-            else:
+            elif TOTAL_NUMBER_OF_PAGES_PER_SHEET > 1:
                 # ========USE LCD DISPLAY==========
-                print(f"\n{progress} Sheet {count_sheets}")
-                # =================================
-            
+                print(f"\n[{count_sheets}/{TOTAL_NUMBER_OF_SHEETS}] Sheet {count_sheets} - Page {count_page_per_sheet}/{TOTAL_NUMBER_OF_PAGES_PER_SHEET}")
+                # ================================
             # ========USE LCD DISPLAY==========
-            print(f"{progress} Press [*] to CAPTURE or [#] to EXIT")
+            print(f"[*] SCAN or [#] CANCEL")
             # =================================
 
             frame = capture.capture_array()
@@ -380,15 +368,14 @@ def run(
                 continue
 
             if key == '#':
-                result = {"status": "cancelled"}
+                scan_result = {"status": "cancelled"}
                 if len(collected_images) > 0:
                     utils.cleanup_temporary_images(collected_images)
                 break
 
-            # Handle single-page answer sheets
-            if TOTAL_NUMBER_OF_PAGES_PER_SHEET == 1:
-                result = _handle_single_page_answer_sheet_workflow(
-                    KEY                             = key,
+            # ============== Handle single-page answer sheets ==============
+            if TOTAL_NUMBER_OF_PAGES_PER_SHEET == 1 and key == '*':
+                scan_result = _handle_single_page_answer_sheet_workflow(
                     FRAME                           = frame,
                     IMAGE_PATH                      = IMAGE_PATH,
                     JSON_PATH                       = JSON_PATH, 
@@ -398,34 +385,33 @@ def run(
                     ESSAY_EXISTENCE                 = ESSAY_EXISTENCE,
                     IMAGE_EXTENSION                 = IMAGE_EXTENSION
                 )
-                if result["status"] == "waiting":
-                    continue
-                
-                elif result["status"] == "success":
-                    create_result = answer_sheet_model.create_answer_sheet(
-                        answer_key_assessment_uid       = result["answer_key_assessment_uid"],
-                        total_number_of_pages_per_sheet = result["total_number_of_pages_per_sheet"],
-                        json_target_path                = result["json_details"]["target_path"],
-                        img_file_name                   = result["image_details"]["file_name"],
-                        img_full_path                   = result["image_details"]["full_path"],
-                        is_final_score                  = result["is_final_score"]
-                    )
-                    if create_result["status"] == "error":
-                        result = create_result
-                        break
-                    # ========USE LCD DISPLAY==========
-                    print(f"✅ Sheet {count_sheets}/{TOTAL_NUMBER_OF_SHEETS} saved")
-                    time.sleep(3)
-                    # =================================
-                    count_sheets += 1
-
-                elif result["status"] == "error":
+                if scan_result["status"] == "error":
                     break
 
-            # Handle multi-page answer sheets
-            else:
-                result = _handle_multi_page_answer_sheet_workflow(
-                    KEY                             = key,
+                create_result = answer_sheet_model.create_answer_sheet(
+                    answer_key_assessment_uid       = scan_result["answer_key_assessment_uid"],
+                    total_number_of_pages_per_sheet = scan_result["total_number_of_pages_per_sheet"],
+                    json_target_path                = scan_result["json_details"]["target_path"],
+                    img_file_name                   = scan_result["image_details"]["file_name"],
+                    img_full_path                   = scan_result["image_details"]["full_path"],
+                    is_final_score                  = scan_result["is_final_score"]
+                )
+                if create_result["status"] == "error":
+                    scan_result = create_result
+                    break
+
+                # ========USE LCD DISPLAY==========
+                print(f"✅ Sheet {count_sheets}/{TOTAL_NUMBER_OF_SHEETS} saved")
+                time.sleep(3)
+                # =================================
+                count_sheets = scan_result["next_sheet"]
+
+                
+
+
+            # ============== Handle multi-page answer sheets ==============
+            elif TOTAL_NUMBER_OF_PAGES_PER_SHEET > 1 and key == '*':
+                scan_result = _handle_multi_page_answer_sheet_workflow(
                     FRAME                           = frame,
                     IMAGE_PATH                      = IMAGE_PATH,
                     JSON_PATH                       = JSON_PATH,
@@ -439,32 +425,38 @@ def run(
                     TILE_WIDTH                      = TILE_WIDTH
                 )
                 
-                if result["status"] == "waiting":
-                    count_page_per_sheet = result["next_page"]
+                if scan_result["status"] == "waiting":
+                    count_page_per_sheet    = scan_result["next_page"]
+                    collected_images        = scan_result["collected_images"]
                     continue
                 
-                elif result["status"] == "success":
+                elif scan_result["status"] == "success":
                     create_result = answer_sheet_model.create_answer_sheet(
-                        answer_key_assessment_uid       = result["answer_key_assessment_uid"],
-                        total_number_of_pages_per_sheet = result["total_number_of_pages_per_sheet"],
-                        json_target_path                = result["json_details"]["target_path"],
-                        img_file_name                   = result["image_details"]["file_name"],
-                        img_full_path                   = result["image_details"]["full_path"],
-                        is_final_score                  = result["is_final_score"]
+                        answer_key_assessment_uid       = scan_result["answer_key_assessment_uid"],
+                        total_number_of_pages_per_sheet = scan_result["total_number_of_pages_per_sheet"],
+                        json_target_path                = scan_result["json_details"]["target_path"],
+                        img_file_name                   = scan_result["image_details"]["file_name"],
+                        img_full_path                   = scan_result["image_details"]["full_path"],
+                        is_final_score                  = scan_result["is_final_score"]
                     )
                     if create_result["status"] == "error":
-                        result = create_result
+                        scan_result = create_result
                         break
                     
                     # ========USE LCD DISPLAY==========
                     print(f"✅ Sheet {count_sheets}/{TOTAL_NUMBER_OF_SHEETS} completed and saved")
                     time.sleep(3)
                     # =================================
-                    count_sheets            = result["next_sheet"]
-                    count_page_per_sheet    = result["next_page"]
-                    collected_images.clear()
+                    count_sheets            = scan_result["next_sheet"]
+                    count_page_per_sheet    = scan_result["next_page"]
+                    
+                    if len(collected_images) > 0:
+                        utils.cleanup_temporary_images(collected_images)
+                        collected_images.clear()
                 
-                elif result["status"] == "error":
+                elif scan_result["status"] == "error":
+                    if len(collected_images) > 0:
+                        utils.cleanup_temporary_images(collected_images)
                     break
     
     except Exception as e:
@@ -476,4 +468,4 @@ def run(
 
     finally:
         camera.cleanup_camera(capture)
-        return result
+        return scan_result
