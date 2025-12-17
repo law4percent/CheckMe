@@ -168,47 +168,6 @@ def _save_in_json_file(json_data: dict, target_path: str) -> dict:
         }
 
 
-def _validate_the_json_result(JSON_data: dict, total_number_of_questions: int) -> dict:
-    if "student_id" not in JSON_data or "answer_key" not in JSON_data:
-        return {
-            "status"    : "error",
-            "message"   : f"assessment_uid or answer_key does not exist. Something problem in the prompt or weak prompt. Source: {__name__}"
-        }
-        
-    student_id = JSON_data.get("student_id")
-    if not student_id or str(student_id).strip() == "":
-        return {
-            "status"    : "error",
-            "message"   : (
-                f"student_id not found in the paper. Source: {__name__}\n"
-                "==================== POSSIBLE REASONS =======================\n"
-                "[1] Prompt Quality: The prompt sent to Gemini may be unclear.\n"
-                "[2] Image Quality: The image might be blurry.\n"
-                "[3] Font Size: The text may be too small.\n"
-                "[4] Font Style: The font might be difficult to read.\n"
-                "[5] Instructions: The paper instructions may be unclear.\n"
-                "[6] Formatting: The answer key may be poorly formatted.\n"
-                "============================================================\n\n"
-                "++++++++++++++++++++++++ JSON DATA +++++++++++++++++++++++++\n"
-                f"{JSON_data}\n"
-                "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-            )
-        }
-    
-    answers = JSON_data.get("answers")
-    for n in range(1, total_number_of_questions + 1):
-        if f"Q{n}" not in answers:
-            return {
-                "status"    : "error",
-                "message"   : f"Missing: Q{n}. Source: {__name__}."
-            }
-        
-    return {
-        "status"    : "success",
-        "student_id": str(student_id).strip()
-    }
-
-
 def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
     """
         Send image to Gemini API for OCR extraction of answer sheet.
@@ -244,15 +203,14 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
         try:
             # 3. feed the image to OCR gemini
             gemini_engine = GeminiOCREngine()
-            JSON_data = gemini_engine.extract_answer_sheet(answer_sheet_img_full_path, total_number_of_questions, MAX_RETRY)
+            extraction_result = gemini_engine.extract_answer_sheet(answer_sheet_img_full_path, total_number_of_questions, MAX_RETRY)
 
             # 4. Verify the result
-            keys_result = _validate_the_json_result(JSON_data, total_number_of_questions)
-            if keys_result["status"] == "error":
+            if extraction_result["status"] == "error":
                 collect_error.append(
                     {
                         "img_file"  : answer_sheet_img_full_path,
-                        "message"   : keys_result["message"],
+                        "message"   : extraction_result["message"],
                     }
                 )
                 continue
@@ -269,7 +227,7 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
         # 5. Save into json file
         save_result = {}
         json_target_path = str(sheet["json_target_path"])
-        save_result = _save_in_json_file(json_data=JSON_data, target_path=json_target_path)
+        save_result = _save_in_json_file(json_data=extraction_result, target_path=json_target_path)
         if save_result["status"] == "error":
             collect_error.append(
                 {
@@ -286,7 +244,7 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
                 "json_full_path"            : save_result["full_path"],
                 "student_id"                : save_result["student_id"],
                 "img_full_path"             : answer_sheet_img_full_path,
-                "json_data"                 : JSON_data,
+                "json_data"                 : extraction_result,
                 "answer_key_assessment_uid" : sheet["answer_key_assessment_uid"]
             }
         )

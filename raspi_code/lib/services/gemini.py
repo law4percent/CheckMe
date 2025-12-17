@@ -195,6 +195,14 @@ Return JSON EXACTLY like this:
                 "message": f"Missing 'answers' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
             }
         
+        answers = result["answers"]
+        for n in range(1, total_number_of_questions + 1):
+            if f"Q{n}" not in answers:
+                return {
+                    "status"    : "error",
+                    "message"   : f"Missing: Q{n}. \nraw_response: {str(result)[:200]} Source: {__name__}"
+                }
+
         if "student_id" not in result:
             logger.warning("Missing 'student_id' field in response")
             result["student_id"] = "unknown"
@@ -387,12 +395,12 @@ Return JSON in this exact format:
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing failed: {e}")
             return {
-                "status"        : "error", 
-                "message"       : f"JSON parsing failed: {str(e)}\nraw_response: {text[:200]} Source: {__name__}"
+                "status"    : "error", 
+                "message"   : f"JSON parsing failed: {str(e)}\nraw_response: {text[:200]} Source: {__name__}"
             }
         except Exception as e:
             logger.error(f"Unexpected error during JSON parsing: {e}")
             return {
-                "status"        : "error",
-                "message"       : f"Unexpected parsing error: {str(e)}\nraw_response: {text[:200]} Source: {__name__}"
+                "status"    : "error",
+                "message"   : f"Unexpected parsing error: {str(e)}\nraw_response: {text[:200]} Source: {__name__}"
             }
