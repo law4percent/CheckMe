@@ -10,7 +10,7 @@ import random
 import base64
 import json
 import logging
-from typing import Dict, Optional
+from typing import Dict
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -54,8 +54,8 @@ Return JSON EXACTLY like this:
     "Q1": "A",
     "Q2": "CPU",
     "Q3": "unreadable",
-    ...
-    "Qn": "no_answer", <-- if blank or no any answer
+    continue...
+    "Qn": "no_answer"
   }
 }
 """
@@ -85,29 +85,94 @@ Return JSON EXACTLY like this:
     # ============================================================
 
     def extract_answer_key(self, image_path: str, MAX_RETRY: int) -> Dict:
-        """Extract teacher's answer key from image."""
+        """
+            Extract teacher's answer key from image.
+            
+            Args:
+                image_path: Path to the answer key image
+                MAX_RETRY: Maximum number of retry attempts
+                
+            Returns:
+                - Dictionary with extracted data or error status
+                - Success: {"status": "success", "result": {assessment_uid: XXXX, asnwers: {...}}}
+                - Error: {"status": "error", "message": "..."}
+        """
+        # Check API key
         if not self.api_key:
-            raise RuntimeError("GEMINI_API_KEY not set in environment")
+            return {
+                "status": "error",
+                "message": "GEMINI_API_KEY not set in environment",
+                "error_type": "missing_api_key"
+            }
 
-        image_base64 = self._encode_image(image_path)
+        # Encode image
+        try:
+            image_base64 = self._encode_image(image_path)
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to read image: {str(e)}"
+            }
 
         if GENAI_AVAILABLE and self.model:
             response_text = self._call_gemini_sdk(image_base64, self.TEACHER_INSTRUCTION, MAX_RETRY)
         else:
             response_text = self._call_gemini_rest(image_base64, self.TEACHER_INSTRUCTION, MAX_RETRY)
 
-        return self._safe_parse_json(response_text)
+        parse_result = self._safe_parse_json(response_text)
+        if parse_result["status"] == "error":
+            return parse_result
+        result = parse_result["result"]
+
+        # Validate required fields
+        if "answers" not in result:
+            return {
+                "status": "error",
+                "message": f"Missing 'answers' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
+            }
+        
+        if "assessment_uid" not in result:
+            logger.warning("Missing 'assessment_uid' field in response")
+            return {
+                "status": "error",
+                "message": f"Missing 'assessment_uid' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
+            }
+
+        return result
 
     # ============================================================
     # STUDENT ANSWER EXTRACTION
     # ============================================================
 
     def extract_answer_sheet(self, image_path: str, total_number_of_questions: int, MAX_RETRY: int) -> Dict:
-        """Extract student answers from answer sheet image."""
+        """
+            Extract student answers from answer sheet image.
+            
+            Args:
+                image_path: Path to the student answer sheet image
+                total_number_of_questions: Expected number of questions
+                MAX_RETRY: Maximum number of retry attempts
+                
+            Returns:
+                - Dictionary with extracted data or error status
+                - Success: {"status": "success", "result": {student_id: XXXX, asnwers: {...}}}
+                - Error: {"status": "error", "message": "..."}
+        """
+        # Check API key
         if not self.api_key:
-            raise RuntimeError("GEMINI_API_KEY not set in environment")
+            return {
+                "status": "error",
+                "message": f"Missing API Key. GEMINI_API_KEY not set in environment. Source: {__name__}"
+            }
 
-        image_base64 = self._encode_image(image_path)
+        # Encode image
+        try:
+            image_base64 = self._encode_image(image_path)
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to read image and encode image to base64: {str(e)} Source: {__name__}"
+            }
 
         STUDENT_INSTRUCTION = self._format_answer_sheet_prompt(total_number_of_questions)
 
@@ -116,7 +181,24 @@ Return JSON EXACTLY like this:
         else:
             response_text = self._call_gemini_rest(image_base64, STUDENT_INSTRUCTION, MAX_RETRY)
 
-        return self._safe_parse_json(response_text)
+        parse_result = self._safe_parse_json(response_text)
+        if parse_result["status"] == "error":
+            return parse_result
+        result = parse_result["result"]
+        
+        # Validate required fields
+        if "answers" not in result:
+            return {
+                "status": "error",
+                "message": f"Missing 'answers' field in API response.\nraw_response: {str(result)[:200]} Source: {__name__}"
+            }
+        
+        # ============ Under investigation ============
+        if "student_id" not in result:
+            logger.warning("Missing 'student_id' field in response")
+            result["student_id"] = "unknown"
+        
+        return result
 
     # ============================================================
     # HELPER METHODS
@@ -179,11 +261,13 @@ Return JSON in this exact format:
             }
         ]
 
+        last_error = None
+        
         for attempt in range(MAX_RETRY):
             try:
                 response = self.model.generate_content(
-                    contents            = contents,
-                    generation_config   = {"temperature": 0.2}
+                    contents = contents,
+                    generation_config = {"temperature": 0.2}
                 )
 
                 if not response.text.strip():
@@ -192,21 +276,26 @@ Return JSON in this exact format:
                 return response.text
 
             except Exception as e:
-                logger.error(f"Gemini SDK error (attempt {attempt+1}/3): {e}")
+                last_error = e
+                logger.error(f"Gemini SDK error (attempt {attempt+1}/{MAX_RETRY}): {e}")
 
-                if "429" in str(e).lower():
+                if "429" in str(e).lower() or "quota" in str(e).lower():
                     wait = 8 + random.randint(2, 10)
                     logger.warning(f"Rate limit hit. Waiting {wait}s")
                     time.sleep(wait)
                     continue
 
-                time.sleep(2)
+                if attempt < MAX_RETRY - 1:
+                    time.sleep(2)
 
-        return '{"error": "Gemini SDK failed after retries"}'
+        # All retries failed
+        return json.dumps({
+            "status"    : "error",
+            "message"   : f"Gemini SDK failed after {MAX_RETRY} retries: {str(last_error)}"
+        })
 
     def _call_gemini_rest(self, image_b64: str, instruction: str, MAX_RETRY: int) -> str:
         """Call Gemini API using REST endpoint."""
-        # Use v1 stable endpoint instead of v1beta
         url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent"
 
         headers = {"Content-Type": "application/json"}
@@ -224,12 +313,14 @@ Return JSON in this exact format:
             ]
         }
 
+        last_error = None
+
         for attempt in range(MAX_RETRY):
             try:
                 response = requests.post(
                     url, 
-                    params  = {"key": self.api_key},
-                    json    = payload, 
+                    params = {"key": self.api_key},
+                    json = payload, 
                     headers = headers, 
                     timeout = 30
                 )
@@ -241,19 +332,31 @@ Return JSON in this exact format:
                 except (KeyError, IndexError, TypeError) as e:
                     logger.error(f"Bad REST response format: {e}")
                     return json.dumps({
-                        "status": "error",
-                        "message": "Bad REST response format"
+                        "status"    : "error",
+                        "message"   : f"Bad REST response format: {str(e)}"
                     })
                     
             except requests.exceptions.RequestException as e:
-                logger.error(f"REST API error (attempt {attempt+1}/3): {e}")
-                if attempt < 2:
+                last_error = e
+                logger.error(f"REST API error (attempt {attempt+1}/{MAX_RETRY}): {e}")
+                
+                # Check for rate limiting
+                if hasattr(e, 'response') and e.response is not None:
+                    if e.response.status_code == 429:
+                        wait = 8 + random.randint(2, 10)
+                        logger.warning(f"Rate limit hit. Waiting {wait}s")
+                        time.sleep(wait)
+                        continue
+                
+                if attempt < MAX_RETRY - 1:
                     time.sleep(2 + random.randint(1, 3))
                     continue
-                return json.dumps({
-                    "status": "error", 
-                    "message": f"REST API failed: {str(e)}"
-                })
+
+        # All retries failed
+        return json.dumps({
+            "status"    : "error", 
+            "message"   : f"REST API failed after {MAX_RETRY} retries: {str(last_error)}"
+        })
 
     @staticmethod
     def _normalize_answer(answer: str) -> str:
@@ -264,13 +367,28 @@ Return JSON in this exact format:
 
     @staticmethod
     def _safe_parse_json(text: str) -> Dict:
-        """Safely parse JSON response from Gemini."""
+        """
+        Safely parse JSON response from Gemini.
+        
+        Returns:
+            Parsed dictionary or error dictionary
+        """
         try:
             cleaned = text.strip("```json").strip("```").strip()
-            return json.loads(cleaned)
-        except Exception as e:
-            logger.error(f"Failed to parse JSON: {e}")
+            parsed = json.loads(cleaned)
             return {
-                "status": "error", 
-                "message": f"JSON parsing failed.\nraw_response: {text[:200]}"
+                "status": "success",
+                "result": parsed
+            }
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed: {e}")
+            return {
+                "status"        : "error", 
+                "message"       : f"JSON parsing failed: {str(e)}\nraw_response: {text[:200]} Source: {__name__}"
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error during JSON parsing: {e}")
+            return {
+                "status"        : "error",
+                "message"       : f"Unexpected parsing error: {str(e)}\nraw_response: {text[:200]} Source: {__name__}"
             }
