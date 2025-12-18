@@ -227,9 +227,9 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
             continue
             
         # 5. Save as json file
-        save_result = {}
-        json_target_path = str(sheet["json_target_path"])
-        save_result = _save_in_json_file(json_data=json_data, target_path=json_target_path)
+        save_result         = {}
+        json_target_path    = str(sheet["json_target_path"])
+        save_result         = _save_in_json_file(json_data=json_data, target_path=json_target_path)
         if save_result["status"] == "error":
             collect_error.append(
                 {
@@ -248,7 +248,7 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
                 "img_full_path"             : answer_sheet_img_full_path,
                 "answer_key_assessment_uid" : str(sheet["answer_key_assessment_uid"]),
                 "processed_score"           : 1,
-                "processed_image_uploaded"  : 1
+                "processed_image_uploaded"  : 1 # WIP: Need to finalize
             }
         )
         
@@ -258,62 +258,112 @@ def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
     }
 
 
-def _checking_assessments_by_batch(json_full_path) -> dict:
-    # Step 1: check json existence
-    json_restult = utils.file_existence_checkpoint(json_full_path, __name__)
-    if json_restult["status"] == "error":
-        return json_restult
-    
-    # Step 2: Get json and convert it into dict like this:
-    # {
-    #     "assessment_uid": "XXXX1234",
-    #     "answers": {
-    #         "Q1": "A",
-    #         "Q2": "CPU",
-    #         "Q3": "unreadable",
-    #         ...
-    #         "Qn": "no_answer", <-- if blank or no any answer
-    #     }
-    # }
-    
-    # Step 3: Get the answers value and initialize it to answer_sheet
-    
-    
-    # Step 4: Get the answer 
-    
-    # Step 5: Start checking by counting the check
-    
+def _checking_assessments_by_batch(total_number_of_questions: int, answer_key: str, as_answer: dict) -> dict:
+    if total_number_of_questions != len(as_answer):
+        return {
+        "status"    : "error",
+        "message"   : f"Failed to score. Not the same number of answers or questions."
+    }
+
     count_check = 0
     for n in range(1, total_number_of_questions+1):
-        if answer_sheet.get(f"Q{n}").strip() == answer_key.get(f"Q{n}").strip():
+        if as_answer.get(f"Q{n}").strip() == answer_key.get(f"Q{n}").strip():
             count_check += 1
-            
 
     return {
         "status"                    : "success",
-        "score"                     : count_check,
-        "is_final_score"            : is_final_score, # This can be done with check the assessment uid of the answer_key DB table
-        "answer_key_assessment_uid" : answer_key_assessment_uid
+        "score"                     : count_check
     }
 
 
-def _score_batch(sheets: dict) -> dict:
-    for sheet in sheets:
-        # Step 1: Group with assessment_uid
-        _group_sheets_by_assessment_uid()
-        
-        # Step 2: Checking assessments
-        _checking_assessments_by_batch()
+def _read_json(json_file_path: str) -> dict:
+    """
+    Read a student answer JSON file and convert it to a Python dictionary.
+
+    Args:
+        json_file_path (str): Full path to the JSON file
+
+    Returns:
+        dict: Parsed JSON content as a Python dictionary
+    """
     
-        # Step 3: update the score, is_final_score, and processed_score by answer_key_assessment_uid and student_id
-        result = answer_sheet_model.update_answer_key_scores_by_image_path(
-            score                       = score,
-            answer_key_assessment_uid   = answer_key_assessment_uid,
-            student_id                  = student_id,
-            processed_rtdb              = 1 # set this to 1 as ready to send to RTDB
+    with open(json_file_path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    return data
+
+
+def _scoring_by_batch(sheets: list) -> dict:
+    """
+    Arguments:
+        sheets:
+            - "student_id"
+            - "score"
+            - "answer_key_assessment_uid"
+            - "as_json_full_path"
+            - "total_number_of_questions"
+            - "ak_json_full_path"
+    """
+    # Step 1: Get the JSON file and extract to dict
+    organized_sheets    = _group_sheets_by_assessment_uid(sheets)
+    answer_keys_in_dict = {}
+
+    for key in organized_sheets.keys():
+        org_sheet               = organized_sheets[key]
+        first_index             = org_sheet[0]
+        answer_key_json_path    = str(first_index["ak_json_full_path"])
+        answer_keys_in_dict[key]= _read_json(answer_key_json_path)
+
+    collect_success = []
+    collect_error   = []
+    # Step 2: Start checking
+    for sheet in sheets:
+        student_id                  = str(sheet["student_id"])
+        score                       = int(sheet["score"])
+        total_number_of_questions   = int(sheet["total_number_of_questions"])
+        answer_key_assessment_uid   = str(sheet["answer_key_assessment_uid"])
+        answer_sheet_json_path      = str(sheet["as_json_full_path"])
+        as_answer                   = _read_json(answer_sheet_json_path)
+
+        # Step 2: Checking assessments
+        score = _checking_assessments_by_batch(
+            total_number_of_questions   = total_number_of_questions, 
+            answer_key                  = answer_keys_in_dict[answer_key_assessment_uid],
+            as_answer                   = as_answer["answers"]
         )
-        if result["status"] == "error":
-            return result
+        if score["status"] == "error":
+            collect_error.append({
+                "student_id": student_id,
+                "message"   : f"{score["message"]} Please check the {student_id}.json at {answer_sheet_json_path}. Source: {__name__}",
+            })
+            continue
+        collect_success.append({
+            "score"             : score,
+            "student_id"        : student_id,
+            "processed_score"   : 2,
+            "processed_rtdb"    : 1 # set this to 1 as ready to send to RTDB
+        })
+
+    return {
+        "success"   : collect_success,
+        "error"     : collect_error
+    }
+
+        # Step X: attach the correction in the image 
+        # ======================== WIP: This will be done in process_c.py ========================
+        # img_full_path = 
+        # if img_full_path["status"] == "error":
+        #     collect_error.append(
+        #         {
+        #             "student_id": student_id,
+        #             "message"   : f"Failed to extract with Gemini OCR. {e}. Source: {__name__}",
+        #         }
+        #     )
+        #     continue
+
+
+
+        
     
 
 def _update_firebase_rtdb(batch_size) -> dict:
@@ -369,10 +419,10 @@ def process_b(**kwargs):
                 if SAVE_LOGS:
                     logger.error(f"{TASK_NAME} - {sheets_result["message"]}")
             else:
-                # Step 2: Fetch data from db
+                # Step 2: OCR Extraction with Gemini
                 extraction_results = _get_JSON_of_answer_sheet(sheets_result["sheets"], MAX_RETRY)
                 
-                # Step 3: Update database json path and student id by image_full_path
+                # Step 3: Update database
                 success_sheets = extraction_results["success"]
                 for success_sheet in success_sheets:
                     update_db_result = answer_sheet_model.update_answer_key_json_path_by_image_path(
@@ -397,12 +447,27 @@ def process_b(**kwargs):
             
             
             # ========== PROCESS SCORING ==========
+            # Step 1: Fetch data from db
             sheets_result = answer_sheet_model.get_fields_by_processed_score_is_1(BATCH_SIZE)
             if sheets_result["status"] == "error":
                 if SAVE_LOGS:
                     logger.error(f"{TASK_NAME} - {sheets_result["message"]}")
             else:
-                _score_batch(sheets_result["sheets"])
+                # Step 2: Score it!
+                scoring_result = _scoring_by_batch(sheets_result["sheets"])
+
+                # Step 3: Update database
+                success_sheets = scoring_result["success"]
+                for success_sheet in success_sheets:
+                    update_db_result = answer_sheet_model.update_answer_key_scores_by_image_path(
+                        score           = scoring_result["score"],
+                        student_id      = scoring_result["student_id"],
+                        processed_score = scoring_result["processed_score"],
+                        processed_rtdb  = scoring_result["processed_rtdb"]
+                    )
+                    if update_db_result["status"] == "error" and SAVE_LOGS:
+                        logger.error(f"{TASK_NAME} - {update_db_result["message"]}")
+
             
             # ========== PROCESS RTDB UPDATE ==========
             _update_firebase_rtdb(BATCH_SIZE)

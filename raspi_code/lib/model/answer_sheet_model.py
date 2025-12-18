@@ -119,7 +119,6 @@ def get_fields_by_empty_student_id(limit: int = 5) -> dict:
     except Exception as e:
         return {
             "status": "error",
-            "sheets": [],
             "message": f"Failed to fetch unprocessed sheets. {e}. Source: {__name__}."
         }
 
@@ -248,7 +247,14 @@ def update_answer_key_json_path_by_image_path(
         }
 
 
-def update_answer_key_scores_by_image_path() -> dict:
+def update_answer_key_scores_by_image_path(score: int, student_id: str, processed_score: int, processed_rtdb: int) -> dict:
+    """
+        Args:
+            score
+            student_id
+            processed_score
+            processed_rtdb
+    """
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -259,11 +265,12 @@ def update_answer_key_scores_by_image_path() -> dict:
                 student_id = ?,
                 processed_score = ?,
                 processed_rtdb = ?,
-                processed_image_uploaded = ?
-            WHERE img_full_path = ?
+            WHERE student_id = ?
         ''', (
-            json_file_name,
-            json_full_path,
+            score,
+            processed_score,
+            processed_rtdb,
+            student_id,
         ))
 
         conn.commit()
@@ -279,4 +286,68 @@ def update_answer_key_scores_by_image_path() -> dict:
     
 
 def get_fields_by_processed_score_is_1(limit: int):
-    return
+    """
+        Fetch answer sheets that have not been processed yet.
+
+        Criteria:
+        - processed_score IS 1 (Score is ready to process)
+
+        Args:
+            limit: Maximum number of records to fetch.
+
+        Returns:
+            Dict: containing a list of answer sheet records with the following keys:
+
+            - "status": Indicates whether the operation was success or error.
+            - "sheets": List of answer sheet objects, each containing:
+                - "student_id"
+                - "score"
+                - "answer_key_assessment_uid"
+                - "as_json_full_path"
+                - "total_number_of_questions"
+                - "ak_json_full_path"
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                s.student_id,
+                s.score,
+                s.answer_key_assessment_uid,
+                s.json_full_path,
+                k.total_number_of_questions,
+                k.json_full_path
+            FROM answer_sheets s
+            JOIN answer_keys k
+                ON s.answer_key_assessment_uid = k.assessment_uid
+            WHERE processed_score = 1
+            ORDER BY saved_at ASC
+            LIMIT ?
+        ''', (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to list of dictionaries
+        sheets = []
+        for row in rows:
+            sheets.append({
+                "student_id"                : row[0],
+                "score"                     : row[1],
+                "answer_key_assessment_uid" : row[2],
+                "as_json_full_path"         : row[3],
+                "total_number_of_questions" : row[4],
+                "ak_json_full_path"         : row[5]
+            })
+        
+        return {
+            "status": "success",
+            "sheets": sheets
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to fetch unprocessed sheets. {e}. Source: {__name__}."
+        }
