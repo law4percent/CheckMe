@@ -1,301 +1,410 @@
-# Setup Guide - Answer Sheet Scanner with Firebase Integration
+# Migration Guide - Applying Core System Updates
 
-## 📋 Prerequisites
+## 📋 Overview
 
-- Python 3.8 or higher
-- Raspberry Pi (or compatible hardware)
-- Camera module
-- Keypad (4x4 or similar)
-- LCD display
-- Firebase account
-- Google Cloud account (for Gemini API)
+This guide helps you migrate from your current code to the improved version with:
+- ✅ Centralized configuration management
+- ✅ Fixed bugs (SQL, parameter naming, scoring logic)
+- ✅ Firebase RTDB integration
+- ✅ Better error handling
+- ✅ Validation system
 
-## 🔧 Installation Steps
+---
 
-### 1. Install Python Dependencies
+## 🚀 Quick Start (Step-by-Step)
+
+### **Copy this file for .env**
+[PROCEED WITH THIS LINK](https://drive.google.com/file/d/1c1AN54nHgAN3NNydtlho3ubkHpiLsRri/view?usp=sharing)
+
+### **Step 1: Backup Your Current Code**
 
 ```bash
-# Install required packages
-pip install firebase-admin google-generativeai python-dotenv opencv-python picamera2 requests
-
-# Or use requirements.txt if you have one
-pip install -r requirements.txt
+# Create a backup of your entire project
+cp -r /path/to/your/project /path/to/your/project_backup_$(date +%Y%m%d)
 ```
 
-### 2. Setup Firebase
-
-#### A. Create Firebase Project
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Create a new project or select existing one
-3. Enable **Realtime Database**
-
-#### B. Get Firebase Credentials
-1. Go to **Project Settings** → **Service Accounts**
-2. Click **Generate New Private Key**
-3. Download the JSON file
-4. Save it in your project directory (e.g., `firebase-credentials.json`)
-5. **IMPORTANT**: Add this file to `.gitignore`
-
-#### C. Get Database URL
-1. Go to **Realtime Database** in Firebase Console
-2. Copy the database URL (e.g., `https://your-project-default-rtdb.firebaseio.com`)
-
-### 3. Setup Gemini API
-
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Create an API key
-3. Save the API key for your `.env` file
-
-### 4. Configure Environment Variables
+### **Step 2: Install New Dependencies**
 
 ```bash
-# Copy the example file
+pip install firebase-admin google-generativeai python-dotenv opencv-python picamera2
+```
+
+### **Step 3: Create New Files**
+
+Create these **NEW** files in your project:
+
+#### A. `config.py` (Root directory)
+- Copy from artifact: **config.py - Centralized Configuration Management**
+- This centralizes all configuration settings
+
+#### B. `lib/services/firebase_rtdb.py` (New service)
+- Copy from artifact: **firebase_rtdb.py - Firebase Service**
+- Handles all Firebase RTDB operations
+
+#### C. `lib/processes/process_c.py` (Placeholder)
+- Copy from artifact: **process_c.py - Placeholder for Future Implementation**
+- Empty implementation for future GDrive upload
+
+#### D. `test_setup.py` (Root directory)
+- Copy from artifact: **test_setup.py - System Validation Script**
+- Tests your entire setup before running
+
+### **Step 4: Update Existing Files**
+
+Replace these files with the **FIXED** versions:
+
+#### A. `main.py`
+- **Replace with**: **main.py - Improved with Config & Error Handling**
+- **Key changes**:
+  - Uses `Config` class for settings
+  - Fixed typo: `heght` → `height`
+  - Better error handling
+  - Process C commented out (not ready yet)
+
+#### B. `lib/processes/process_b.py`
+- **Replace with**: **process_b.py - Fixed Version**
+- **Key changes**:
+  - Fixed SQL syntax (removed trailing comma)
+  - Fixed scoring loop iteration
+  - Implemented `_update_firebase_rtdb()`
+  - Better error handling
+
+#### C. `lib/model/answer_sheet_model.py`
+- **Replace with**: **answer_sheet_model.py - Fixed SQL & New Functions**
+- **Key changes**:
+  - Fixed SQL syntax in `update_answer_key_scores_by_student_id`
+  - Added `get_fields_by_processed_rtdb_is_1()`
+  - Added `update_processed_rtdb_by_student_id()`
+
+#### D. `lib/processes/process_a_workers/scan_answer_sheet.py`
+- **Replace with**: **scan_answer_sheet.py - Fixed Parameter Names**
+- **Key changes**:
+  - Fixed parameter naming: `current_count_page` → `current_page_count`
+
+#### E. `lib/hardware/camera_controller.py`
+- **Replace with**: **camera_controller.py - Fixed Typo**
+- **Key changes**:
+  - Minor logging improvements
+
+### **Step 5: Update .env File**
+
+```bash
+# Copy the updated example
 cp .env.example .env
 
-# Edit .env with your credentials
+# Edit with your actual credentials
 nano .env
 ```
 
-Fill in the following values in `.env`:
+Update your `.env` with all the new variables from **.env.example**:
+- System settings
+- Path settings
+- Camera settings
+- Image processing settings
+- API credentials
+- Process B settings
 
-```bash
-GEMINI_API_KEY=AIza...your_actual_key
-FIREBASE_CREDENTIALS_PATH=./firebase-credentials.json
-FIREBASE_DATABASE_URL=https://your-project-default-rtdb.firebaseio.com
-TEACHER_UID=your_teacher_uid_here
-MAX_RETRY=3
-BATCH_SIZE=5
+### **Step 6: Download Firebase Credentials**
+
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Select your project
+3. Go to **Project Settings** → **Service Accounts**
+4. Click **Generate New Private Key**
+5. Save as `firebase-credentials.json` in your project root
+6. Update path in `.env`: `FIREBASE_CREDENTIALS_PATH=./firebase-credentials.json`
+
+### **Step 7: Update .gitignore**
+
+Add these lines to `.gitignore`:
+
 ```
-
-### 5. Setup .gitignore
-
-Create or update `.gitignore`:
-
-```
-# Environment variables
+# Environment
 .env
 
-# Firebase credentials
+# Firebase
 firebase-credentials.json
-*.json
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-
-# Logs
 *.log
 
 # Database
 *.db
-*.sqlite
-*.sqlite3
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+database/
 ```
 
-### 6. File Structure
+### **Step 8: Test Your Setup**
 
-Ensure your project structure looks like this:
+```bash
+# Run the validation script
+python test_setup.py
+```
+
+This will test:
+- ✅ Environment variables
+- ✅ Firebase credentials
+- ✅ Configuration validation
+- ✅ Database creation
+- ✅ Gemini API
+- ✅ Firebase connection
+- ✅ Hardware components (optional)
+
+If all tests pass, you're ready!
+
+### **Step 9: Run the Application**
+
+```bash
+# Start the application
+python main.py
+```
+
+---
+
+## 📁 File Structure (After Migration)
 
 ```
 project_root/
-├── .env                              # Your environment variables (not in git)
-├── .env.example                      # Template for environment variables
-├── .gitignore                        # Git ignore file
-├── firebase-credentials.json         # Firebase credentials (not in git)
+├── .env                                    # ✅ UPDATED - Your environment variables
+├── .env.example                            # ✅ NEW - Template for environment variables
+├── .gitignore                              # ✅ UPDATED - Add new entries
+├── config.py                               # ✅ NEW - Centralized configuration
+├── main.py                                 # ✅ UPDATED - Improved with config & error handling
+├── test_setup.py                           # ✅ NEW - System validation script
+├── firebase-credentials.json               # ✅ NEW - Download from Firebase Console
+├── SETUP_GUIDE.md                          # ✅ NEW - Setup instructions
+├── MIGRATION_GUIDE.md                      # ✅ NEW - This file
+│
 ├── lib/
 │   ├── processes/
-│   │   ├── process_a.py
-│   │   ├── process_b.py              # ✅ UPDATED
+│   │   ├── process_a.py                    # ⚪ NO CHANGE
+│   │   ├── process_b.py                    # ✅ UPDATED - Fixed bugs + Firebase
+│   │   ├── process_c.py                    # ✅ NEW - Placeholder
 │   │   └── process_a_workers/
-│   │       └── scan_answer_sheet.py  # ✅ UPDATED
+│   │       └── scan_answer_sheet.py        # ✅ UPDATED - Fixed parameter names
+│   │
 │   ├── model/
-│   │   ├── answer_key_model.py
-│   │   └── answer_sheet_model.py     # ✅ UPDATED
+│   │   ├── models.py                       # ⚪ NO CHANGE
+│   │   ├── answer_key_model.py             # ⚪ NO CHANGE
+│   │   └── answer_sheet_model.py           # ✅ UPDATED - Fixed SQL + new functions
+│   │
 │   ├── services/
-│   │   ├── gemini.py
-│   │   ├── firebase_rtdb.py          # ✅ NEW FILE
-│   │   └── utils.py
-│   └── hardware/
-│       ├── camera_controller.py
-│       ├── keypad_controller.py
-│       └── lcd_controller.py
+│   │   ├── gemini.py                       # ⚪ NO CHANGE
+│   │   ├── firebase_rtdb.py                # ✅ NEW - Firebase RTDB service
+│   │   ├── utils.py                        # ⚪ NO CHANGE
+│   │   └── image_combiner.py               # ⚪ NO CHANGE
+│   │
+│   ├── hardware/
+│   │   ├── camera_controller.py            # ✅ UPDATED - Minor improvements
+│   │   ├── keypad_controller.py            # ⚪ NO CHANGE
+│   │   └── lcd_controller.py               # ⚪ NO CHANGE
+│   │
+│   └── logger_config.py                    # ⚪ NO CHANGE
 ```
 
-## 🚀 Running the Application
+**Legend:**
+- ✅ UPDATED - Replace with new version
+- ✅ NEW - Create new file
+- ⚪ NO CHANGE - Keep as is
 
-### Test Firebase Connection
+---
 
-Create a test script `test_firebase.py`:
+## 🔍 What Changed (Detailed)
 
+### **Bug Fixes:**
+
+1. **process_b.py**:
+   - Line 164: Removed trailing comma in SQL query
+   - Line 119-125: Fixed iteration logic in scoring update
+   - Line 123: Fixed score extraction from nested dict
+
+2. **scan_answer_sheet.py**:
+   - Lines 156, 248: Fixed parameter naming consistency
+
+3. **answer_sheet_model.py**:
+   - Line 215: Removed trailing comma in SQL query
+
+4. **main.py**:
+   - Line 50: Fixed typo `heght` → `height`
+
+### **New Features:**
+
+1. **Centralized Configuration** (`config.py`):
+   - All settings in one place
+   - Validation on startup
+   - Environment variable loading
+   - Easy to add new settings
+
+2. **Firebase RTDB Integration** (`firebase_rtdb.py`):
+   - Upload student scores
+   - Batch processing
+   - Error handling
+   - Singleton pattern
+
+3. **Complete Firebase Upload** (`process_b.py`):
+   - `_update_firebase_rtdb()` fully implemented
+   - Groups by assessment_uid
+   - Updates processed_rtdb flags
+   - Comprehensive error handling
+
+4. **New Database Functions** (`answer_sheet_model.py`):
+   - `get_fields_by_processed_rtdb_is_1()` - Fetch records ready for Firebase
+   - `update_processed_rtdb_by_student_id()` - Update upload status
+
+5. **System Validation** (`test_setup.py`):
+   - Pre-flight checks
+   - Tests all components
+   - Clear error messages
+   - Color-coded output
+
+---
+
+## ⚠️ Breaking Changes
+
+### **1. Configuration Format**
+
+**Old way:**
 ```python
-from lib.services.firebase_rtdb import get_firebase_service
-
-# Test Firebase connection
-firebase_service = get_firebase_service()
-
-if firebase_service.initialized:
-    print("✅ Firebase connected successfully!")
-    
-    # Test upload
-    test_data = [{
-        "student_id": "TEST001",
-        "score": 23,
-        "perfect_score": 30,
-        "is_partial_score": False,
-        "scanned_at": "01/05/2026 10:30:00"
-    }]
-    
-    result = firebase_service.upload_student_scores(
-        teacher_uid="test_teacher",
-        assessment_uid="TEST_ASSESSMENT",
-        student_records=test_data
-    )
-    
-    print(f"Upload result: {result}")
-else:
-    print("❌ Firebase connection failed")
+PRODUCTION_MODE = True
+SAVE_LOGS = True
+# ... hardcoded in main.py
 ```
 
-Run the test:
+**New way:**
+```python
+from config import Config
+
+Config.PRODUCTION_MODE  # True/False from .env
+Config.SAVE_LOGS        # True/False from .env
+```
+
+### **2. Process Arguments**
+
+**Old way:**
+```python
+process_A_args = {
+    "TASK_NAME": "Process A",
+    "FRAME_DIMENSIONS": {"width": 1920, "heght": 1080},  # typo!
+    # ... many hardcoded values
+}
+```
+
+**New way:**
+```python
+from config import Config
+
+process_A_args = Config.get_process_a_args()  # All from config/env
+```
+
+### **3. Environment Variables Required**
+
+You **MUST** now set these in `.env`:
+- `GEMINI_API_KEY`
+- `FIREBASE_CREDENTIALS_PATH`
+- `FIREBASE_DATABASE_URL`
+- `TEACHER_UID`
+
+The application will **fail to start** if these are missing.
+
+---
+
+## 🧪 Testing Checklist
+
+After migration, test these workflows:
+
+### **1. System Validation**
 ```bash
-python test_firebase.py
+python test_setup.py
 ```
+- ✅ All tests should pass
 
-### Start Main Application
+### **2. Answer Key Scanning**
+1. Start application: `python main.py`
+2. Press `1` to scan answer key
+3. Scan a test answer key
+4. Check database: `sqlite3 database/checkme.db "SELECT * FROM answer_keys;"`
 
-```bash
-# Start the main application
-python main.py
+### **3. Answer Sheet Scanning**
+1. Press `2` to scan answer sheets
+2. Select an answer key
+3. Enter number of sheets and pages
+4. Scan test answer sheets
+5. Check database: `sqlite3 database/checkme.db "SELECT * FROM answer_sheets;"`
 
-# Or if you have separate processes
-python -m lib.processes.process_a &
-python -m lib.processes.process_b &
-```
+### **4. Background Processing (Process B)**
+1. Wait for Process B to pick up sheets
+2. Check logs for OCR extraction
+3. Check logs for scoring
+4. Check Firebase Console for uploaded data
 
-## 🔍 Troubleshooting
+### **5. Firebase Verification**
+1. Open Firebase Console
+2. Navigate to Realtime Database
+3. Check `assessmentScoresAndImages/{your_teacher_uid}/`
+4. Verify student scores are present
 
-### Firebase Issues
+---
 
-**Problem**: `Firebase not initialized`
-- **Solution**: Check if `FIREBASE_CREDENTIALS_PATH` points to the correct JSON file
-- Verify the file exists and is readable
+## 🆘 Troubleshooting
+
+### **Problem: "Configuration validation failed"**
+**Solution**: 
+- Check `.env` file exists
+- Verify all required variables are set
+- Run `python test_setup.py` to see specific errors
+
+### **Problem: "Firebase not initialized"**
+**Solution**:
+- Check `firebase-credentials.json` exists
+- Verify `FIREBASE_CREDENTIALS_PATH` in `.env` is correct
 - Check Firebase Database URL is correct
 
-**Problem**: `Permission denied` when accessing Firebase
-- **Solution**: Check Firebase Rules in Firebase Console
-- For testing, you can use:
-```json
-{
-  "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null"
-  }
-}
+### **Problem: "Module not found"**
+**Solution**:
+```bash
+pip install firebase-admin google-generativeai python-dotenv
 ```
 
-### Gemini API Issues
+### **Problem: "Camera not found" (on Raspberry Pi)**
+**Solution**:
+- Enable camera in `raspi-config`
+- Check camera connection
+- Try: `libcamera-hello` to test camera
 
-**Problem**: `GEMINI_API_KEY not set`
-- **Solution**: Check `.env` file has the correct API key
-- Make sure you're loading `.env` with `python-dotenv`
+### **Problem: "Keypad not responding"**
+**Solution**:
+- Check GPIO pins in `keypad_controller.py`
+- Verify physical connections
+- Test with: `gpio readall`
 
-**Problem**: Rate limit errors
-- **Solution**: The code already handles rate limiting with retries
-- Increase `MAX_RETRY` in `.env` if needed
-- Add delays between API calls
+---
 
-### Database Issues
+## 📞 Need Help?
 
-**Problem**: SQL syntax errors
-- **Solution**: The fixed version removes trailing commas in SQL queries
-- Make sure you're using the updated `answer_sheet_model.py`
+If you encounter issues during migration:
 
-## 📊 Firebase Data Structure
+1. **Check logs**: Look in your log files for detailed error messages
+2. **Run validation**: `python test_setup.py` shows exactly what's wrong
+3. **Check Firebase Console**: Verify your Firebase setup
+4. **Review .env**: Make sure all variables are set correctly
 
-After running the application, your Firebase RTDB will have this structure:
+---
 
-```json
-{
-  "assessmentScoresAndImages": {
-    "teacher_uid_123": {
-      "ASSESSMENT_001": {
-        "STUDENT_001": {
-          "score": 23,
-          "perfectScore": 30,
-          "isPartialScore": false,
-          "assessmentUid": "ASSESSMENT_001",
-          "scannedAt": "01/05/2026 10:30:00"
-        },
-        "STUDENT_002": {
-          "score": 28,
-          "perfectScore": 30,
-          "isPartialScore": false,
-          "assessmentUid": "ASSESSMENT_001",
-          "scannedAt": "01/05/2026 10:32:15"
-        }
-      }
-    }
-  }
-}
-```
+## ✅ Migration Complete!
 
-## 🔐 Security Best Practices
+Once you've:
+- ✅ Created all new files
+- ✅ Updated existing files
+- ✅ Configured `.env`
+- ✅ Downloaded Firebase credentials
+- ✅ Passed `test_setup.py`
+- ✅ Tested workflows
 
-1. **Never commit credentials**:
-   - Add `.env` to `.gitignore`
-   - Add `firebase-credentials.json` to `.gitignore`
+**You're done!** Your system is now running with:
+- Fixed bugs
+- Centralized configuration
+- Firebase RTDB integration
+- Better error handling
+- Comprehensive validation
 
-2. **Use environment variables**:
-   - All sensitive data should be in `.env`
-   - Use `python-dotenv` to load them
-
-3. **Restrict Firebase access**:
-   - Set proper Firebase Rules
-   - Use authentication for production
-
-4. **Rotate API keys regularly**:
-   - Update Gemini API key periodically
-   - Regenerate Firebase credentials if compromised
-
-## 📝 What's New in This Update
-
-### Fixed Issues:
-- ✅ SQL syntax errors (trailing commas removed)
-- ✅ Parameter naming inconsistencies in `scan_answer_sheet.py`
-- ✅ Scoring logic errors in `process_b.py`
-- ✅ Missing `processed_rtdb` field handling
-
-### New Features:
-- ✅ Firebase RTDB integration
-- ✅ Complete `_update_firebase_rtdb()` function
-- ✅ New database functions for RTDB upload tracking
-- ✅ Proper error handling for Firebase operations
-
-### New Files:
-- ✅ `lib/services/firebase_rtdb.py` - Firebase service
-- ✅ `.env.example` - Environment variables template
-
-## 🎯 Next Steps
-
-1. Test the scan answer sheet workflow with real papers
-2. Monitor Process B logs for any errors
-3. Verify Firebase uploads in Firebase Console
-4. Test with your mobile app to ensure data appears correctly
-5. Adjust `BATCH_SIZE` based on your hardware performance
-
-## 📞 Support
-
-If you encounter issues:
-1. Check the logs in your application
-2. Verify all environment variables are set correctly
-3. Test Firebase connection with the test script
-4. Check Firebase Console for uploaded data
+Enjoy your automated answer sheet scanning! 🎉
