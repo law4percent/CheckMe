@@ -1,3 +1,7 @@
+"""
+Path: lib/hardware/keypad_controller.py
+Keypad controller module for reading input from a 4x3 keypad.
+"""
 import RPi.GPIO as GPIO
 import time
 

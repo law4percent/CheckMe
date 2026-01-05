@@ -1,3 +1,8 @@
+"""
+Path: lib/hardware/lcd_controller.py
+LCD controller module for displaying options and handling user input on an LCD screen.
+"""
+
 from enum import Enum
 
 class ProcessMainStage(Enum):
