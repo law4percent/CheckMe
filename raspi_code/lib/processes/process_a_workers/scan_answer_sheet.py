@@ -194,11 +194,11 @@ def _handle_multi_page_answer_sheet_workflow(
         FRAME: any,
         IMAGE_PATH: str, 
         JSON_PATH: str,
-        CURRENT_COUNT_SHEETS: int, 
+        CURRENT_SHEET_COUNT: int, 
         TOTAL_NUMBER_OF_PAGES_PER_SHEET: int,
         SELECTED_ASSESSMENT_UID: str, 
         ESSAY_EXISTENCE: bool,
-        CURRENT_COUNT_PAGE: int,
+        CURRENT_PAGE_COUNT: int,
         COLLECTED_IMAGES: list,
         IMAGE_EXTENSION: str,
         TILE_WIDTH: int
@@ -208,7 +208,7 @@ def _handle_multi_page_answer_sheet_workflow(
     image_details = _save_in_image_file(
         frame               = FRAME, 
         target_path         = IMAGE_PATH, 
-        current_count_page  = CURRENT_COUNT_PAGE,
+        current_page_count  = CURRENT_PAGE_COUNT,
         image_extension     = IMAGE_EXTENSION
     )
     if image_details["status"] == "error":
@@ -218,10 +218,10 @@ def _handle_multi_page_answer_sheet_workflow(
     COLLECTED_IMAGES.append(image_details["full_path"])
 
     # Step 3: Check if all pages are completed
-    if CURRENT_COUNT_PAGE < TOTAL_NUMBER_OF_PAGES_PER_SHEET:
+    if CURRENT_PAGE_COUNT < TOTAL_NUMBER_OF_PAGES_PER_SHEET:
         return {
             "status"            : "waiting",
-            "next_page"         : CURRENT_COUNT_PAGE + 1,
+            "next_page"         : CURRENT_PAGE_COUNT + 1,
             "collected_images"  : COLLECTED_IMAGES
         }
     
@@ -254,7 +254,7 @@ def _handle_multi_page_answer_sheet_workflow(
         "image_details"                     : image_details,
         "is_final_score"                    : not ESSAY_EXISTENCE,
         "next_page"                         : 1,
-        "next_sheet"                        : CURRENT_COUNT_SHEETS + 1
+        "next_sheet"                        : CURRENT_SHEET_COUNT + 1
     }
 
 
@@ -298,10 +298,14 @@ def run(
         Main function to capture and process answer sheets.
         
         Args:
-            keypad_rows_and_cols: List containing [rows, cols] for keypad matrix
-            camera_index: Index of camera device (0 for default)
-            show_windows: Whether to display camera preview windows
-            ...
+            scan_key: Function to read keypad input
+            SHOW_WINDOWS: Whether to display camera preview windows
+            PATHS: Dictionary containing image_path and json_path
+            SELECTED_ASSESSMENT_UID: Selected assessment UID
+            PRODUCTION_MODE: Whether running in production mode
+            IMAGE_EXTENSION: File extension for images
+            TILE_WIDTH: Width for tile grid combination
+            FRAME_DIMENSIONS: Dictionary with width and height
         
         Returns:
             dict: {
@@ -326,8 +330,8 @@ def run(
     
     # Step 2: Ask for prerequisites
     prerequisites = _ask_for_prerequisites(
-        keypad_rows_and_cols    = scan_key,
-        ASSESSMENT_UID          = SELECTED_ASSESSMENT_UID
+        scan_key        = scan_key,
+        ASSESSMENT_UID  = SELECTED_ASSESSMENT_UID
     )
     if prerequisites["status"] == "cancelled":
         camera.cleanup_camera(capture)
@@ -345,7 +349,6 @@ def run(
             if TOTAL_NUMBER_OF_PAGES_PER_SHEET == 1:
                 # ========USE LCD DISPLAY==========
                 print(f"\n[{count_sheets}/{TOTAL_NUMBER_OF_SHEETS}] Sheet {count_sheets} - Page 1/1")
-                # print(f"[{count_page}/{TOTAL_NUMBER_OF_PAGES}] Put the {count_page}{extension} page.")
                 # =================================
             elif TOTAL_NUMBER_OF_PAGES_PER_SHEET > 1:
                 # ========USE LCD DISPLAY==========
@@ -412,11 +415,11 @@ def run(
                     FRAME                           = frame,
                     IMAGE_PATH                      = IMAGE_PATH,
                     JSON_PATH                       = JSON_PATH,
-                    CURRENT_COUNT_SHEETS            = count_sheets,
+                    CURRENT_SHEET_COUNT             = count_sheets,
                     TOTAL_NUMBER_OF_PAGES_PER_SHEET = TOTAL_NUMBER_OF_PAGES_PER_SHEET,
                     SELECTED_ASSESSMENT_UID         = SELECTED_ASSESSMENT_UID,
                     ESSAY_EXISTENCE                 = ESSAY_EXISTENCE,
-                    CURRENT_COUNT_PAGE              = count_page_per_sheet,
+                    CURRENT_PAGE_COUNT              = count_page_per_sheet,
                     COLLECTED_IMAGES                = collected_images,
                     IMAGE_EXTENSION                 = IMAGE_EXTENSION,
                     TILE_WIDTH                      = TILE_WIDTH

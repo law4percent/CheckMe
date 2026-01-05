@@ -1,4 +1,4 @@
-# lib/services/answer_sheet_model.py
+# lib/model/answer_sheet_model.py
 from .models import get_connection
 from datetime import datetime
 
@@ -94,8 +94,8 @@ def get_fields_by_empty_student_id(limit: int = 5) -> dict:
             FROM answer_sheets s
             JOIN answer_keys k
                 ON s.answer_key_assessment_uid = k.assessment_uid
-            WHERE student_id IS NULL
-            ORDER BY saved_at ASC
+            WHERE s.student_id IS NULL
+            ORDER BY s.saved_at ASC
             LIMIT ?
         ''', (limit,))
         
@@ -159,7 +159,7 @@ def update_answer_key_json_path_by_image_path(
             student_id
             answer_key_assessment_uid
             processed_score
-            processed_rtdb
+            processed_image_uploaded
     """
     try:
         # Step 1: Check for duplication
@@ -172,10 +172,10 @@ def update_answer_key_json_path_by_image_path(
             WHERE student_id = ? AND answer_key_assessment_uid = ?
         ''', (student_id, answer_key_assessment_uid))
 
-        rows = cursor.fetchall() # is it fetchall? but student_id cannot be duplicated because it is set unique in DB 
+        rows = cursor.fetchall()
         conn.close()
 
-        # If student_id is already exist and has already entries, then compare images and keep the latest
+        # If student_id already exists and has entries, compare images and keep the latest
         if rows:
             collected_same_imgs = [row[0] for row in rows]
             collected_same_imgs.append(img_full_path)
@@ -183,7 +183,7 @@ def update_answer_key_json_path_by_image_path(
             # Step 1: Determine the newest image
             latest_img = _get_latest_image(collected_same_imgs)
 
-            # Step 2: Overwrite the stored old image for the student and mark again as 1 the processed_score and processed_rtdb
+            # Step 2: Overwrite the stored old image for the student and mark again as 1
             conn    = get_connection()
             cursor  = conn.cursor()
             cursor.execute('''
@@ -206,7 +206,7 @@ def update_answer_key_json_path_by_image_path(
             return {"status": "success"}
         
         else:
-            # Else then update all the entries where img_full_path is match
+            # Else update all entries where img_full_path matches
             try:
                 conn = get_connection()
                 cursor = conn.cursor()
@@ -247,13 +247,15 @@ def update_answer_key_json_path_by_image_path(
         }
 
 
-def update_answer_key_scores_by_image_path(score: int, student_id: str, processed_score: int, processed_rtdb: int) -> dict:
+def update_answer_key_scores_by_student_id(score: int, student_id: str, processed_score: int, processed_rtdb: int) -> dict:
     """
+        Update score and processing flags for a student's answer sheet
+        
         Args:
-            score
-            student_id
-            processed_score
-            processed_rtdb
+            score: Student's calculated score
+            student_id: Student's unique identifier
+            processed_score: Processing status flag (2 = scored)
+            processed_rtdb: RTDB upload status flag (1 = ready to upload)
     """
     try:
         conn = get_connection()
@@ -262,9 +264,9 @@ def update_answer_key_scores_by_image_path(score: int, student_id: str, processe
         cursor.execute('''
             UPDATE answer_sheets
             SET 
-                student_id = ?,
+                score = ?,
                 processed_score = ?,
-                processed_rtdb = ?,
+                processed_rtdb = ?
             WHERE student_id = ?
         ''', (
             score,
@@ -281,16 +283,16 @@ def update_answer_key_scores_by_image_path(score: int, student_id: str, processe
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to update JSON path and student ID. {e}. Source: {__name__}"
+            "message": f"Failed to update scores. {e}. Source: {__name__}"
         }
     
 
-def get_fields_by_processed_score_is_1(limit: int):
+def get_fields_by_processed_score_is_1(limit: int) -> dict:
     """
-        Fetch answer sheets that have not been processed yet.
+        Fetch answer sheets that are ready for scoring.
 
         Criteria:
-        - processed_score IS 1 (Score is ready to process)
+        - processed_score = 1 (Score is ready to process)
 
         Args:
             limit: Maximum number of records to fetch.
@@ -322,8 +324,8 @@ def get_fields_by_processed_score_is_1(limit: int):
             FROM answer_sheets s
             JOIN answer_keys k
                 ON s.answer_key_assessment_uid = k.assessment_uid
-            WHERE processed_score = 1
-            ORDER BY saved_at ASC
+            WHERE s.processed_score = 1
+            ORDER BY s.saved_at ASC
             LIMIT ?
         ''', (limit,))
         
@@ -350,4 +352,102 @@ def get_fields_by_processed_score_is_1(limit: int):
         return {
             "status": "error",
             "message": f"Failed to fetch unprocessed sheets. {e}. Source: {__name__}."
+        }
+
+
+def get_fields_by_processed_rtdb_is_1(limit: int) -> dict:
+    """
+        Fetch answer sheets that are ready for Firebase RTDB upload.
+
+        Criteria:
+        - processed_rtdb = 1 (Ready to upload to Firebase)
+
+        Args:
+            limit: Maximum number of records to fetch.
+
+        Returns:
+            Dict containing:
+            - "status": Operation status
+            - "sheets": List of sheet records with:
+                - "student_id"
+                - "score"
+                - "answer_key_assessment_uid"
+                - "is_final_score"
+                - "total_number_of_questions"
+                - "saved_at"
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                s.student_id,
+                s.score,
+                s.answer_key_assessment_uid,
+                s.is_final_score,
+                k.total_number_of_questions,
+                s.saved_at
+            FROM answer_sheets s
+            JOIN answer_keys k
+                ON s.answer_key_assessment_uid = k.assessment_uid
+            WHERE s.processed_rtdb = 1
+            ORDER BY s.saved_at ASC
+            LIMIT ?
+        ''', (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to list of dictionaries
+        sheets = []
+        for row in rows:
+            sheets.append({
+                "student_id"                : row[0],
+                "score"                     : row[1],
+                "answer_key_assessment_uid" : row[2],
+                "is_final_score"            : bool(row[3]),
+                "total_number_of_questions" : row[4],
+                "saved_at"                  : row[5]
+            })
+        
+        return {
+            "status": "success",
+            "sheets": sheets
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to fetch sheets ready for Firebase upload. {e}. Source: {__name__}."
+        }
+
+
+def update_processed_rtdb_by_student_id(student_id: str, answer_key_assessment_uid: str, processed_rtdb: int) -> dict:
+    """
+        Update processed_rtdb status after Firebase upload
+        
+        Args:
+            student_id: Student's unique identifier
+            answer_key_assessment_uid: Assessment UID
+            processed_rtdb: New status (2 = uploaded to Firebase)
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE answer_sheets
+            SET processed_rtdb = ?
+            WHERE student_id = ? AND answer_key_assessment_uid = ?
+        ''', (processed_rtdb, student_id, answer_key_assessment_uid))
+
+        conn.commit()
+        conn.close()
+
+        return {"status": "success"}
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to update processed_rtdb. {e}. Source: {__name__}"
         }
