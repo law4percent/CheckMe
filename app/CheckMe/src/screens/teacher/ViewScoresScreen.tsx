@@ -9,6 +9,8 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -17,7 +19,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ViewScores'>;
 
-// NEW: Match Python structure exactly
+// Match Python structure exactly
 interface StudentScore {
   studentId: string; // From object key
   score: number; // Raw score (e.g., 17)
@@ -35,6 +37,13 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scores, setScores] = useState<StudentScore[]>([]);
+  
+  // Edit modal state
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<StudentScore | null>(null);
+  const [editScore, setEditScore] = useState('');
+  const [editPerfectScore, setEditPerfectScore] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!assessmentUid) {
@@ -89,20 +98,19 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
       }
 
       // Parse student scores from Firebase
-      // Structure: { [studentId]: { score, perfectScore, isPartialScore, assessmentUid, scannedAt } }
       const studentScores: StudentScore[] = [];
       
       Object.keys(data).forEach(key => {
         const studentData = data[key];
         
-        // Validate that this is a student score object (has required fields from Python)
+        // Validate that this is a student score object
         if (studentData && 
             typeof studentData.score === 'number' && 
             typeof studentData.perfectScore === 'number' &&
             typeof studentData.scannedAt === 'string') {
           
           studentScores.push({
-            studentId: key, // Use the key as studentId
+            studentId: key,
             score: studentData.score,
             perfectScore: studentData.perfectScore,
             isPartialScore: studentData.isPartialScore ?? false,
@@ -136,6 +144,103 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
     setRefreshing(false);
   };
 
+  // Open edit modal
+  const openEditModal = (studentScore: StudentScore) => {
+    setEditingStudent(studentScore);
+    setEditScore(studentScore.score.toString());
+    setEditPerfectScore(studentScore.perfectScore.toString());
+    setEditModalVisible(true);
+  };
+
+  // Close edit modal
+  const closeEditModal = () => {
+    setEditModalVisible(false);
+    setEditingStudent(null);
+    setEditScore('');
+    setEditPerfectScore('');
+  };
+
+  // Save edited score
+  const saveEditedScore = async () => {
+    if (!editingStudent || !user?.uid || !assessmentUid) {
+      return;
+    }
+
+    const newScore = parseInt(editScore);
+    const newPerfectScore = parseInt(editPerfectScore);
+
+    // Validation
+    if (isNaN(newScore) || isNaN(newPerfectScore)) {
+      Alert.alert('Invalid Input', 'Please enter valid numbers');
+      return;
+    }
+
+    if (newScore < 0 || newPerfectScore < 0) {
+      Alert.alert('Invalid Input', 'Scores cannot be negative');
+      return;
+    }
+
+    if (newScore > newPerfectScore) {
+      Alert.alert('Invalid Input', 'Score cannot be greater than perfect score');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      console.log('💾 [ViewScores] Saving edited score...');
+      console.log('  - Student:', editingStudent.studentId);
+      console.log('  - New score:', newScore);
+      console.log('  - New perfect score:', newPerfectScore);
+
+      const url = `https://checkme-68003-default-rtdb.asia-southeast1.firebasedatabase.app/assessmentScoresAndImages/${user.uid}/${assessmentUid}/${editingStudent.studentId}.json`;
+      
+      // Update only score and perfectScore, keep other fields
+      const updatedData = {
+        score: newScore,
+        perfectScore: newPerfectScore,
+        isPartialScore: true, // Mark as edited
+        assessmentUid: editingStudent.assessmentUid,
+        scannedAt: editingStudent.scannedAt
+      };
+
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update score');
+      }
+
+      console.log('✅ [ViewScores] Score updated successfully');
+      
+      // Update local state
+      setScores(prevScores => 
+        prevScores.map(s => 
+          s.studentId === editingStudent.studentId
+            ? { ...s, score: newScore, perfectScore: newPerfectScore, isPartialScore: true }
+            : s
+        ).sort((a, b) => {
+          const percentA = (a.score / a.perfectScore) * 100;
+          const percentB = (b.score / b.perfectScore) * 100;
+          return percentB - percentA;
+        })
+      );
+
+      closeEditModal();
+      Alert.alert('Success', 'Score updated successfully');
+
+    } catch (error: any) {
+      console.error('❌ [ViewScores] Error saving score:', error);
+      Alert.alert('Error', error.message || 'Failed to update score');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Calculate percentage from raw score
   const calculatePercentage = (score: number, perfectScore: number): number => {
     if (perfectScore === 0) return 0;
@@ -163,7 +268,6 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   // Parse scannedAt date (format: "MM/DD/YYYY HH:MM:SS")
   const formatDate = (scannedAt: string): string => {
     try {
-      // Python format: "01/06/2026 14:30:45"
       const [datePart, timePart] = scannedAt.split(' ');
       const [month, day, year] = datePart.split('/');
       const [hour, minute, second] = timePart.split(':');
@@ -179,7 +283,7 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
       
       return date.toLocaleString();
     } catch (e) {
-      return scannedAt; // Fallback to raw string
+      return scannedAt;
     }
   };
 
@@ -283,7 +387,9 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                         {studentScore.score}/{studentScore.perfectScore} correct
                       </Text>
                       {studentScore.isPartialScore && (
-                        <Text style={styles.partialScoreLabel}>⚠️ Partial Score (Editable)</Text>
+                        <View style={styles.partialScoreBadge}>
+                          <Text style={styles.partialScoreLabel}>✏️ Manually Edited</Text>
+                        </View>
                       )}
                       <Text style={styles.timestamp}>
                         {formatDate(studentScore.scannedAt)}
@@ -322,12 +428,98 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                       ]}
                     />
                   </View>
+
+                  {/* Edit Button - Always visible for all scores */}
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => openEditModal(studentScore)}
+                  >
+                    <Text style={styles.editButtonText}>✏️ Edit Score</Text>
+                  </TouchableOpacity>
                 </View>
               );
             })
           )}
         </View>
       </ScrollView>
+
+      {/* Edit Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={closeEditModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Score</Text>
+            
+            {editingStudent && (
+              <View style={styles.modalStudentInfo}>
+                <Text style={styles.modalStudentId}>Student: {editingStudent.studentId}</Text>
+                <Text style={styles.modalOriginalScore}>
+                  Original: {editingStudent.score}/{editingStudent.perfectScore}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Score</Text>
+              <TextInput
+                style={styles.input}
+                value={editScore}
+                onChangeText={setEditScore}
+                keyboardType="numeric"
+                placeholder="Enter score"
+                editable={!saving}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Perfect Score (Total Questions)</Text>
+              <TextInput
+                style={styles.input}
+                value={editPerfectScore}
+                onChangeText={setEditPerfectScore}
+                keyboardType="numeric"
+                placeholder="Enter perfect score"
+                editable={!saving}
+              />
+            </View>
+
+            {editScore && editPerfectScore && (
+              <View style={styles.previewContainer}>
+                <Text style={styles.previewLabel}>Preview:</Text>
+                <Text style={styles.previewText}>
+                  {calculatePercentage(parseInt(editScore) || 0, parseInt(editPerfectScore) || 1)}%
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={closeEditModal}
+                disabled={saving}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={saveEditedScore}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -481,11 +673,18 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginBottom: 2,
   },
+  partialScoreBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 2,
+  },
   partialScoreLabel: {
     fontSize: 11,
-    color: '#f59e0b',
+    color: '#d97706',
     fontWeight: '600',
-    marginBottom: 2,
   },
   timestamp: {
     fontSize: 11,
@@ -511,6 +710,122 @@ const styles = StyleSheet.create({
   progressBar: {
     height: '100%',
     borderRadius: 4,
+  },
+  editButton: {
+    marginTop: 12,
+    backgroundColor: '#6366f1',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  editButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalStudentInfo: {
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  modalStudentId: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  modalOriginalScore: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#1e293b',
+    backgroundColor: '#ffffff',
+  },
+  previewContainer: {
+    backgroundColor: '#f0fdf4',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534',
+    marginRight: 8,
+  },
+  previewText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#22c55e',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f1f5f9',
+  },
+  cancelButtonText: {
+    color: '#475569',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    backgroundColor: '#22c55e',
+  },
+  saveButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 
