@@ -1,21 +1,18 @@
 # lib/services/answer_key_model.py
-"""
-Database model for answer_keys table
-"""
-
 from typing import Optional, List, Dict
 from .models import get_connection
 
 
 def create_answer_key(
-    assessment_uid: str,
-    total_number_of_pages: int,
-    json_file_name: str,
-    json_full_path: str,
-    img_file_name: str,
-    img_full_path: str,
-    essay_existence: bool
-) -> dict:
+        assessment_uid: str,
+        total_number_of_pages: int,
+        json_file_name: str,
+        json_full_path: str,
+        img_file_name: str,
+        img_full_path: str,
+        essay_existence: bool,
+        total_number_of_questions: int
+    ) -> dict:
     """
         Creates a new answer key record in the database.
 
@@ -46,8 +43,9 @@ def create_answer_key(
                 json_full_path,
                 img_file_name,
                 img_full_path,
-                essay_existence
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                essay_existence,
+                total_number_of_questions
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             assessment_uid,
             total_number_of_pages,
@@ -55,7 +53,8 @@ def create_answer_key(
             json_full_path,
             img_file_name,
             img_full_path,
-            1 if essay_existence else 0
+            1 if essay_existence else 0,
+            total_number_of_questions
         ))
         
         conn.commit()
@@ -73,12 +72,12 @@ def create_answer_key(
         }
 
 
-def get_all_answer_keys() -> List[str]:
+def get_all_answer_keys() -> dict:
     """
-    Fetch all assessment UIDs from answer_keys table.
-    
-    Returns:
-        List of assessment UIDs
+        Fetch all assessment UIDs from answer_keys table.
+        
+        Returns:
+            List of assessment UIDs
     """
     try:
         conn    = get_connection()
@@ -88,13 +87,18 @@ def get_all_answer_keys() -> List[str]:
         rows = cursor.fetchall()
         conn.close()
         
-        return [row[0] for row in rows]
+        return {
+            "status"            : "success",
+            "all_answer_keys"   : [row[0] for row in rows]
+        }
     except Exception as e:
-        print(f"Error fetching answer keys: {e}")
-        return []
+        return {
+            "status"    : "error",
+            "message"   : f"{e}. Source: {__name__}"
+        }
 
 
-def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
+def get_answer_key_json_path_by_uid(assessment_uid: str) -> Optional[Dict]:
     """
         Fetch answer key record by assessment UID.
         
@@ -112,11 +116,7 @@ def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
             SELECT 
                 id,
                 assessment_uid,
-                number_of_pages,
-                json_path,
-                img_path,
-                has_essay,
-                saved_at
+                json_full_path
             FROM answer_keys
             WHERE assessment_uid = ?
         ''', (assessment_uid,))
@@ -130,11 +130,7 @@ def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
         return {
             "id"                : row[0],
             "assessment_uid"    : row[1],
-            "number_of_pages"   : row[2],
-            "json_path"         : row[3],
-            "img_path"          : row[4],
-            "has_essay"         : row[5],
-            "saved_at"          : row[6]
+            "json_full_path"    : row[2],
         }
     except Exception as e:
         print(f"Error fetching answer key by UID: {e}")
@@ -143,13 +139,13 @@ def get_answer_key_by_uid(assessment_uid: str) -> Optional[Dict]:
 
 def get_has_essay_by_assessment_uid(assessment_uid: str) -> bool:
     """
-    Check if an assessment has essay questions.
-    
-    Args:
-        assessment_uid: Assessment identifier
-    
-    Returns:
-        True if has essay, False otherwise
+        Check if an assessment has essay questions.
+        
+        Args:
+            assessment_uid: Assessment identifier
+        
+        Returns:
+            True if has essay, False otherwise
     """
     try:
         conn = get_connection()
@@ -168,6 +164,7 @@ def get_has_essay_by_assessment_uid(assessment_uid: str) -> bool:
             return False
         
         return bool(row[0])
+    
     except Exception as e:
         print(f"Error checking essay status: {e}")
         return False
@@ -175,13 +172,13 @@ def get_has_essay_by_assessment_uid(assessment_uid: str) -> bool:
 
 def get_answer_key_by_id(key_id: int) -> Optional[Dict]:
     """
-    Fetch answer key record by ID.
-    
-    Args:
-        key_id: Answer key ID
-    
-    Returns:
-        Answer key record or None
+        Fetch answer key record by ID.
+        
+        Args:
+            key_id: Answer key ID
+        
+        Returns:
+            Answer key record or None
     """
     try:
         conn = get_connection()
@@ -221,13 +218,13 @@ def get_answer_key_by_id(key_id: int) -> Optional[Dict]:
 
 
 def update_answer_key(
-    key_id: int,
-    assessment_uid: Optional[str] = None,
-    number_of_pages: Optional[int] = None,
-    json_path: Optional[str] = None,
-    img_path: Optional[str] = None,
-    has_essay: Optional[bool] = None
-) -> dict:
+        key_id: int,
+        assessment_uid: Optional[str] = None,
+        number_of_pages: Optional[int] = None,
+        json_path: Optional[str] = None,
+        img_path: Optional[str] = None,
+        has_essay: Optional[bool] = None
+    ) -> dict:
     """
     Update an answer key record.
     
@@ -291,13 +288,13 @@ def update_answer_key(
 
 def delete_answer_key(key_id: int) -> dict:
     """
-    Delete an answer key record.
-    
-    Args:
-        key_id: Answer key ID
-    
-    Returns:
-        Status dictionary
+        Delete an answer key record.
+        
+        Args:
+            key_id: Answer key ID
+        
+        Returns:
+            Status dictionary
     """
     try:
         conn = get_connection()
@@ -318,13 +315,13 @@ def delete_answer_key(key_id: int) -> dict:
 
 def delete_answer_key_by_uid(assessment_uid: str) -> dict:
     """
-    Delete an answer key by assessment UID.
-    
-    Args:
-        assessment_uid: Assessment identifier
-    
-    Returns:
-        Status dictionary
+        Delete an answer key by assessment UID.
+        
+        Args:
+            assessment_uid: Assessment identifier
+        
+        Returns:
+            Status dictionary
     """
     try:
         conn = get_connection()
@@ -345,10 +342,10 @@ def delete_answer_key_by_uid(assessment_uid: str) -> dict:
 
 def get_all_answer_keys_full() -> List[Dict]:
     """
-    Fetch all answer key records with full details.
-    
-    Returns:
-        List of answer key records
+        Fetch all answer key records with full details.
+        
+        Returns:
+            List of answer key records
     """
     try:
         conn = get_connection()

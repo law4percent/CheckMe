@@ -1,6 +1,6 @@
 1️⃣ Make the file executable:
 ```bash
-chmod +x install.sh
+chmod +x setup.sh
 chmod +x start.sh
 ```
 

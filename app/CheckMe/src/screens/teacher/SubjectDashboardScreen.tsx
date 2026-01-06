@@ -25,6 +25,7 @@ import {
   Enrollment
 } from '../../services/enrollmentService';
 import { getSubjectInviteCode } from '../../services/inviteCodeService';
+import { createAssessment, getAssessment, deleteAssessment, Assessment } from '../../services/assessmentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDashboard'>;
 
@@ -38,6 +39,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [currentAssessment, setCurrentAssessment] = useState<Assessment | null>(null);
 
   // Modal states
   const [createAssessmentModalVisible, setCreateAssessmentModalVisible] = useState(false);
@@ -49,44 +51,51 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   useEffect(() => {
     console.log('🔄 [SubjectDashboard] useEffect triggered');
-    console.log('  - subject:', subject);
-    console.log('  - subject.id:', subject.id);
-    console.log('  - user:', user);
-    console.log('  - user?.uid:', user?.uid);
-    
-    if (subject.id) {
+    if (subject.id && user?.uid) {
       loadEnrollments();
       loadInviteCode();
+      loadExistingAssessment();
     }
-  }, [subject.id]);
+  }, [subject.id, user?.uid]);
 
-  const loadEnrollments = async () => {
-    console.log('🔍 [SubjectDashboard] loadEnrollments called');
-    console.log('  - user?.uid:', user?.uid);
-    console.log('  - subject.id:', subject.id);
-    console.log('  - subject:', subject);
-    
+  const loadExistingAssessment = async () => {
     if (!user?.uid) {
-      console.warn('⚠️ [SubjectDashboard] No user UID, returning early');
+      console.log('⚠️ [SubjectDashboard] No user UID, skipping assessment load');
+      setCurrentAssessment(null);
       return;
     }
     
     try {
+      console.log('📋 [SubjectDashboard] Loading assessment...');
+      console.log('  - teacherId:', user.uid);
+      console.log('  - sectionId:', section.id);
+      console.log('  - subjectId:', subject.id);
+      
+      // FIXED: Pass teacherId, sectionId, and subjectId
+      const assessment = await getAssessment(user.uid, section.id, subject.id);
+      
+      if (assessment && assessment.assessmentUid) {
+        console.log('✅ [SubjectDashboard] Loaded assessment:', assessment.assessmentUid);
+        setCurrentAssessment(assessment);
+      } else {
+        console.log('📋 [SubjectDashboard] No assessment found');
+        setCurrentAssessment(null);
+      }
+    } catch (error: any) {
+      console.error('❌ [SubjectDashboard] Error loading assessment:', error);
+      setCurrentAssessment(null);
+    }
+  };
+
+  const loadEnrollments = async () => {
+    if (!user?.uid) return;
+    
+    try {
       setLoading(true);
-      console.log('📡 [SubjectDashboard] Calling getSubjectEnrollments with:', {
-        teacherId: user.uid,
-        subjectId: subject.id
-      });
-      
       const fetchedEnrollments = await getSubjectEnrollments(user.uid, subject.id);
-      
-      console.log('✅ [SubjectDashboard] Enrollments fetched successfully:', fetchedEnrollments.length);
       setEnrollments(fetchedEnrollments);
     } catch (error: any) {
       console.error('❌ [SubjectDashboard] Error loading enrollments:', error);
-      console.error('  - Error code:', error.code);
-      console.error('  - Error message:', error.message);
-      console.error('  - Full error:', error);
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);
@@ -106,11 +115,13 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadEnrollments();
-    await loadInviteCode();
+    await Promise.all([
+      loadEnrollments(),
+      loadInviteCode(),
+      loadExistingAssessment()
+    ]);
     setRefreshing(false);
   };
-
 
   const handleCreateAssessment = () => {
     setSelectedAssessmentType(null);
@@ -118,7 +129,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     setCreateAssessmentModalVisible(true);
   };
 
-  const handleConfirmCreateAssessment = () => {
+  const handleConfirmCreateAssessment = async () => {
     if (!selectedAssessmentType) {
       Alert.alert('Error', 'Please select assessment type');
       return;
@@ -129,8 +140,90 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       return;
     }
 
-    Alert.alert('Coming Soon', `${selectedAssessmentType === 'quiz' ? 'Quiz' : 'Exam'} "${assessmentName}" creation will be available soon!`);
-    setCreateAssessmentModalVisible(false);
+    if (!user?.uid) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      
+      const assessment = await createAssessment(
+        user.uid,
+        assessmentName.trim(),
+        selectedAssessmentType,
+        subject.id,
+        subject.subjectName,
+        section.id,
+        section.sectionName,
+        section.year
+      );
+
+      setCurrentAssessment(assessment);
+      setCreateAssessmentModalVisible(false);
+      
+      Alert.alert(
+        'Success! 🎉',
+        `Assessment "${assessmentName}" created successfully!\n\nAssessment UID: QWER1234\n\nThis UID will be used by the Raspberry Pi system to match answer sheets.`,
+        [{ text: 'OK' }]
+      );
+
+      // Reset form
+      setSelectedAssessmentType(null);
+      setAssessmentName('');
+
+    } catch (error: any) {
+      console.error('❌ [SubjectDashboard] Error creating assessment:', error);
+      Alert.alert('Error', error.message || 'Failed to create assessment');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteAssessment = () => {
+    Alert.alert(
+      'Delete Assessment',
+      'Are you sure you want to delete this assessment? This will remove all student scores.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user?.uid) return;
+            
+            try {
+              setActionLoading(true);
+              // FIXED: Pass teacherId, sectionId, and subjectId
+              await deleteAssessment(user.uid, section.id, subject.id);
+              setCurrentAssessment(null);
+              Alert.alert('Success', 'Assessment deleted successfully');
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+            } finally {
+              setActionLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleViewScores = () => {
+    if (!currentAssessment) {
+      Alert.alert('Error', 'No assessment found');
+      return;
+    }
+
+    if (!currentAssessment.assessmentUid) {
+      Alert.alert('Error', 'Assessment UID is missing');
+      return;
+    }
+
+    navigation.navigate('ViewScores', {
+      assessmentUid: currentAssessment.assessmentUid,
+      assessmentName: currentAssessment.assessmentName || 'Assessment'
+    });
   };
 
   const handleViewEnrolledStudents = () => {
@@ -156,16 +249,9 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             
             try {
               setActionLoading(true);
-              
-              // Remove the enrollment from database
               await removeEnrollment(user.uid, subject.id, studentId);
-              
-              // Update local state
               setEnrollments(enrollments.filter(e => e.studentId !== studentId));
-              
-              // Reload enrollments to get fresh data and update counts
               await loadEnrollments();
-              
               Alert.alert('Success', `${studentName} has been unenrolled successfully!`);
             } catch (error: any) {
               Alert.alert('Error', error.message);
@@ -189,33 +275,18 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleApproveEnrollment = async (enrollment: Enrollment) => {
-    console.log('✅ [SubjectDashboard] handleApproveEnrollment called');
-    console.log('  - enrollment:', enrollment);
-    console.log('  - user?.uid:', user?.uid);
-    
-    if (!user?.uid) {
-      console.warn('⚠️ [SubjectDashboard] No user UID, returning early');
-      return;
-    }
+    if (!user?.uid) return;
     
     try {
       setActionLoading(true);
-      console.log('📡 [SubjectDashboard] Calling approveEnrollment with:', {
-        teacherId: user.uid,
-        subjectId: subject.id,
-        studentId: enrollment.studentId
-      });
-      
       await approveEnrollment(user.uid, subject.id, enrollment.studentId);
       
-      // Update local state
       setEnrollments(enrollments.map(e =>
         e.studentId === enrollment.studentId
           ? { ...e, status: 'approved', approvedAt: Date.now() }
           : e
       ));
 
-      console.log('✅ [SubjectDashboard] Enrollment approved successfully');
       Alert.alert('Success', `${enrollment.studentName} has been approved!`);
     } catch (error: any) {
       console.error('❌ [SubjectDashboard] Error approving enrollment:', error);
@@ -226,14 +297,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleRejectEnrollment = async (enrollment: Enrollment) => {
-    console.log('❌ [SubjectDashboard] handleRejectEnrollment called');
-    console.log('  - enrollment:', enrollment);
-    console.log('  - user?.uid:', user?.uid);
-    
-    if (!user?.uid) {
-      console.warn('⚠️ [SubjectDashboard] No user UID, returning early');
-      return;
-    }
+    if (!user?.uid) return;
     
     Alert.alert(
       'Reject Enrollment',
@@ -246,22 +310,14 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           onPress: async () => {
             try {
               setActionLoading(true);
-              console.log('📡 [SubjectDashboard] Calling rejectEnrollment with:', {
-                teacherId: user.uid,
-                subjectId: subject.id,
-                studentId: enrollment.studentId
-              });
-              
               await rejectEnrollment(user.uid, subject.id, enrollment.studentId);
               
-              // Update local state
               setEnrollments(enrollments.map(e =>
                 e.studentId === enrollment.studentId
                   ? { ...e, status: 'rejected', rejectedAt: Date.now() }
                   : e
               ));
 
-              console.log('✅ [SubjectDashboard] Enrollment rejected successfully');
               Alert.alert('Success', 'Enrollment rejected');
             } catch (error: any) {
               console.error('❌ [SubjectDashboard] Error rejecting enrollment:', error);
@@ -321,28 +377,23 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           <TouchableOpacity
             style={styles.actionButton}
             onPress={handleCreateAssessment}
-            disabled={actionLoading}
+            disabled={actionLoading || currentAssessment !== null}
           >
-            {/* /**
-            * If this button is pressed the modal will appear to ask user for:
-            *  Select assessment type: Quiz or Exam
-            *  Name of the assessment
-            */ }
             <LinearGradient
-              colors={['#6366f1', '#8b5cf6']}
+              colors={currentAssessment ? ['#94a3b8', '#cbd5e1'] : ['#6366f1', '#8b5cf6']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.gradientButton}
             >
-              <Text style={styles.actionButtonText}>📝 Create Assessment</Text>
+              <Text style={styles.actionButtonText}>
+                {currentAssessment ? '✓ Assessment Created' : '📝 Create Assessment'}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
-
         </View>
 
         {/* Assessments Section */}
         <View style={styles.section}>
-          {/* Header with Assessments, Pending Enrollments, and Enrolled Students */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Assessments</Text>
             <View style={styles.headerButtonsContainer}>
@@ -361,11 +412,64 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           </View>
           
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateIcon}>📝</Text>
-            <Text style={styles.emptyStateText}>No assessments yet</Text>
-            <Text style={styles.emptyStateSubtext}>Create your first assessment to get started</Text>
-          </View>
+          {currentAssessment ? (
+            <View style={styles.assessmentCard}>
+              <View style={styles.assessmentHeader}>
+                <Text style={styles.assessmentIcon}>
+                  {currentAssessment.assessmentType === 'quiz' ? '📝' : '📄'}
+                </Text>
+                <View style={styles.assessmentInfo}>
+                  <Text style={styles.assessmentName}>
+                    {currentAssessment.assessmentName}
+                  </Text>
+                  <Text style={styles.assessmentType}>
+                    {currentAssessment.assessmentType.charAt(0).toUpperCase() + 
+                    currentAssessment.assessmentType.slice(1)}
+                  </Text>
+                  <Text style={styles.assessmentUid}>
+                    UID: {currentAssessment.assessmentUid}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.assessmentMeta}>
+                <Text style={styles.assessmentDate}>
+                  Created: {new Date(currentAssessment.createdAt).toLocaleDateString()}
+                </Text>
+                <View style={styles.assessmentStatus}>
+                  <View style={[styles.statusDot, { backgroundColor: '#22c55e' }]} />
+                  <Text style={styles.statusText}>Active</Text>
+                </View>
+              </View>
+
+              <View style={styles.assessmentActions}>
+                <TouchableOpacity
+                  style={styles.viewScoresButton}
+                  onPress={handleViewScores}
+                >
+                  <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.deleteAssessmentButton}
+                  onPress={handleDeleteAssessment}
+                >
+                  <Text style={styles.deleteAssessmentButtonText}>🗑️ Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateIcon}>📝</Text>
+              <Text style={styles.emptyStateText}>No assessments yet</Text>
+              <Text style={styles.emptyStateSubtext}>
+                Create your first assessment to get started
+              </Text>
+              <Text style={styles.emptyStateNote}>
+                Note: Only one test assessment (UID: QWER1234) can be created
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -591,7 +695,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 };
@@ -749,17 +852,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#dc2626'
   },
-  studentCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2
-  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -777,7 +869,15 @@ const styles = StyleSheet.create({
   },
   emptyStateSubtext: {
     fontSize: 14,
-    color: '#94a3b8'
+    color: '#94a3b8',
+    textAlign: 'center'
+  },
+  emptyStateNote: {
+    fontSize: 12,
+    color: '#f59e0b',
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic'
   },
   modalOverlay: {
     flex: 1,
@@ -791,6 +891,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: '100%',
     maxWidth: 500,
+    maxHeight: '80%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -956,141 +1057,103 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff'
   },
-  inviteMethodButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    marginBottom: 12,
-    backgroundColor: '#ffffff'
-  },
-  inviteMethodButtonSelected: {
-    borderColor: '#22c55e',
-    backgroundColor: '#f0fdf4'
-  },
-  inviteMethodIcon: {
-    fontSize: 32,
-    marginRight: 16
-  },
-  inviteMethodTextContainer: {
-    flex: 1
-  },
-  inviteMethodTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 4
-  },
-  inviteMethodTitleSelected: {
-    color: '#16a34a'
-  },
-  inviteMethodDescription: {
-    fontSize: 13,
-    color: '#94a3b8'
-  },
-  inviteMethodContent: {
-    marginTop: 20,
-    padding: 16,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0'
-  },
-  inviteMethodContentText: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 16,
-    lineHeight: 20
-  },
-  generateCodeButton: {
-    borderRadius: 10,
-    overflow: 'hidden'
-  },
-  generateCodeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff'
-  },
-  searchInput: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#1e293b',
-    marginBottom: 12
-  },
-  searchButton: {
-    borderRadius: 10,
-    overflow: 'hidden'
-  },
-  searchButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff'
-  },
-  closeModalButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center'
-  },
-  closeModalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569'
-  },
-  searchResultCard: {
+  assessmentCard: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
     padding: 16,
-    marginTop: 16,
     marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#22c55e'
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366f1'
   },
-  searchResultHeader: {
+  assessmentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12
   },
-  searchResultIcon: {
+  assessmentIcon: {
     fontSize: 40,
     marginRight: 12
   },
-  searchResultInfo: {
+  assessmentInfo: {
     flex: 1
   },
-  searchResultName: {
+  assessmentName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#1e293b',
     marginBottom: 4
   },
-  searchResultEmail: {
+  assessmentType: {
     fontSize: 14,
-    color: '#64748b',
+    color: '#6366f1',
+    fontWeight: '600',
     marginBottom: 2
   },
-  searchResultId: {
+  assessmentUid: {
     fontSize: 12,
-    color: '#94a3b8'
+    color: '#94a3b8',
+    fontFamily: 'monospace'
   },
-  inviteButton: {
-    backgroundColor: '#dcfce7',
+  assessmentMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    marginBottom: 12
+  },
+  assessmentDate: {
+    fontSize: 12,
+    color: '#64748b'
+  },
+  assessmentStatus: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#22c55e',
+    fontWeight: '600'
+  },
+  assessmentActions: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  viewScoresButton: {
+    flex: 1,
+    backgroundColor: '#dbeafe',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center'
   },
-  inviteButtonText: {
+  viewScoresButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#16a34a'
+    color: '#2563eb'
+  },
+  deleteAssessmentButton: {
+    backgroundColor: '#fee2e2',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  deleteAssessmentButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#dc2626'
   }
 });
 

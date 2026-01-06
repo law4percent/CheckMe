@@ -1,4 +1,6 @@
-# lib/logger_config.py
+"""
+Path: lib/logger_config.py
+"""
 import logging
 import sys
 import os

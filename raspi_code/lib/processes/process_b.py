@@ -2,312 +2,398 @@
 """
 Process B: Background OCR Processing Pipeline
 Monitors answer_sheets table for unprocessed records and performs OCR + grading
+
+Relative Files:
+- lib/model/answer_sheet_model.py : Database interactions for answer_sheets table
+- lib/services/gemini.py          : Gemini OCR engine integration
+- lib/services/firebase_rtdb.py   : Firebase RTDB upload service
+- lib/services/utils.py           : Utility functions for file/path checks
+- lib/logger_config.py            : Logger setup and configuration
 """
 
 import time
 import json
 import os
-import logging
 from datetime import datetime
-from lib.services import answer_key_model, answer_sheet_model
+
+from lib.services import utils
 from lib.services.gemini import GeminiOCREngine
 from lib.services.firebase_rtdb import get_firebase_service
+from lib import logger_config
+import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from lib.model import answer_sheet_model, answer_key_model
 
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-CONFIG = {
-    "POLL_INTERVAL": 5,  # Check database every 5 seconds
-    "RETRY_DELAY": 10,   # Wait 10s before retrying failed records
-    "MAX_RETRIES": 3,    # Max retry attempts per record
-    "BATCH_SIZE": 5      # Process up to 5 records per cycle
-}
+logger = logger_config.setup_logger(name=__name__, level=logging.DEBUG)
 
 
-# ============================================================
-# HELPER FUNCTIONS
-# ============================================================
-
-def _load_answer_key_from_json(json_path: str) -> dict:
-    """Load answer key from JSON file."""
-    try:
-        if not os.path.exists(json_path):
-            return {
-                "status": "error",
-                "message": f"Answer key JSON not found: {json_path}"
-            }
-        
-        with open(json_path, 'r') as f:
-            data = json.load(f)
-        
-        return {
-            "status": "success",
-            "data": data
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to load answer key JSON: {str(e)}"
-        }
-
-
-def _save_graded_result_to_json(json_path: str, graded_data: dict) -> dict:
-    """Save graded results to JSON file."""
-    try:
-        os.makedirs(os.path.dirname(json_path), exist_ok=True)
-        
-        with open(json_path, 'w') as f:
-            json.dump(graded_data, indent=2, fp=f)
-        
-        return {"status": "success"}
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to save graded JSON: {str(e)}"
-        }
-
-
-def _process_single_answer_sheet(
-        ocr_engine: GeminiOCREngine,
-        sheet_record: dict,
-        answer_key_data: dict,
-        teacher_uid: str,
-        firebase_enabled: bool = True
-    ) -> dict:
-    """
-        Process a single answer sheet through OCR and grading.
-        
-        Args:
-            ocr_engine: Initialized GeminiOCREngine
-            sheet_record: Answer sheet record from database
-            answer_key_data: Answer key data (already loaded)
-            teacher_uid: Teacher's Firebase UID
-            firebase_enabled: Whether to sync to Firebase
-        
-        Returns:
-            Result dictionary with status and grading info
-    """
-    try:
-        sheet_id = sheet_record["id"]
-        img_path = sheet_record["img_path"]
-        json_path = sheet_record["json_path"]
-        assessment_uid = sheet_record["assessment_uid"]
-        
-        logger.info(f"Processing answer sheet ID={sheet_id}, UID={assessment_uid}")
-        
-        # Step 1: Check if image exists
-        if not os.path.exists(img_path):
-            return {
-                "status": "error",
-                "message": f"Image file not found: {img_path}"
-            }
-        
-        # Step 2: Extract student answers via OCR
-        logger.info(f"Extracting student answers from {img_path}")
-        student_answers = ocr_engine.extract_answer_sheet(img_path)
-        
-        if "error" in student_answers:
-            return {
-                "status": "error",
-                "message": f"OCR extraction failed: {student_answers.get('error')}"
-            }
-        
-        # Step 3: Grade the student sheet
-        logger.info(f"Grading student {student_answers.get('student_id', 'UNKNOWN')}")
-        has_essay = answer_key_data.get("has_essay", False)
-        
-        graded_result = ocr_engine.grade_student_sheet(
-            student_answers=student_answers,
-            answer_key=answer_key_data,
-            treat_essay_as_partial=has_essay
-        )
-        
-        # Step 4: Save graded result to JSON
-        save_result = _save_graded_result_to_json(json_path, graded_result)
-        if save_result["status"] == "error":
-            return save_result
-        
-        # Step 5: Extract results
-        student_id = graded_result.get("student_id", "UNKNOWN")
-        score = graded_result["summary"]["correct"]
-        is_final_score = not graded_result.get("has_essay", False)
-        
-        # Step 6: Upload to Firebase (if enabled)
-        firebase_status = {"status": "skipped"}
-        if firebase_enabled and teacher_uid:
-            try:
-                firebase_service = get_firebase_service()
-                firebase_status = firebase_service.upload_graded_result(
-                    teacher_uid     = teacher_uid,
-                    assessment_uid  = assessment_uid,
-                    student_id      = str(student_id),
-                    score           = score,
-                    is_final_score  = is_final_score,
-                    graded_at       = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
-                )
-                
-                if firebase_status["status"] == "success":
-                    logger.info(f"✅ Synced to Firebase: {student_id}")
-                else:
-                    logger.warning(f"⚠️ Firebase sync failed: {firebase_status.get('message')}")
-                    
-            except Exception as e:
-                logger.error(f"Firebase upload error: {e}")
-                firebase_status = {"status": "error", "message": str(e)}
-        
-        return {
-            "status": "success",
-            "student_id": student_id,
-            "score": score,
-            "is_final_score": is_final_score,
-            "graded_result": graded_result,
-            "firebase_status": firebase_status
-        }
-        
-    except Exception as e:
-        logger.error(f"Unexpected error processing sheet ID={sheet_record.get('id')}: {e}")
-        return {
-            "status": "error",
-            "message": f"Unexpected error: {str(e)}"
-        }
-
-
-def _fetch_unprocessed_sheets(batch_size: int = 5) -> list:
-    """
-        Fetch answer sheets that need processing.
-        
-        Criteria:
-        - student_id IS NULL (not yet processed)
-        - is_image_uploaded = 0 (image ready but not OCR'd)
-        
-        Returns:
-            List of answer sheet records
-    """
-    try:
-        sheets = answer_sheet_model.get_unprocessed_sheets(limit=batch_size)
-        return sheets
-    except Exception as e:
-        logger.error(f"Failed to fetch unprocessed sheets: {e}")
-        return []
-
-
-def _update_sheet_with_results(sheet_id: int, result: dict) -> dict:
-    """Update answer sheet record with OCR results."""
-    try:
-        answer_sheet_model.update_answer_sheet_after_ocr(
-            sheet_id=sheet_id,
-            student_id=result["student_id"],
-            score=result["score"],
-            is_final_score=result["is_final_score"]
-        )
-        
-        return {"status": "success"}
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to update database: {str(e)}"
-        }
-
-
-def _process_batch(ocr_engine: GeminiOCREngine, teacher_uid: str, firebase_enabled: bool) -> dict:
-    """
-        Process one batch of unprocessed answer sheets.
-        
-        Returns:
-            Summary of batch processing
-    """
-    # Step 1: Fetch unprocessed sheets
-    sheets = _fetch_unprocessed_sheets(batch_size=CONFIG["BATCH_SIZE"])
-    exit()
-    
-    if not sheets:
-        return {
-            "status"    : "idle",
-            "processed" : 0,
-            "message"   : "No sheets to process"
-        }
-    
-    logger.info(f"Found {len(sheets)} unprocessed sheet(s)")
-    
-    processed_count = 0
-    failed_count    = 0
-    
-    # Step 2: Group sheets by assessment_uid to load answer keys efficiently
+def _group_sheets_by_assessment_uid(sheets: list[dict]) -> dict:
     sheets_by_uid = {}
     for sheet in sheets:
-        uid = sheet["assessment_uid"]
+        uid = sheet["answer_key_assessment_uid"]
         if uid not in sheets_by_uid:
             sheets_by_uid[uid] = []
         sheets_by_uid[uid].append(sheet)
+    return sheets_by_uid
+
+
+def _save_in_json_file(json_data: dict, target_path: str) -> dict:
+    """
+        Save extracted answer key as JSON file.
+        Uses student_id from the extracted data.
+        
+        Args:
+            json_data: Extracted answer key dictionary (contains student_id)
+            target_path: Directory path to save JSON file
+        
+        Returns:
+            Path to saved JSON file, and status dictionary
+    """
+    # Step 1: Check the path existence
+    path_status = utils.path_existence_checkpoint(target_path, __name__)
+    if path_status["status"] == "error":
+        return path_status
     
-    # Step 3: Process each group
-    for assessment_uid, sheet_group in sheets_by_uid.items():
-        logger.info(f"Processing {len(sheet_group)} sheet(s) for UID={assessment_uid}")
+    # Step 2: Save into JSON file
+    student_id = str(json_data["student_id"]).strip()
+    json_file_name = f"{student_id}.json"
+    try:
+        full_path = os.path.join(target_path, json_file_name)
+        with open(full_path, 'w') as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
+
+        json_file_validation_result = utils.file_existence_checkpoint(full_path, __name__)
+        if json_file_validation_result["status"] == "error":
+            return json_file_validation_result
         
-        # Load answer key once per group
-        answer_key_record = answer_key_model.get_answer_key_by_uid(assessment_uid)
+        return {
+            "status"        : "success",
+            "full_path"     : full_path,
+            "file_name"     : json_file_name,
+            "student_id"    : student_id
+        }
+    except Exception as e:
+        return {
+            "status"    : "error", 
+            "message"   : f"{e}. Source: {__name__}."
+        }
+
+
+def _get_JSON_of_answer_sheet(sheets: list, MAX_RETRY: int) -> dict:
+    """
+        Send image to Gemini API for OCR extraction of answer sheet.
+        Gemini reads the student ID and answers directly from the paper.
         
-        if not answer_key_record:
-            logger.error(f"No answer key found for UID={assessment_uid}")
-            failed_count += len(sheet_group)
-            continue
+        Args:
+            sheets: List of answer sheet records from database
+            MAX_RETRY: Maximum retry attempts for Gemini API
         
-        # Load answer key JSON
-        answer_key_json = _load_answer_key_from_json(answer_key_record["json_path"])
-        if answer_key_json["status"] == "error":
-            logger.error(f"Failed to load answer key JSON: {answer_key_json['message']}")
-            failed_count += len(sheet_group)
-            continue
+        Returns:
+            Dictionary containing success and error lists
+    """
+    collect_error = []
+    collect_success = []
+    
+    for sheet in sheets:
+        time.sleep(5)
+        json_data = {}
+        # 1. Get data
+        total_number_of_questions   = int(sheet["total_number_of_questions"])
+        answer_sheet_img_full_path  = str(sheet["img_full_path"])
         
-        answer_key_data = answer_key_json["data"]
-        answer_key_data["has_essay"] = bool(answer_key_record["has_essay"])
-        
-        # Process each sheet in this group
-        for sheet in sheet_group:
-            sheet_id = sheet["id"]
-            
-            # Process the sheet
-            result = _process_single_answer_sheet(
-                ocr_engine          = ocr_engine,
-                sheet_record        = sheet,
-                answer_key_data     = answer_key_data,
-                teacher_uid         = teacher_uid,
-                firebase_enabled    = firebase_enabled
+
+        # 2. Verify the image file existence
+        file_result = utils.file_existence_checkpoint(answer_sheet_img_full_path, __name__)
+        if file_result["status"] == "error":
+            collect_error.append(
+                {
+                    "img_file"  : answer_sheet_img_full_path,
+                    "message"   : file_result["message"],
+                }
             )
+            continue
+
+        try:
+            # 3. Feed the image to OCR gemini
+            gemini_engine = GeminiOCREngine()
+            extraction_result = gemini_engine.extract_answer_sheet(
+                answer_sheet_img_full_path, 
+                total_number_of_questions, 
+                MAX_RETRY
+            )
+
+            # 4. Verify the result
+            if extraction_result["status"] == "error":
+                collect_error.append(
+                    {
+                        "img_file"  : answer_sheet_img_full_path,
+                        "message"   : extraction_result["message"],
+                    }
+                )
+                continue
+            json_data = extraction_result["result"]
+
+        except Exception as e:
+            collect_error.append(
+                {
+                    "img_file"  : answer_sheet_img_full_path,
+                    "message"   : f"Failed to extract with Gemini OCR. {e}. Source: {__name__}",
+                }
+            )
+            continue
             
-            if result["status"] == "success":
-                # Update database
-                update_result = _update_sheet_with_results(sheet_id, result)
-                
-                if update_result["status"] == "success":
-                    logger.info(f"✅ Sheet ID={sheet_id} processed successfully")
-                    processed_count += 1
-                else:
-                    logger.error(f"Failed to update sheet ID={sheet_id}: {update_result['message']}")
-                    failed_count += 1
-            else:
-                logger.error(f"Failed to process sheet ID={sheet_id}: {result['message']}")
-                failed_count += 1
-            
-            # Small delay to avoid rate limiting
-            time.sleep(1)
-    
+        # 5. Save as json file
+        save_result         = {}
+        json_target_path    = str(sheet["json_target_path"])
+        save_result         = _save_in_json_file(json_data=json_data, target_path=json_target_path)
+        if save_result["status"] == "error":
+            collect_error.append(
+                {
+                    "img_file"  : answer_sheet_img_full_path,
+                    "message"   : save_result["message"],
+                }
+            )
+            continue
+        
+        # 6. Collect success student_id to update DB later
+        collect_success.append(
+            {
+                "json_file_name"            : save_result["file_name"],
+                "json_full_path"            : save_result["full_path"],
+                "student_id"                : save_result["student_id"],
+                "img_full_path"             : answer_sheet_img_full_path,
+                "answer_key_assessment_uid" : str(sheet["answer_key_assessment_uid"]),
+                "processed_score"           : 1,
+                "processed_image_uploaded"  : 1
+            }
+        )
+        
     return {
-        "status": "success",
-        "processed": processed_count,
-        "failed": failed_count,
-        "total": len(sheets)
+        "error"     : collect_error,
+        "success"   : collect_success
     }
 
+
+def _checking_assessments_by_batch(total_number_of_questions: int, answer_key: dict, as_answer: dict) -> dict:
+    """
+        Check student answers against answer key
+        
+        Args:
+            total_number_of_questions: Total number of questions
+            answer_key: Dictionary of correct answers
+            as_answer: Dictionary of student answers
+        
+        Returns:
+            Dictionary with status and score
+    """
+    if total_number_of_questions != len(as_answer):
+        return {
+            "status"    : "error",
+            "message"   : f"Failed to score. Not the same number of answers or questions. Expected {total_number_of_questions}, got {len(as_answer)}."
+        }
+
+    count_check = 0
+    for n in range(1, total_number_of_questions + 1):
+        student_ans = as_answer.get(f"Q{n}", "").strip()
+        correct_ans = answer_key.get(f"Q{n}", "").strip()
+        
+        if student_ans == correct_ans:
+            count_check += 1
+
+    return {
+        "status"    : "success",
+        "score"     : count_check
+    }
+
+
+def _read_json(json_file_path: str) -> dict:
+    """
+    Read a JSON file and convert it to a Python dictionary.
+
+    Args:
+        json_file_path (str): Full path to the JSON file
+
+    Returns:
+        dict: Parsed JSON content as a Python dictionary
+    """
+    with open(json_file_path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    return data
+
+
+def _scoring_by_batch(sheets: list) -> dict:
+    """
+    Score multiple answer sheets in batch
+    
+    Arguments:
+        sheets:
+            - "student_id"
+            - "score"
+            - "answer_key_assessment_uid"
+            - "as_json_full_path"
+            - "total_number_of_questions"
+            - "ak_json_full_path"
+    
+    Returns:
+        Dictionary with success and error lists
+    """
+    # Step 1: Get the JSON file and extract to dict
+    organized_sheets    = _group_sheets_by_assessment_uid(sheets)
+    answer_keys_in_dict = {}
+
+    for key in organized_sheets.keys():
+        org_sheet               = organized_sheets[key]
+        first_index             = org_sheet[0]
+        answer_key_json_path    = str(first_index["ak_json_full_path"])
+        answer_keys_in_dict[key]= _read_json(answer_key_json_path)
+
+    collect_success = []
+    collect_error   = []
+    
+    # Step 2: Start checking each sheet
+    for sheet in sheets:
+        student_id                  = str(sheet["student_id"])
+        total_number_of_questions   = int(sheet["total_number_of_questions"])
+        answer_key_assessment_uid   = str(sheet["answer_key_assessment_uid"])
+        answer_sheet_json_path      = str(sheet["as_json_full_path"])
+        
+        try:
+            as_answer = _read_json(answer_sheet_json_path)
+        except Exception as e:
+            collect_error.append({
+                "student_id": student_id,
+                "message"   : f"Failed to read answer sheet JSON. {e}. Source: {__name__}",
+            })
+            continue
+
+        # Step 3: Check assessments
+        score_result = _checking_assessments_by_batch(
+            total_number_of_questions   = total_number_of_questions, 
+            answer_key                  = answer_keys_in_dict[answer_key_assessment_uid]["answers"],
+            as_answer                   = as_answer["answers"]
+        )
+        
+        if score_result["status"] == "error":
+            collect_error.append({
+                "student_id": student_id,
+                "message"   : f"{score_result['message']} Please check the {student_id}.json at {answer_sheet_json_path}. Source: {__name__}",
+            })
+            continue
+            
+        collect_success.append({
+            "score"             : score_result["score"],
+            "student_id"        : student_id,
+            "processed_score"   : 2,
+            "processed_rtdb"    : 1  # Set to 1 as ready to send to RTDB
+        })
+
+    return {
+        "success"   : collect_success,
+        "error"     : collect_error
+    }
+
+
+def _update_firebase_rtdb(batch_size: int, teacher_uid: str) -> dict:
+    """
+    Upload scored answer sheets to Firebase RTDB
+    
+    Args:
+        batch_size: Number of records to process
+        teacher_uid: Teacher's unique identifier
+    
+    Returns:
+        Dictionary with status and results
+    """
+    # Step 1: Fetch sheets that are ready to upload (processed_rtdb = 1)
+    sheets_result = answer_sheet_model.get_fields_by_processed_rtdb_is_1(batch_size)
+    
+    if sheets_result["status"] == "error":
+        return sheets_result
+    
+    sheets = sheets_result["sheets"]
+    
+    if not sheets:
+        return {
+            "status": "success",
+            "message": "No sheets ready to upload to Firebase"
+        }
+    
+    # Step 2: Group sheets by assessment_uid
+    grouped_by_assessment = _group_sheets_by_assessment_uid(sheets)
+    
+    # Step 3: Get Firebase service
+    firebase_service = get_firebase_service()
+    
+    all_uploaded = []
+    all_failed = []
+    
+    # Step 4: Upload each assessment group
+    for assessment_uid, assessment_sheets in grouped_by_assessment.items():
+        # Prepare student records for upload
+        student_records = []
+        
+        for sheet in assessment_sheets:
+            student_records.append({
+                "student_id": sheet["student_id"],
+                "score": sheet["score"],
+                "perfect_score": sheet["total_number_of_questions"],
+                "is_partial_score": not sheet["is_final_score"],
+                "scanned_at": sheet.get("saved_at", datetime.now().strftime("%m/%d/%Y %H:%M:%S"))
+            })
+        
+        # Upload to Firebase
+        upload_result = firebase_service.upload_student_scores(
+            teacher_uid=teacher_uid,
+            assessment_uid=assessment_uid,
+            student_records=student_records
+        )
+        
+        if upload_result["status"] == "success":
+            # Update DB to mark as uploaded (processed_rtdb = 2)
+            for sheet in assessment_sheets:
+                update_result = answer_sheet_model.update_processed_rtdb_by_student_id(
+                    student_id=sheet["student_id"],
+                    answer_key_assessment_uid=sheet["answer_key_assessment_uid"],
+                    processed_rtdb=2
+                )
+                
+                if update_result["status"] == "success":
+                    all_uploaded.append(sheet["student_id"])
+                else:
+                    all_failed.append(sheet["student_id"])
+        
+        elif upload_result["status"] == "partial":
+            # Some uploaded, some failed - update only successful ones
+            uploaded_ids = [r["student_id"] for r in student_records[:upload_result["uploaded_count"]]]
+            
+            for student_id in uploaded_ids:
+                update_result = answer_sheet_model.update_processed_rtdb_by_student_id(
+                    student_id=student_id,
+                    answer_key_assessment_uid=assessment_uid,
+                    processed_rtdb=2
+                )
+                
+                if update_result["status"] == "success":
+                    all_uploaded.append(student_id)
+                else:
+                    all_failed.append(student_id)
+            
+            all_failed.extend([r["student_id"] for r in student_records[upload_result["uploaded_count"]:]])
+        
+        else:
+            # All failed
+            all_failed.extend([sheet["student_id"] for sheet in assessment_sheets])
+    
+    return {
+        "status": "success" if len(all_failed) == 0 else "partial",
+        "uploaded_count": len(all_uploaded),
+        "failed_count": len(all_failed),
+        "uploaded_ids": all_uploaded,
+        "failed_ids": all_failed
+    }
+
+    
 
 # ============================================================
 # MAIN PROCESS B FUNCTION
@@ -317,123 +403,108 @@ def process_b(**kwargs):
     """
         Main Process B function - Background OCR processing.
         
-        Continuously monitors answer_sheets table and processes unprocessed records.
+        Continuously monitors answer_sheets table and processes unprocessed records with Gemini OCR.
+        
+        Args:
+            **kwargs: Must contain 'process_B_args' dict
     """
-    process_B_args  = kwargs.get("process_B_args", {})
-    task_name       = process_B_args.get("task_name")
-    poll_interval   = process_B_args.get("poll_interval", 5)
-    status_checker  = process_B_args.get("status_checker")
-    
-    # Override config with args from main.py
-    CONFIG["POLL_INTERVAL"] = poll_interval
-    
-    logger.info(f"{task_name} is now Running ✅")
-    
-    # Initialize OCR engine
-    try:
-        ocr_engine = GeminiOCREngine()
-        logger.info("Gemini OCR Engine initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize OCR engine: {e}")
-        print(f"{task_name} - Error: OCR engine initialization failed {e}")
-        status_checker.clear() # This will stop all the processes a and c
-        exit()
-    
-    # Main processing loop
-    cycle_count = 0
+    process_B_args  = kwargs["process_B_args"]
+    TASK_NAME       = process_B_args["TASK_NAME"]
+    BATCH_SIZE      = process_B_args["BATCH_SIZE"]
+    TEACHER_UID     = process_B_args["TEACHER_UID"]
+    status_checker  = process_B_args["status_checker"]
+    PRODUCTION_MODE = process_B_args["PRODUCTION_MODE"]
+    SAVE_LOGS       = process_B_args["SAVE_LOGS"]
+    MAX_RETRY       = process_B_args["MAX_RETRY"]
+
+    if SAVE_LOGS:
+        logger.info(f"{TASK_NAME} is now Running ✅")
     
     while True:
         try:
-            cycle_count += 1
-            logger.info(f"=== Processing Cycle {cycle_count} ===")
+            time.sleep(5)
+            # Check if other processes signaled to stop
+            if not status_checker.is_set():
+                if SAVE_LOGS:
+                    logger.warning(f"{TASK_NAME} - Status checker indicates error in another process")
+                    logger.info(f"{TASK_NAME} has stopped")
+                break
             
-            # Process one batch
-            batch_result = _process_batch(ocr_engine)
+            # ========== PROCESS EXTRACTION WITH GEMINI OCR AND SAVE TO JSON FILE ==========
+            # Step 1: Fetch data from db
+            sheets_result = answer_sheet_model.get_fields_by_empty_student_id(limit=BATCH_SIZE)
+            if sheets_result["status"] == "error":
+                if SAVE_LOGS:
+                    logger.error(f"{TASK_NAME} - {sheets_result['message']}")
+            else:
+                # Step 2: OCR Extraction with Gemini
+                extraction_results = _get_JSON_of_answer_sheet(sheets_result["sheets"], MAX_RETRY)
+                
+                # Step 3: Update database
+                success_sheets = extraction_results["success"]
+                for success_sheet in success_sheets:
+                    update_db_result = answer_sheet_model.update_answer_key_json_path_by_image_path(
+                        img_full_path               = success_sheet["img_full_path"],
+                        json_file_name              = success_sheet["json_file_name"],
+                        json_full_path              = success_sheet["json_full_path"],
+                        student_id                  = success_sheet["student_id"],
+                        answer_key_assessment_uid   = success_sheet["answer_key_assessment_uid"],
+                        processed_score             = success_sheet["processed_score"],
+                        processed_image_uploaded    = success_sheet["processed_image_uploaded"]
+                    )
+                    if update_db_result["status"] == "error" and SAVE_LOGS:
+                        logger.error(f"{TASK_NAME} - {update_db_result['message']}")
+                
+                # Step 4: Save error in logs
+                if SAVE_LOGS:
+                    error_sheets = extraction_results["error"]
+                    if len(error_sheets) > 0:
+                        logger.error(f"{TASK_NAME} - Processing {len(error_sheets)} failed sheets from batch of {BATCH_SIZE}")
+                        for error_sheet in error_sheets:
+                            logger.error(f"{TASK_NAME} - {error_sheet['message']}")
             
-            if batch_result["status"] == "idle":
-                # logger.info("No sheets to process. Waiting...")
-                print(f"{task_name} - No sheets to process. Waiting...")
-            elif batch_result["status"] == "success":
-                # logger.info(
-                #     f"Batch complete: {batch_result['processed']} processed, "
-                #     f"{batch_result['failed']} failed out of {batch_result['total']}"
-                # )
-                print(
-                    f"Batch complete: {batch_result['processed']} processed, "
-                    f"{batch_result['failed']} failed out of {batch_result['total']}"
-                )
             
-            # Wait before next cycle
-            time.sleep(CONFIG["POLL_INTERVAL"])
+            # ========== PROCESS SCORING ==========
+            # Step 1: Fetch data from db
+            sheets_result = answer_sheet_model.get_fields_by_processed_score_is_1(BATCH_SIZE)
+            if sheets_result["status"] == "error":
+                if SAVE_LOGS:
+                    logger.error(f"{TASK_NAME} - {sheets_result['message']}")
+            else:
+                # Step 2: Score it!
+                scoring_result = _scoring_by_batch(sheets_result["sheets"])
+
+                # Step 3: Update database
+                success_sheets = scoring_result["success"]
+                for success_sheet in success_sheets:
+                    update_db_result = answer_sheet_model.update_answer_key_scores_by_student_id(
+                        score           = success_sheet["score"],
+                        student_id      = success_sheet["student_id"],
+                        processed_score = success_sheet["processed_score"],
+                        processed_rtdb  = success_sheet["processed_rtdb"]
+                    )
+                    if update_db_result["status"] == "error" and SAVE_LOGS:
+                        logger.error(f"{TASK_NAME} - {update_db_result['message']}")
+                
+                # Step 4: Log errors
+                if SAVE_LOGS:
+                    error_sheets = scoring_result["error"]
+                    if len(error_sheets) > 0:
+                        logger.error(f"{TASK_NAME} - Scoring failed for {len(error_sheets)} sheets")
+                        for error_sheet in error_sheets:
+                            logger.error(f"{TASK_NAME} - {error_sheet['message']}")
             
-        except KeyboardInterrupt:
-            logger.info(f"{task_name} stopped by user")
-            break
+            
+            # ========== PROCESS RTDB UPDATE ==========
+            rtdb_result = _update_firebase_rtdb(BATCH_SIZE, TEACHER_UID)
+            
+            if rtdb_result["status"] == "error" and SAVE_LOGS:
+                logger.error(f"{TASK_NAME} - Firebase upload failed: {rtdb_result.get('message', 'Unknown error')}")
+            elif rtdb_result["status"] == "partial" and SAVE_LOGS:
+                logger.warning(f"{TASK_NAME} - Partial Firebase upload: {rtdb_result['uploaded_count']} success, {rtdb_result['failed_count']} failed")
+            elif rtdb_result["status"] == "success" and SAVE_LOGS and rtdb_result.get("uploaded_count", 0) > 0:
+                logger.info(f"{TASK_NAME} - Firebase upload successful: {rtdb_result['uploaded_count']} records")
+        
         except Exception as e:
-            logger.error(f"Unexpected error in processing loop: {e}")
-            time.sleep(CONFIG["RETRY_DELAY"])
-    
-    return {"status": "stopped", "message": f"{task_name} terminated"}
-
-
-# ============================================================
-# MANUAL PROCESSING FUNCTION (FOR TESTING)
-# ============================================================
-
-def process_single_sheet_manual(sheet_id: int) -> dict:
-    """
-    Manually process a single answer sheet by ID (for testing).
-    
-    Args:
-        sheet_id: Answer sheet ID from database
-    
-    Returns:
-        Processing result
-    """
-    logger.info(f"Manual processing of sheet ID={sheet_id}")
-    
-    # Initialize OCR engine
-    ocr_engine = GeminiOCREngine()
-    
-    # Fetch sheet record
-    sheet = answer_sheet_model.get_answer_sheet_by_id(sheet_id)
-    if not sheet:
-        return {"status": "error", "message": f"Sheet ID={sheet_id} not found"}
-    
-    # Fetch answer key
-    answer_key_record = answer_key_model.get_answer_key_by_uid(sheet["assessment_uid"])
-    if not answer_key_record:
-        return {"status": "error", "message": "Answer key not found"}
-    
-    # Load answer key JSON
-    answer_key_json = _load_answer_key_from_json(answer_key_record["json_path"])
-    if answer_key_json["status"] == "error":
-        return answer_key_json
-    
-    answer_key_data = answer_key_json["data"]
-    answer_key_data["has_essay"] = bool(answer_key_record["has_essay"])
-    
-    # Process
-    result = _process_single_answer_sheet(
-        ocr_engine=ocr_engine,
-        sheet_record=sheet,
-        answer_key_data=answer_key_data
-    )
-    
-    if result["status"] == "success":
-        update_result = _update_sheet_with_results(sheet_id, result)
-        if update_result["status"] == "success":
-            logger.info(f"✅ Sheet ID={sheet_id} processed successfully")
-            return result
-        else:
-            return update_result
-    else:
-        return result
-
-
-if __name__ == "__main__":
-    # Test single sheet processing
-    # process_single_sheet_manual(sheet_id=1)
-    
-    # Or run full process
-    process_b(process_B_args={"task_name": "Process B - OCR Worker"})
+            if SAVE_LOGS:
+                logger.error(f"{TASK_NAME} - Unexpected error: {e}. Source: {__name__}")
