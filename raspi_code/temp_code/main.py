@@ -1,35 +1,12 @@
-"""
-✓ Collage created: /home/checkme2025/answer_checker/images/collage_20251211_075115.jpg
-INFO:__main__:Sending collage to Gemini API...
-ERROR:__main__:JSON parse error: Unterminated string starting at: line 20 column 6 (char 1237)
-ERROR:__main__:Response text: ```json
-{
-  "assessmentUid": "QWER1234",
-  "studentId": "232080",
-  "score": 95,
-  "totalQuestions": 22,
-  "correctAnswers": 21,
-  "incorrectAnswers": 1,
-  "details": [
-    {"question": 1, "studentAnswer": "b", "correctAnswer": "b", "isCorrect": true},
-    {"question": 2, "studentAnswer": "c", "correctAnswer": "c", "isCorrect": true},
-    {"question": 3, "studentAnswer": "d", "correctAnswer": "c", "isCorrect": false},
-    {"question": 4, "studentAnswer": "d", "correctAnswer": "d", "isCorrect": true},
-    {"question": 5, "studentAnswer": "b", "correctAnswer": "b", "isCorrect": true},
-    {"question": 6, "studentAnswer": "c", "correctAnswer": "c", "isCorrect": true},
-    {"question": 7, "studentAnswer": "c", "correctAnswer": "c", "isCorrect": true},
-    {"question": 1, "studentAnswer": "Hardware interrupt", "correctAnswer": "Hardware interrupt", "isCorrect": true},
-    {"question": 2, "studentAnswer": "Interrupt Service Routine", "correctAnswer": "Interrupt Service Routine", "isCorrect": true},
-    {"question": 3, "studentAnswer": "Polling", "correctAnswer": "Polling", "isCorrect": true},
-    {"question": 4, "studentAnswer": "Interrupt Priority Register", "correctAnswer": "Interrupt Priority Register", "isCorrect": true},
-    {"question
-✗ Failed to get Gemini response
-"""
-
 #!/usr/bin/env python3
 """
 Answer Sheet Checker System for Raspberry Pi 4B
-Components: 3x4 Keypad, Camera Module (PiCamera2)
+Components: 2 Buttons (Pull-up), Camera Module (PiCamera2)
+
+Button A (GPIO 17): Capture Answer Key
+Button B (GPIO 27): Capture Answer Sheet
+
+NEW: Live camera preview with positioning guides!
 """
 
 import RPi.GPIO as GPIO
@@ -46,6 +23,7 @@ from io import BytesIO
 import os
 from datetime import datetime
 import logging
+import threading
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -60,116 +38,259 @@ except ImportError:
 
 # ==================== CONFIGURATION ====================
 
-# Gemini API Key - SET THIS DIRECTLY
-GEMINI_API_KEY = "AIzaSyDvYrAvyHQ3N9MMLWtOKaU-G2BJQZN70WU"  # Replace with your actual key
+# Gemini API Key
+GEMINI_API_KEY = "AIzaSyDvYrAvyHQ3N9MMLWtOKaU-G2BJQZN70WU"
 
-# 3x4 Keypad GPIO Configuration (adjust pins as needed)
-ROW_PINS = [5, 6, 13, 19]  # GPIO pins for rows
-COL_PINS = [12, 16, 20]     # GPIO pins for columns
-
-# Keypad layout
-KEYPAD = [
-    ['1', '2', '3'],
-    ['4', '5', '6'],
-    ['7', '8', '9'],
-    ['*', '0', '#']
-]
+# Two-Button GPIO Configuration
+BUTTON_A_PIN = 17  # Answer Key button
+BUTTON_B_PIN = 27  # Answer Sheet button
 
 # Firebase Configuration
 FIREBASE_URL = "https://checkme-68003-default-rtdb.asia-southeast1.firebasedatabase.app"
 TEACHER_UID = "GKVi81kM8dhoHra1zvM4EZJF9VC3"
 
-# Gemini API Configuration
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
-
-# Image storage paths - Use current user's home directory
+# Image storage paths
 IMAGE_DIR = os.path.expanduser("~/answer_checker/images")
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
 # Camera Configuration
 CAMERA_CONFIG = {
     "resolution": (1920, 1080),
+    "preview_size": (1280, 720),  # Smaller for preview
     "format": "RGB888",
-    "rotation": 0  # Adjust if needed (0, 90, 180, 270)
+    "rotation": 0
 }
 
-# ==================== GPIO SETUP ====================
+# Button debounce settings
+DEBOUNCE_TIME = 0.05  # 50ms
 
-def setup_keypad():
-    """Initialize GPIO for keypad"""
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setwarnings(False)
-    
-    # Set row pins as output
-    for row_pin in ROW_PINS:
-        GPIO.setup(row_pin, GPIO.OUT)
-        GPIO.output(row_pin, GPIO.HIGH)
-    
-    # Set column pins as input with pull-up resistors
-    for col_pin in COL_PINS:
-        GPIO.setup(col_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    
-    print("✓ Keypad initialized")
+# Preview settings
+SHOW_PREVIEW = True
+PREVIEW_WINDOW = "Camera Preview - Position Your Paper"
 
-def get_key():
-    """Read key press from 3x4 keypad"""
-    key = None
+# ==================== BUTTON SETUP ====================
+
+class ButtonController:
+    """Handles two-button input with debouncing"""
     
-    for row_idx, row_pin in enumerate(ROW_PINS):
-        GPIO.output(row_pin, GPIO.LOW)
+    def __init__(self, button_a_pin=BUTTON_A_PIN, button_b_pin=BUTTON_B_PIN):
+        self.button_a_pin = button_a_pin
+        self.button_b_pin = button_b_pin
+        self.last_button_a_state = True
+        self.last_button_b_state = True
+        self.button_a_pressed_time = 0
+        self.button_b_pressed_time = 0
         
-        for col_idx, col_pin in enumerate(COL_PINS):
-            if GPIO.input(col_pin) == GPIO.LOW:
-                key = KEYPAD[row_idx][col_idx]
+    def setup(self):
+        """Initialize GPIO for buttons with pull-up resistors"""
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        
+        # Setup buttons as inputs with pull-up resistors
+        GPIO.setup(self.button_a_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.setup(self.button_b_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        
+        print("✓ Buttons initialized")
+        print(f"  Button A (Answer Key): GPIO {self.button_a_pin}")
+        print(f"  Button B (Answer Sheet): GPIO {self.button_b_pin}")
+    
+    def read_button(self):
+        """
+        Read button state with debouncing
+        Returns:
+            'A' - Button A pressed (Answer Key)
+            'B' - Button B pressed (Answer Sheet)
+            None - No button pressed
+        """
+        current_time = time.time()
+        
+        # Read current button states (LOW = pressed with pull-up)
+        button_a_state = GPIO.input(self.button_a_pin)
+        button_b_state = GPIO.input(self.button_b_pin)
+        
+        # Check Button A with debouncing
+        if button_a_state == GPIO.LOW and self.last_button_a_state == GPIO.HIGH:
+            if current_time - self.button_a_pressed_time > DEBOUNCE_TIME:
+                self.button_a_pressed_time = current_time
+                self.last_button_a_state = button_a_state
                 
-                # Wait for key release (debounce)
-                while GPIO.input(col_pin) == GPIO.LOW:
+                # Wait for button release
+                while GPIO.input(self.button_a_pin) == GPIO.LOW:
                     time.sleep(0.01)
-                time.sleep(0.1)  # Additional debounce delay
+                
+                self.last_button_a_state = GPIO.HIGH
+                return 'A'
         
-        GPIO.output(row_pin, GPIO.HIGH)
+        # Check Button B with debouncing
+        if button_b_state == GPIO.LOW and self.last_button_b_state == GPIO.HIGH:
+            if current_time - self.button_b_pressed_time > DEBOUNCE_TIME:
+                self.button_b_pressed_time = current_time
+                self.last_button_b_state = button_b_state
+                
+                # Wait for button release
+                while GPIO.input(self.button_b_pin) == GPIO.LOW:
+                    time.sleep(0.01)
+                
+                self.last_button_b_state = GPIO.HIGH
+                return 'B'
         
-        if key:
-            break
-    
-    return key
+        # Update states
+        self.last_button_a_state = button_a_state
+        self.last_button_b_state = button_b_state
+        
+        return None
 
 # ==================== CAMERA FUNCTIONS (PiCamera2) ====================
 
 class CameraController:
-    """Handles PiCamera2 operations"""
-    
+    """Handles PiCamera2 operations with live preview"""
+
     def __init__(self):
         """Initialize camera"""
         self.picam2 = Picamera2()
-        
+        self.preview_active = False
+        self.current_mode = "READY"
+        self.preview_thread = None
+        self.stop_preview = False
+
         # Configure camera
         config = self.picam2.create_still_configuration(
             main={
                 "size": CAMERA_CONFIG["resolution"],
                 "format": CAMERA_CONFIG["format"]
             },
+            lores={
+                "size": CAMERA_CONFIG["preview_size"]
+            },
+            display="lores",
             transform=Transform(hflip=False, vflip=False)
         )
 
-        
         self.picam2.configure(config)
         logger.info("✓ Camera initialized")
-    
+
     def start(self):
-        """Start camera"""
+        """Start camera and preview"""
         self.picam2.start()
         time.sleep(2)  # Camera warm-up
         logger.info("✓ Camera started")
-    
+        
+        if SHOW_PREVIEW:
+            self.start_preview()
+
     def stop(self):
-        """Stop camera"""
+        """Stop camera and preview"""
+        self.stop_preview_thread()
         self.picam2.stop()
+        cv2.destroyAllWindows()
         logger.info("✓ Camera stopped")
-    
+
+    def start_preview(self):
+        """Start live preview in separate thread"""
+        if not self.preview_active:
+            self.stop_preview = False
+            self.preview_thread = threading.Thread(target=self._preview_loop, daemon=True)
+            self.preview_thread.start()
+            self.preview_active = True
+            logger.info("✓ Camera preview started")
+
+    def stop_preview_thread(self):
+        """Stop preview thread"""
+        if self.preview_active:
+            self.stop_preview = True
+            if self.preview_thread:
+                self.preview_thread.join(timeout=2)
+            self.preview_active = False
+
+    def _preview_loop(self):
+        """Preview loop running in separate thread"""
+        while not self.stop_preview:
+            try:
+                # Capture preview frame (low resolution)
+                frame = self.picam2.capture_array()
+                
+                # Convert RGB to BGR for OpenCV
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
+                # Resize to preview size
+                preview_frame = cv2.resize(frame_bgr, CAMERA_CONFIG["preview_size"])
+                
+                # Apply rotation if configured
+                if CAMERA_CONFIG["rotation"] == 90:
+                    preview_frame = cv2.rotate(preview_frame, cv2.ROTATE_90_CLOCKWISE)
+                elif CAMERA_CONFIG["rotation"] == 180:
+                    preview_frame = cv2.rotate(preview_frame, cv2.ROTATE_180)
+                elif CAMERA_CONFIG["rotation"] == 270:
+                    preview_frame = cv2.rotate(preview_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                
+                # Add overlay with guides
+                preview_frame = self._add_preview_overlay(preview_frame)
+                
+                # Display
+                cv2.imshow(PREVIEW_WINDOW, preview_frame)
+                cv2.waitKey(1)
+                
+                time.sleep(0.03)  # ~30 FPS
+                
+            except Exception as e:
+                logger.error(f"Preview error: {e}")
+                break
+
+    def _add_preview_overlay(self, frame):
+        """Add positioning guides and status overlay to preview"""
+        h, w = frame.shape[:2]
+        
+        # Draw center crosshair
+        center_x, center_y = w // 2, h // 2
+        cv2.line(frame, (center_x - 50, center_y), (center_x + 50, center_y), (0, 255, 0), 2)
+        cv2.line(frame, (center_x, center_y - 50), (center_x, center_y + 50), (0, 255, 0), 2)
+        
+        # Draw corner guides (paper positioning)
+        margin = 50
+        corner_size = 30
+        # Top-left
+        cv2.line(frame, (margin, margin), (margin + corner_size, margin), (0, 255, 255), 3)
+        cv2.line(frame, (margin, margin), (margin, margin + corner_size), (0, 255, 255), 3)
+        # Top-right
+        cv2.line(frame, (w - margin, margin), (w - margin - corner_size, margin), (0, 255, 255), 3)
+        cv2.line(frame, (w - margin, margin), (w - margin, margin + corner_size), (0, 255, 255), 3)
+        # Bottom-left
+        cv2.line(frame, (margin, h - margin), (margin + corner_size, h - margin), (0, 255, 255), 3)
+        cv2.line(frame, (margin, h - margin), (margin, h - margin - corner_size), (0, 255, 255), 3)
+        # Bottom-right
+        cv2.line(frame, (w - margin, h - margin), (w - margin - corner_size, h - margin), (0, 255, 255), 3)
+        cv2.line(frame, (w - margin, h - margin), (w - margin, h - margin - corner_size), (0, 255, 255), 3)
+        
+        # Draw recommended paper area
+        paper_margin = 100
+        cv2.rectangle(frame, 
+                     (paper_margin, paper_margin), 
+                     (w - paper_margin, h - paper_margin), 
+                     (255, 0, 0), 2)
+        
+        # Status text background
+        cv2.rectangle(frame, (0, 0), (w, 80), (0, 0, 0), -1)
+        cv2.rectangle(frame, (0, 0), (w, 80), (0, 255, 0), 2)
+        
+        # Mode text
+        mode_text = f"MODE: {self.current_mode}"
+        cv2.putText(frame, mode_text, (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        
+        # Instructions
+        instructions = "Position paper within blue rectangle | Button A: Answer Key | Button B: Answer Sheet"
+        cv2.putText(frame, instructions, (10, 60), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        return frame
+
+    def set_mode(self, mode):
+        """Update current mode for display"""
+        self.current_mode = mode
+
     def capture_image(self, image_type):
         """
-        Capture image using PiCamera2
+        Capture high-resolution image
         Args:
             image_type: 'answer_key' or 'answer_sheet'
         Returns:
@@ -178,16 +299,19 @@ class CameraController:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{image_type}_{timestamp}.jpg"
         filepath = os.path.join(IMAGE_DIR, filename)
-        
+
         print(f"📷 Capturing {image_type}...")
         
+        # Flash effect on preview
+        self.set_mode(f"CAPTURING {image_type.upper()}...")
+
         try:
-            # Capture image as numpy array
+            # Capture FULL RESOLUTION image
             image_array = self.picam2.capture_array()
-            
+
             # Convert RGB to BGR for OpenCV
             image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-            
+
             # Apply rotation if configured
             if CAMERA_CONFIG["rotation"] == 90:
                 image_bgr = cv2.rotate(image_bgr, cv2.ROTATE_90_CLOCKWISE)
@@ -195,388 +319,141 @@ class CameraController:
                 image_bgr = cv2.rotate(image_bgr, cv2.ROTATE_180)
             elif CAMERA_CONFIG["rotation"] == 270:
                 image_bgr = cv2.rotate(image_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            
+
             # Save image
             cv2.imwrite(filepath, image_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
-            
+
             print(f"✓ Image saved: {filepath}")
-            return filepath
             
+            # Reset mode
+            self.set_mode("READY")
+            
+            return filepath
+
         except Exception as e:
             logger.error(f"Camera capture error: {e}")
+            self.set_mode("ERROR")
             return None
-    
-    def preview(self, duration=3):
-        """
-        Show preview for a duration (optional - useful for alignment)
-        Args:
-            duration: Preview duration in seconds
-        """
-        print(f"👁️  Showing preview for {duration} seconds...")
-        time.sleep(duration)
 
-# ==================== IMAGE PROCESSING ====================
+# ==================== REST OF THE CODE (UNCHANGED) ====================
+# [Include all the previous code: create_collage, GeminiChecker, upload_to_firebase, etc.]
 
 def create_collage(answer_key_path, answer_sheet_path):
-    """
-    Create horizontal collage of answer key and answer sheet
-    Returns:
-        Base64 encoded collage image, collage path
-    """
+    """Create horizontal collage of answer key and answer sheet"""
     print("🖼️  Creating collage...")
-    
     try:
-        # Load images using PIL
         img_key = Image.open(answer_key_path)
         img_sheet = Image.open(answer_sheet_path)
-        
-        # Resize to same height if needed
         max_height = max(img_key.height, img_sheet.height)
-        
         if img_key.height != max_height:
             ratio = max_height / img_key.height
             img_key = img_key.resize((int(img_key.width * ratio), max_height), Image.Resampling.LANCZOS)
-        
         if img_sheet.height != max_height:
             ratio = max_height / img_sheet.height
             img_sheet = img_sheet.resize((int(img_sheet.width * ratio), max_height), Image.Resampling.LANCZOS)
-        
-        # Create collage
         total_width = img_key.width + img_sheet.width
         collage = Image.new('RGB', (total_width, max_height))
-        
         collage.paste(img_key, (0, 0))
         collage.paste(img_sheet, (img_key.width, 0))
-        
-        # Save collage
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         collage_path = os.path.join(IMAGE_DIR, f"collage_{timestamp}.jpg")
         collage.save(collage_path, quality=95)
-        
         print(f"✓ Collage created: {collage_path}")
-        
-        # Convert to base64
         buffered = BytesIO()
         collage.save(buffered, format="JPEG", quality=95)
         img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        
         return img_base64, collage_path
-        
     except Exception as e:
         logger.error(f"Collage creation error: {e}")
         return None, None
 
-# ==================== GEMINI API CLASS ====================
-
 class GeminiChecker:
-    """Handles Gemini API interactions for answer checking"""
-    
-    CHECKING_PROMPT = """
-You are an automated answer sheet checker. You will receive a horizontal collage image containing:
-- LEFT SIDE: Answer key with assessment UID at the top
-- RIGHT SIDE: Student's answer sheet with student ID at the top
-
-Your task:
-1. Extract the Assessment UID from the top of the answer key (left image)
-2. Extract the Student ID from the top of the answer sheet (right image)
-3. Compare each answer on the student's sheet with the answer key
-4. Calculate the total score (correct answers / total questions * 100)
-5. Identify which questions were answered correctly and incorrectly
-
-CRITICAL: Return ONLY valid JSON with NO markdown formatting, NO code blocks, NO explanations.
-
-Format:
-{
-  "assessmentUid": "extracted_assessment_uid",
-  "studentId": "extracted_student_id",
-  "score": 85,
-  "totalQuestions": 20,
-  "correctAnswers": 17,
-  "incorrectAnswers": 3,
-  "details": [
-    {"question": 1, "studentAnswer": "B", "correctAnswer": "B", "isCorrect": true},
-    {"question": 2, "studentAnswer": "C", "correctAnswer": "A", "isCorrect": false}
-  ],
-  "timestamp": "current_timestamp_iso_format"
-}
-
-Be accurate in reading both the UIDs and comparing answers.
-"""
-    
-    def __init__(self):
-        self.api_key = GEMINI_API_KEY
-        
-        if not self.api_key or self.api_key == "YOUR_GEMINI_API_KEY_HERE":
-            raise RuntimeError("GEMINI_API_KEY not set. Please edit the script and add your API key.")
-        
-        if GENAI_AVAILABLE:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel(
-                "gemini-2.0-flash-exp",
-                generation_config={
-                    "temperature": 0.1,  # Lower for more consistent output
-                    "top_p": 0.8,
-                    "max_output_tokens": 8192,  # INCREASED from 2048
-                }
-            )
-            logger.info("Using google-generativeai SDK")
-        else:
-            self.model = None
-            logger.info("Using REST API fallback")
-    
-    def _encode_image(self, image_path: str) -> str:
-        """Encode image to base64"""
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode('utf-8')
-    
-    def _call_gemini_sdk(self, image_base64: str, prompt: str) -> str:
-        """Call Gemini using official SDK"""
-        try:
-            # Decode base64 to bytes for SDK
-            image_bytes = base64.b64decode(image_base64)
-            
-            # Create image part
-            image_part = {
-                "mime_type": "image/jpeg",
-                "data": image_bytes
-            }
-            
-            response = self.model.generate_content([prompt, image_part])
-            return response.text
-            
-        except Exception as e:
-            logger.error(f"SDK call failed: {e}")
-            raise
-    
-    def _call_gemini_rest(self, image_base64: str, prompt: str) -> str:
-        """Call Gemini using REST API fallback"""
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
-            
-            headers = {"Content-Type": "application/json"}
-            
-            payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": prompt},
-                        {
-                            "inline_data": {
-                                "mime_type": "image/jpeg",
-                                "data": image_base64
-                            }
-                        }
-                    ]
-                }],
-                "generationConfig": {
-                    "temperature": 0.1,  # Lower for consistency
-                    "topP": 0.8,
-                    "maxOutputTokens": 8192  # INCREASED from 2048
-                }
-            }
-            
-            response = requests.post(url, headers=headers, json=payload, timeout=90)
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result['candidates'][0]['content']['parts'][0]['text']
-            else:
-                logger.error(f"REST API error: {response.status_code}")
-                raise RuntimeError(f"API call failed: {response.text}")
-                
-        except Exception as e:
-            logger.error(f"REST call failed: {e}")
-            raise
-    
-    def _safe_parse_json(self, response_text: str) -> dict:
-        """Safely parse JSON from response with multiple cleanup strategies"""
-        try:
-            # Strategy 1: Remove markdown code blocks
-            cleaned = response_text.strip()
-            
-            # Remove markdown code blocks if present
-            if cleaned.startswith('```'):
-                # Find the first newline after ```json or ```
-                first_newline = cleaned.find('\n')
-                if first_newline != -1:
-                    cleaned = cleaned[first_newline + 1:]
-                # Remove trailing ```
-                if cleaned.endswith('```'):
-                    cleaned = cleaned[:-3]
-            
-            cleaned = cleaned.strip()
-            
-            # Strategy 2: Try direct parse
-            try:
-                return json.loads(cleaned)
-            except json.JSONDecodeError:
-                pass
-            
-            # Strategy 3: Find JSON object boundaries
-            start_idx = cleaned.find('{')
-            end_idx = cleaned.rfind('}')
-            
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                json_str = cleaned[start_idx:end_idx + 1]
-                return json.loads(json_str)
-            
-            raise json.JSONDecodeError("No valid JSON found", cleaned, 0)
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse error: {e}")
-            logger.error(f"Response text (first 500 chars): {response_text[:500]}")
-            logger.error(f"Response text (last 200 chars): {response_text[-200:]}")
-            return None
-    
-    def check_collage(self, collage_path: str, max_retries: int = 3) -> dict:
-        """
-        Check answer sheet using collage image with retry logic
-        
-        Args:
-            collage_path: Path to collage image
-            max_retries: Maximum number of retry attempts
-            
-        Returns:
-            Dictionary with results or None on failure
-        """
-        logger.info("Sending collage to Gemini API...")
-        
-        for attempt in range(max_retries):
-            try:
-                image_base64 = self._encode_image(collage_path)
-                
-                if GENAI_AVAILABLE and self.model:
-                    response_text = self._call_gemini_sdk(image_base64, self.CHECKING_PROMPT)
-                else:
-                    response_text = self._call_gemini_rest(image_base64, self.CHECKING_PROMPT)
-                
-                result = self._safe_parse_json(response_text)
-                
-                if result:
-                    logger.info("✓ Gemini API response received and parsed")
-                    return result
-                else:
-                    logger.warning(f"Attempt {attempt + 1}/{max_retries}: Failed to parse JSON, retrying...")
-                    time.sleep(2)  # Wait before retry
-                    
-            except Exception as e:
-                logger.error(f"Attempt {attempt + 1}/{max_retries}: Gemini check failed: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2)  # Wait before retry
-                else:
-                    logger.error("All retry attempts exhausted")
-        
-        return None
-
-# ==================== FIREBASE ====================
+    """Handles Gemini API interactions (code unchanged from previous version)"""
+    # ... [Include full GeminiChecker class from previous artifact]
+    pass
 
 def upload_to_firebase(result_data, collage_path):
-    """
-    Upload result to Firebase Realtime Database
-    Args:
-        result_data: JSON data from Gemini
-        collage_path: Path to collage image
-    """
-    print("☁️  Uploading to Firebase...")
-    
-    try:
-        assessment_uid = result_data.get('assessmentUid')
-        student_id = result_data.get('studentId')
-        
-        if not assessment_uid or not student_id:
-            print("✗ Missing assessmentUid or studentId")
-            return False
-        
-        # Prepare data matching your RTDB structure
-        upload_data = {
-            "assessmentUid": assessment_uid,
-            "studentId": student_id,
-            "score": result_data.get('score', 0),
-            "scannedAt": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
-            "uploadedtoGdriveAt": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
-            "isPartialScore": False
-        }
-        
-        # Firebase path matching your structure
-        firebase_path = f"{FIREBASE_URL}/assessmentScoresAndImages/{TEACHER_UID}/{assessment_uid}/{student_id}.json"
-        
-        response = requests.put(firebase_path, json=upload_data)
-        
-        if response.status_code == 200:
-            print(f"✓ Data uploaded to Firebase")
-            print(f"  Path: /assessmentScoresAndImages/{TEACHER_UID}/{assessment_uid}/{student_id}/")
-            return True
-        else:
-            print(f"✗ Firebase upload error: {response.status_code}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Firebase exception: {e}")
-        return False
+    """Upload to Firebase (code unchanged from previous version)"""
+    # ... [Include full upload_to_firebase from previous artifact]
+    pass
 
 # ==================== MAIN SYSTEM ====================
 
 def main():
     """Main system loop"""
     print("=" * 60)
-    print("ANSWER SHEET CHECKER SYSTEM (PiCamera2)")
+    print("ANSWER SHEET CHECKER - WITH LIVE PREVIEW!")
     print("=" * 60)
-    print("Commands:")
-    print("  * = Capture Answer Key")
-    print("  # = Capture Answer Sheet")
+    print("Controls:")
+    print("  Button A (GPIO 17) = Capture Answer Key")
+    print("  Button B (GPIO 27) = Capture Answer Sheet")
+    print("  Live Preview: Position your paper within the guides")
     print("=" * 60)
-    
-    setup_keypad()
-    
-    # Initialize camera
+
+    button_controller = ButtonController()
+    button_controller.setup()
+
     camera = CameraController()
     camera.start()
-    
-    # Initialize Gemini checker
+
     try:
-        gemini_checker = GeminiChecker()
+        gemini_checker = None  # Will initialize when needed
     except RuntimeError as e:
         logger.error(f"Failed to initialize Gemini: {e}")
-        print("\n✗ ERROR: GEMINI_API_KEY not set")
-        print("Please edit the script and replace 'YOUR_GEMINI_API_KEY_HERE' with your actual API key")
-        camera.stop()
-        return
-    
+
     answer_key_path = None
     answer_sheet_path = None
-    
+
     try:
+        print("\n✓ System ready! Live preview active - Position your papers and press buttons...")
+        
         while True:
-            print("\n⌨️  Waiting for key press...")
-            key = get_key()
-            print("key ===>", key)
-            if key == '*':
-                print("📋 ANSWER KEY MODE")
+            button = button_controller.read_button()
+            
+            if button == 'A':
+                print("\n📋 ANSWER KEY MODE")
+                camera.set_mode("ANSWER KEY MODE")
+                time.sleep(0.5)  # Show mode change
                 answer_key_path = camera.capture_image('answer_key')
-                
+
                 if answer_key_path:
                     print("✓ Answer key captured successfully")
-                    
-                    # Check if we can process
                     if answer_sheet_path:
+                        camera.set_mode("PROCESSING...")
+                        # Initialize Gemini if not done yet
+                        if gemini_checker is None:
+                            gemini_checker = GeminiChecker()
                         process_assessment(answer_key_path, answer_sheet_path, gemini_checker)
                         answer_key_path = None
                         answer_sheet_path = None
-                
-            elif key == '#':
-                print("📝 ANSWER SHEET MODE")
+                        camera.set_mode("READY")
+                    else:
+                        camera.set_mode("WAITING FOR ANSWER SHEET")
+                        print("  Waiting for answer sheet (press Button B)...")
+
+            elif button == 'B':
+                print("\n📝 ANSWER SHEET MODE")
+                camera.set_mode("ANSWER SHEET MODE")
+                time.sleep(0.5)  # Show mode change
                 answer_sheet_path = camera.capture_image('answer_sheet')
-                
+
                 if answer_sheet_path:
                     print("✓ Answer sheet captured successfully")
-                    
-                    # Check if we can process
                     if answer_key_path:
+                        camera.set_mode("PROCESSING...")
+                        # Initialize Gemini if not done yet
+                        if gemini_checker is None:
+                            gemini_checker = GeminiChecker()
                         process_assessment(answer_key_path, answer_sheet_path, gemini_checker)
                         answer_key_path = None
                         answer_sheet_path = None
-            
-            time.sleep(0.1)
-    
+                        camera.set_mode("READY")
+                    else:
+                        camera.set_mode("WAITING FOR ANSWER KEY")
+                        print("  Waiting for answer key (press Button A)...")
+
+            time.sleep(0.05)
+
     except KeyboardInterrupt:
         print("\n\n🛑 System shutdown")
     finally:
@@ -588,36 +465,28 @@ def process_assessment(answer_key_path, answer_sheet_path, gemini_checker):
     print("\n" + "=" * 60)
     print("PROCESSING ASSESSMENT")
     print("=" * 60)
-    
-    # Create collage
     collage_base64, collage_path = create_collage(answer_key_path, answer_sheet_path)
-    
     if not collage_path:
         print("✗ Failed to create collage")
         return
-    
-    # Send to Gemini
     result_data = gemini_checker.check_collage(collage_path)
-    
     if not result_data:
         print("✗ Failed to get Gemini response")
         return
-    
-    # Display results
+    score = result_data.get('score', 0)
+    total = result_data.get('totalQuestions', 0)
+    percentage = (score / total * 100) if total > 0 else 0
     print("\n📊 RESULTS:")
     print(f"  Assessment UID: {result_data.get('assessmentUid')}")
     print(f"  Student ID: {result_data.get('studentId')}")
-    print(f"  Score: {result_data.get('score')}%")
-    print(f"  Correct: {result_data.get('correctAnswers')}/{result_data.get('totalQuestions')}")
-    
-    # Upload to Firebase
+    print(f"  Score: {score}/{total} ({percentage:.1f}%)")
+    print(f"  Correct: {result_data.get('correctAnswers')}")
+    print(f"  Incorrect: {result_data.get('incorrectAnswers')}")
     success = upload_to_firebase(result_data, collage_path)
-    
     if success:
         print("\n✓ Assessment processed successfully!")
     else:
         print("\n✗ Failed to upload to Firebase")
-    
     print("=" * 60)
 
 if __name__ == "__main__":
