@@ -367,15 +367,283 @@ def create_collage(answer_key_path, answer_sheet_path):
         logger.error(f"Collage creation error: {e}")
         return None, None
 
+# ==================== GEMINI API CLASS ====================
+
 class GeminiChecker:
-    """Handles Gemini API interactions (code unchanged from previous version)"""
-    # ... [Include full GeminiChecker class from previous artifact]
-    pass
+    """Handles Gemini API interactions for answer checking"""
+
+    CHECKING_PROMPT = """
+You are an automated answer sheet checker. You will receive a horizontal collage image containing:
+- LEFT SIDE: Answer key with assessment UID at the top (THIS IS THE SOURCE OF TRUTH / GROUND TRUTH)
+- RIGHT SIDE: Student's answer sheet with student ID at the top
+
+CRITICAL RULES:
+1. The ANSWER KEY (left image) is the GROUND TRUTH and SOURCE OF TRUTH for:
+   - Total number of questions
+   - Correct answers for each question
+   - Assessment structure
+2. Count the TOTAL number of questions from the ANSWER KEY ONLY
+3. The student's answer sheet must be compared against this ground truth
+
+Your task:
+1. Extract the Assessment UID from the top of the answer key (left image)
+2. Count the TOTAL number of questions from the ANSWER KEY (left image) - this is your ground truth
+3. Extract the Student ID from the top of the answer sheet (right image)
+4. Compare EACH answer on the student's sheet with the corresponding answer in the ANSWER KEY
+5. Calculate the score (number of correct matches)
+6. Identify which questions were answered correctly and incorrectly
+
+CRITICAL: Return ONLY valid JSON with NO markdown formatting, NO code blocks, NO explanations.
+
+Format:
+{
+  "assessmentUid": "extracted_assessment_uid",
+  "studentId": "extracted_student_id",
+  "score": 17,
+  "totalQuestions": 20,
+  "correctAnswers": 17,
+  "incorrectAnswers": 3,
+  "details": [
+    {"question": 1, "studentAnswer": "B", "correctAnswer": "B", "isCorrect": true},
+    {"question": 2, "studentAnswer": "C", "correctAnswer": "A", "isCorrect": false}
+  ],
+  "timestamp": "current_timestamp_iso_format"
+}
+
+IMPORTANT: 
+- "totalQuestions" MUST be counted from the ANSWER KEY (left image) - it is the ground truth
+- "score" must be the RAW NUMBER of correct answers (e.g., 17), NOT a percentage
+- Compare student answers ONLY against the answer key's answers
+- If student has more/fewer answers than the answer key, mark extras as incorrect
+- Be accurate in reading both the UIDs and comparing answers
+"""
+
+    def __init__(self):
+        self.api_key = GEMINI_API_KEY
+
+        if not self.api_key or self.api_key == "YOUR_GEMINI_API_KEY_HERE":
+            raise RuntimeError("GEMINI_API_KEY not set. Please edit the script and add your API key.")
+
+        if GENAI_AVAILABLE:
+            genai.configure(api_key=self.api_key)
+            self.model = genai.GenerativeModel(
+                "gemini-2.0-flash-exp",
+                generation_config={
+                    "temperature": 0.1,
+                    "top_p": 0.8,
+                    "max_output_tokens": 8192,
+                }
+            )
+            logger.info("Using google-generativeai SDK")
+        else:
+            self.model = None
+            logger.info("Using REST API fallback")
+
+    def _encode_image(self, image_path: str) -> str:
+        """Encode image to base64"""
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode('utf-8')
+
+    def _call_gemini_sdk(self, image_base64: str, prompt: str) -> str:
+        """Call Gemini using official SDK"""
+        try:
+            image_bytes = base64.b64decode(image_base64)
+
+            image_part = {
+                "mime_type": "image/jpeg",
+                "data": image_bytes
+            }
+
+            response = self.model.generate_content([prompt, image_part])
+            return response.text
+
+        except Exception as e:
+            logger.error(f"SDK call failed: {e}")
+            raise
+
+    def _call_gemini_rest(self, image_base64: str, prompt: str) -> str:
+        """Call Gemini using REST API fallback"""
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
+
+            headers = {"Content-Type": "application/json"}
+
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": image_base64
+                            }
+                        }
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "topP": 0.8,
+                    "maxOutputTokens": 8192
+                }
+            }
+
+            response = requests.post(url, headers=headers, json=payload, timeout=90)
+
+            if response.status_code == 200:
+                result = response.json()
+                return result['candidates'][0]['content']['parts'][0]['text']
+            else:
+                logger.error(f"REST API error: {response.status_code}")
+                raise RuntimeError(f"API call failed: {response.text}")
+
+        except Exception as e:
+            logger.error(f"REST call failed: {e}")
+            raise
+
+    def _safe_parse_json(self, response_text: str) -> dict:
+        """Safely parse JSON from response with multiple cleanup strategies"""
+        try:
+            cleaned = response_text.strip()
+
+            # Remove markdown code blocks if present
+            if cleaned.startswith('```'):
+                first_newline = cleaned.find('\n')
+                if first_newline != -1:
+                    cleaned = cleaned[first_newline + 1:]
+                if cleaned.endswith('```'):
+                    cleaned = cleaned[:-3]
+
+            cleaned = cleaned.strip()
+
+            # Try direct parse
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
+
+            # Find JSON object boundaries
+            start_idx = cleaned.find('{')
+            end_idx = cleaned.rfind('}')
+
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = cleaned[start_idx:end_idx + 1]
+                return json.loads(json_str)
+
+            raise json.JSONDecodeError("No valid JSON found", cleaned, 0)
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error: {e}")
+            logger.error(f"Response text (first 500 chars): {response_text[:500]}")
+            logger.error(f"Response text (last 200 chars): {response_text[-200:]}")
+            return None
+
+    def check_collage(self, collage_path: str, max_retries: int = 3) -> dict:
+        """
+        Check answer sheet using collage image with retry logic
+        
+        Args:
+            collage_path: Path to collage image
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            Dictionary with results or None on failure
+        """
+        logger.info("Sending collage to Gemini API...")
+
+        for attempt in range(max_retries):
+            try:
+                image_base64 = self._encode_image(collage_path)
+
+                if GENAI_AVAILABLE and self.model:
+                    response_text = self._call_gemini_sdk(image_base64, self.CHECKING_PROMPT)
+                else:
+                    response_text = self._call_gemini_rest(image_base64, self.CHECKING_PROMPT)
+
+                result = self._safe_parse_json(response_text)
+
+                if result:
+                    logger.info("✓ Gemini API response received and parsed")
+                    return result
+                else:
+                    logger.warning(f"Attempt {attempt + 1}/{max_retries}: Failed to parse JSON, retrying...")
+                    time.sleep(2)
+
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1}/{max_retries}: Gemini check failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    logger.error("All retry attempts exhausted")
+
+        return None
+
+# ==================== FIREBASE ====================
 
 def upload_to_firebase(result_data, collage_path):
-    """Upload to Firebase (code unchanged from previous version)"""
-    # ... [Include full upload_to_firebase from previous artifact]
-    pass
+    """
+    Upload result to Firebase Realtime Database with CORRECT format
+    
+    Correct Firebase structure:
+    assessmentScoresAndImages/
+      {teacher_uid}/
+        {assessment_uid}/
+          {student_id}: {
+            score: int,
+            perfectScore: int,
+            isPartialScore: bool,
+            assessmentUid: str,
+            scannedAt: str
+          }
+    
+    Args:
+        result_data: JSON data from Gemini
+        collage_path: Path to collage image
+    """
+    print("☁️  Uploading to Firebase...")
+
+    try:
+        assessment_uid = result_data.get('assessmentUid')
+        student_id = result_data.get('studentId')
+        score = result_data.get('score', 0)  # Raw score (e.g., 17)
+        total_questions = result_data.get('totalQuestions', 0)  # Perfect score (e.g., 20)
+
+        if not assessment_uid or not student_id:
+            print("✗ Missing assessmentUid or studentId")
+            logger.error(f"Result data: {result_data}")
+            return False
+
+        # CORRECT FORMAT: Nested object structure
+        upload_data = {
+            "score": int(score),                    # Raw score (e.g., 17)
+            "perfectScore": int(total_questions),   # Total possible (e.g., 20)
+            "isPartialScore": False,                # No essay questions
+            "assessmentUid": assessment_uid,
+            "scannedAt": datetime.now().strftime("%m/%d/%Y %H:%M:%S")
+        }
+
+        # CORRECT PATH: Use student_id as the key, not in path with .json
+        firebase_path = f"{FIREBASE_URL}/assessmentScoresAndImages/{TEACHER_UID}/{assessment_uid}/{student_id}.json"
+
+        logger.info(f"Uploading to path: /assessmentScoresAndImages/{TEACHER_UID}/{assessment_uid}/{student_id}")
+        logger.info(f"Data: {json.dumps(upload_data, indent=2)}")
+
+        response = requests.put(firebase_path, json=upload_data)
+
+        if response.status_code == 200:
+            print(f"✓ Data uploaded to Firebase")
+            print(f"  Assessment: {assessment_uid}")
+            print(f"  Student: {student_id}")
+            print(f"  Score: {score}/{total_questions}")
+            return True
+        else:
+            print(f"✗ Firebase upload error: {response.status_code}")
+            logger.error(f"Response: {response.text}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Firebase exception: {e}")
+        return False
+
 
 # ==================== MAIN SYSTEM ====================
 
