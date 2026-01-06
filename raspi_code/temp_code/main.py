@@ -41,6 +41,8 @@ except ImportError:
 # Gemini API Key
 GEMINI_API_KEY = "XXXXXX"
 
+GEMINI_MODEL = "gemini-2.5-flash"
+
 # Two-Button GPIO Configuration
 BUTTON_A_PIN = 17  # Answer Key button
 BUTTON_B_PIN = 27  # Answer Sheet button
@@ -427,7 +429,7 @@ IMPORTANT:
         if GENAI_AVAILABLE:
             genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel(
-                "gemini-2.5-flash",
+                GEMINI_MODEL,
                 generation_config={
                     "temperature": 0.1,
                     "top_p": 0.8,
@@ -464,7 +466,7 @@ IMPORTANT:
     def _call_gemini_rest(self, image_base64: str, prompt: str) -> str:
         """Call Gemini using REST API fallback"""
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={self.api_key}"
 
             headers = {"Content-Type": "application/json"}
 
