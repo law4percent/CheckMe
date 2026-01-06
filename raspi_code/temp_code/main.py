@@ -39,7 +39,7 @@ except ImportError:
 # ==================== CONFIGURATION ====================
 
 # Gemini API Key
-GEMINI_API_KEY = "AIzaSyDvYrAvyHQ3N9MMLWtOKaU-G2BJQZN70WU"
+GEMINI_API_KEY = "XXXXXX"
 
 # Two-Button GPIO Configuration
 BUTTON_A_PIN = 17  # Answer Key button
@@ -427,7 +427,7 @@ IMPORTANT:
         if GENAI_AVAILABLE:
             genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel(
-                "gemini-2.0-flash-exp",
+                "gemini-2.5-flash",
                 generation_config={
                     "temperature": 0.1,
                     "top_p": 0.8,
