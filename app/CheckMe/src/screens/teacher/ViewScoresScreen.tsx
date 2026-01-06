@@ -17,24 +17,17 @@ import { useAuth } from '../../contexts/AuthContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ViewScores'>;
 
+// NEW: Match Python structure exactly
 interface StudentScore {
-  studentId: string;
-  score: number;
-  totalQuestions: number;
-  correctAnswers: number;
-  incorrectAnswers: number;
-  timestamp: string;
-  details?: Array<{
-    question: number;
-    studentAnswer: string;
-    correctAnswer: string;
-    isCorrect: boolean;
-  }>;
-  collageImagePath?: string;
+  studentId: string; // From object key
+  score: number; // Raw score (e.g., 17)
+  perfectScore: number; // Total questions (e.g., 20)
+  isPartialScore: boolean; // Always false from Python
+  assessmentUid: string;
+  scannedAt: string; // Format: "MM/DD/YYYY HH:MM:SS"
 }
 
 const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
-  // CRITICAL FIX: Add safety checks for route.params
   const assessmentUid = route.params?.assessmentUid;
   const assessmentName = route.params?.assessmentName;
   const { user } = useAuth();
@@ -42,10 +35,8 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scores, setScores] = useState<StudentScore[]>([]);
-  const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
 
   useEffect(() => {
-    // CRITICAL FIX: Check if required params exist
     if (!assessmentUid) {
       console.error('❌ [ViewScores] No assessmentUid in route params');
       Alert.alert(
@@ -97,26 +88,36 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
         return;
       }
 
-      // Filter out assessment metadata, keep only student scores
+      // Parse student scores from Firebase
+      // Structure: { [studentId]: { score, perfectScore, isPartialScore, assessmentUid, scannedAt } }
       const studentScores: StudentScore[] = [];
       
       Object.keys(data).forEach(key => {
-        // Skip assessment metadata fields
-        if (['assessmentUid', 'assessmentName', 'assessmentType', 'subjectId', 
-             'subjectName', 'sectionId', 'sectionName', 'year', 'teacherId', 
-             'createdAt', 'status', 'studentId'].includes(key)) {
-          return;
-        }
-
-        // This is a student score
         const studentData = data[key];
-        if (studentData && studentData.studentId) {
-          studentScores.push(studentData);
+        
+        // Validate that this is a student score object (has required fields from Python)
+        if (studentData && 
+            typeof studentData.score === 'number' && 
+            typeof studentData.perfectScore === 'number' &&
+            typeof studentData.scannedAt === 'string') {
+          
+          studentScores.push({
+            studentId: key, // Use the key as studentId
+            score: studentData.score,
+            perfectScore: studentData.perfectScore,
+            isPartialScore: studentData.isPartialScore ?? false,
+            assessmentUid: studentData.assessmentUid || assessmentUid,
+            scannedAt: studentData.scannedAt
+          });
         }
       });
 
-      // Sort by score (highest first)
-      studentScores.sort((a, b) => b.score - a.score);
+      // Sort by percentage score (highest first)
+      studentScores.sort((a, b) => {
+        const percentA = (a.score / a.perfectScore) * 100;
+        const percentB = (b.score / b.perfectScore) * 100;
+        return percentB - percentA;
+      });
 
       console.log('✅ [ViewScores] Loaded scores:', studentScores.length);
       setScores(studentScores);
@@ -135,29 +136,53 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
     setRefreshing(false);
   };
 
-  const toggleStudentDetails = (studentId: string) => {
-    setExpandedStudent(expandedStudent === studentId ? null : studentId);
+  // Calculate percentage from raw score
+  const calculatePercentage = (score: number, perfectScore: number): number => {
+    if (perfectScore === 0) return 0;
+    return Math.round((score / perfectScore) * 100);
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 90) return '#22c55e'; // Green
-    if (score >= 75) return '#3b82f6'; // Blue
-    if (score >= 60) return '#f59e0b'; // Orange
+  const getScoreColor = (percentage: number) => {
+    if (percentage >= 90) return '#22c55e'; // Green
+    if (percentage >= 75) return '#3b82f6'; // Blue
+    if (percentage >= 60) return '#f59e0b'; // Orange
     return '#ef4444'; // Red
   };
 
-  const getScoreGrade = (score: number) => {
-    if (score >= 90) return 'A';
-    if (score >= 85) return 'B+';
-    if (score >= 80) return 'B';
-    if (score >= 75) return 'C+';
-    if (score >= 70) return 'C';
-    if (score >= 65) return 'D+';
-    if (score >= 60) return 'D';
+  const getScoreGrade = (percentage: number) => {
+    if (percentage >= 90) return 'A';
+    if (percentage >= 85) return 'B+';
+    if (percentage >= 80) return 'B';
+    if (percentage >= 75) return 'C+';
+    if (percentage >= 70) return 'C';
+    if (percentage >= 65) return 'D+';
+    if (percentage >= 60) return 'D';
     return 'F';
   };
 
-  // CRITICAL FIX: Early return if no assessmentUid
+  // Parse scannedAt date (format: "MM/DD/YYYY HH:MM:SS")
+  const formatDate = (scannedAt: string): string => {
+    try {
+      // Python format: "01/06/2026 14:30:45"
+      const [datePart, timePart] = scannedAt.split(' ');
+      const [month, day, year] = datePart.split('/');
+      const [hour, minute, second] = timePart.split(':');
+      
+      const date = new Date(
+        parseInt(year),
+        parseInt(month) - 1,
+        parseInt(day),
+        parseInt(hour),
+        parseInt(minute),
+        parseInt(second)
+      );
+      
+      return date.toLocaleString();
+    } catch (e) {
+      return scannedAt; // Fallback to raw string
+    }
+  };
+
   if (!assessmentUid) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -185,6 +210,15 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   }
 
+  // Calculate statistics
+  const averagePercentage = scores.length > 0
+    ? scores.reduce((sum, s) => sum + calculatePercentage(s.score, s.perfectScore), 0) / scores.length
+    : 0;
+
+  const highestPercentage = scores.length > 0
+    ? Math.max(...scores.map(s => calculatePercentage(s.score, s.perfectScore)))
+    : 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
@@ -209,12 +243,12 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
               <>
                 <View style={styles.statBox}>
                   <Text style={styles.statNumber}>
-                    {(scores.reduce((sum, s) => sum + s.score, 0) / scores.length).toFixed(1)}%
+                    {averagePercentage.toFixed(1)}%
                   </Text>
                   <Text style={styles.statLabel}>Average</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statNumber}>{Math.max(...scores.map(s => s.score))}%</Text>
+                  <Text style={styles.statNumber}>{highestPercentage}%</Text>
                   <Text style={styles.statLabel}>Highest</Text>
                 </View>
               </>
@@ -233,12 +267,11 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
               </Text>
             </View>
           ) : (
-            scores.map((studentScore, index) => (
-              <View key={studentScore.studentId} style={styles.scoreCard}>
-                <TouchableOpacity
-                  onPress={() => toggleStudentDetails(studentScore.studentId)}
-                  activeOpacity={0.7}
-                >
+            scores.map((studentScore, index) => {
+              const percentage = calculatePercentage(studentScore.score, studentScore.perfectScore);
+              
+              return (
+                <View key={studentScore.studentId} style={styles.scoreCard}>
                   <View style={styles.scoreHeader}>
                     <View style={styles.rankBadge}>
                       <Text style={styles.rankText}>#{index + 1}</Text>
@@ -247,10 +280,13 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                     <View style={styles.studentInfo}>
                       <Text style={styles.studentId}>{studentScore.studentId}</Text>
                       <Text style={styles.scoreStats}>
-                        {studentScore.correctAnswers}/{studentScore.totalQuestions} correct
+                        {studentScore.score}/{studentScore.perfectScore} correct
                       </Text>
+                      {studentScore.isPartialScore && (
+                        <Text style={styles.partialScoreLabel}>⚠️ Partial Score (Editable)</Text>
+                      )}
                       <Text style={styles.timestamp}>
-                        {new Date(studentScore.timestamp).toLocaleString()}
+                        {formatDate(studentScore.scannedAt)}
                       </Text>
                     </View>
 
@@ -258,18 +294,18 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                       <Text 
                         style={[
                           styles.scorePercentage,
-                          { color: getScoreColor(studentScore.score) }
+                          { color: getScoreColor(percentage) }
                         ]}
                       >
-                        {studentScore.score}%
+                        {percentage}%
                       </Text>
                       <Text 
                         style={[
                           styles.scoreGrade,
-                          { color: getScoreColor(studentScore.score) }
+                          { color: getScoreColor(percentage) }
                         ]}
                       >
-                        {getScoreGrade(studentScore.score)}
+                        {getScoreGrade(percentage)}
                       </Text>
                     </View>
                   </View>
@@ -280,59 +316,15 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                       style={[
                         styles.progressBar,
                         { 
-                          width: `${studentScore.score}%`,
-                          backgroundColor: getScoreColor(studentScore.score)
+                          width: `${percentage}%`,
+                          backgroundColor: getScoreColor(percentage)
                         }
                       ]}
                     />
                   </View>
-                </TouchableOpacity>
-
-                {/* Expanded Details */}
-                {expandedStudent === studentScore.studentId && studentScore.details && (
-                  <View style={styles.detailsSection}>
-                    <Text style={styles.detailsTitle}>Question-by-Question Breakdown:</Text>
-                    <ScrollView 
-                      horizontal 
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.detailsScroll}
-                    >
-                      {studentScore.details.map((detail, idx) => (
-                        <View 
-                          key={idx} 
-                          style={[
-                            styles.questionBox,
-                            detail.isCorrect ? styles.questionCorrect : styles.questionIncorrect
-                          ]}
-                        >
-                          <Text style={styles.questionNumber}>Q{detail.question}</Text>
-                          <View style={styles.answerRow}>
-                            <Text style={styles.answerLabel}>Student:</Text>
-                            <Text style={styles.answerValue}>{detail.studentAnswer}</Text>
-                          </View>
-                          <View style={styles.answerRow}>
-                            <Text style={styles.answerLabel}>Correct:</Text>
-                            <Text style={styles.answerValue}>{detail.correctAnswer}</Text>
-                          </View>
-                          <Text style={styles.resultIcon}>
-                            {detail.isCorrect ? '✓' : '✗'}
-                          </Text>
-                        </View>
-                      ))}
-                    </ScrollView>
-
-                    {studentScore.collageImagePath && (
-                      <View style={styles.imagePathContainer}>
-                        <Text style={styles.imagePathLabel}>📷 Image:</Text>
-                        <Text style={styles.imagePathText} numberOfLines={1}>
-                          {studentScore.collageImagePath}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
-            ))
+                </View>
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -489,6 +481,12 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginBottom: 2,
   },
+  partialScoreLabel: {
+    fontSize: 11,
+    color: '#f59e0b',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
   timestamp: {
     fontSize: 11,
     color: '#94a3b8',
@@ -513,80 +511,6 @@ const styles = StyleSheet.create({
   progressBar: {
     height: '100%',
     borderRadius: 4,
-  },
-  detailsSection: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-  },
-  detailsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 12,
-  },
-  detailsScroll: {
-    marginBottom: 12,
-  },
-  questionBox: {
-    width: 120,
-    padding: 12,
-    borderRadius: 8,
-    marginRight: 8,
-    borderWidth: 2,
-  },
-  questionCorrect: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#22c55e',
-  },
-  questionIncorrect: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#ef4444',
-  },
-  questionNumber: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#64748b',
-    marginBottom: 8,
-  },
-  answerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  answerLabel: {
-    fontSize: 11,
-    color: '#94a3b8',
-  },
-  answerValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1e293b',
-  },
-  resultIcon: {
-    fontSize: 20,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  imagePathContainer: {
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  imagePathLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-    marginRight: 8,
-  },
-  imagePathText: {
-    flex: 1,
-    fontSize: 11,
-    color: '#64748b',
-    fontFamily: 'monospace',
   },
 });
 
