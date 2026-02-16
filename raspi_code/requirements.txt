@@ -1,6 +1,3 @@
-google-genai==1.52.0
-firebase-admin==7.1.0
-gpiozero==2.0.1
-numpy<=2.3.0
-python-dotenv==1.0.1
-picamera2
+google-genai
+firebase-admin
+numpy
