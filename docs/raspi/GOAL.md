@@ -25,7 +25,11 @@
   ├── scans/                      # Scanner output directory
   │   ├── tests/                   # For testing scans only
   │   ├── answer_keys/
+  │   │     ├── images/
+  │   │     └── extracted/
   │   └── answer_sheets/
+  │         ├── images/
+  │         └── extracted/
   │
   ├── services/                   # Core service modules
   │   ├── __init__.py             # Package initializer
@@ -46,10 +50,12 @@
   │   └── serviceAccountKey.json.example  # Firebase credentials
   │
   ├── logs/                       # Application logs
+  │   ├── all.log
+  │   ├── bug.log
+  │   ├── debug.log
   │   ├── error.log
   │   ├── info.log
-  │   ├── warning.log
-  │   └── debug.log               # Where I can see the logs during debugging
+  │   └── warning.log             # Where I can see the logs during debugging
   │
   ├── main.py                     # Main pipeline orchestrator
   ├── requirements.txt            # Python dependencies
