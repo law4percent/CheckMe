@@ -2,22 +2,25 @@
 Flexible logging system for the Raspberry Pi scanner application.
 
 Usage:
-    from services.logger import logger
+    from services.logger import get_logger
     
-    logger(details="Connection established", file="gemini_client.py", type="info")
-    logger(details="API error occurred", file="gemini_client.py", type="error", show_console=True)
-    logger(details="Temp debug info", file="main.py", type="debug", save_to_all_logs=False)
+    # Initialize logger with filename once
+    log = get_logger("gemini_client.py")
+    
+    # Then use it throughout the file
+    log(details="Connection established", type="info")
+    log(details="API error occurred", type="error", show_console=True)
 """
 
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Callable
 import logging
 from logging.handlers import RotatingFileHandler
 
-# Define log types (removed "all")
+# Define log types
 LogType = Literal["error", "info", "warning", "debug", "bug"]
 
 # Valid log types
@@ -37,7 +40,7 @@ LOG_FILES = {
     "warning": LOGS_DIR / "warning.log",
     "debug": LOGS_DIR / "debug.log",
     "bug": LOGS_DIR / "bug.log",
-    "all": LOGS_DIR / "all.log"  # Special: captures everything by default
+    "all": LOGS_DIR / "all.log"
 }
 
 # Rotation settings: 10MB max per file, keep last 5 files
@@ -169,19 +172,6 @@ class LoggerSystem:
             type: Log type - "error", "info", "warning", "debug", or "bug"
             show_console: Whether to print to console (default: False)
             save_to_all_logs: Whether to also save to all.log (default: True)
-        
-        Raises:
-            ValueError: If log type is invalid (but still logs to info.log)
-        
-        Examples:
-            # Standard logging (goes to info.log AND all.log)
-            logger(details="API connected", file="gemini_client.py", type="info")
-            
-            # Error with console output (goes to error.log AND all.log)
-            logger(details="Connection failed", file="main.py", type="error", show_console=True)
-            
-            # Temporary debug info (goes ONLY to debug.log, NOT to all.log)
-            logger(details="Temp variable: x=5", file="scanner.py", type="debug", save_to_all_logs=False)
         """
         try:
             # Validate log type (raises error but continues with default)
@@ -193,7 +183,7 @@ class LoggerSystem:
             # Get caller information for line number
             import inspect
             frame = inspect.currentframe()
-            caller_frame = frame.f_back
+            caller_frame = frame.f_back.f_back  # Go back two frames (through get_logger wrapper)
             lineno = caller_frame.f_lineno if caller_frame else 0
             
             # Write to file(s)
@@ -223,40 +213,47 @@ class LoggerSystem:
 _logger_instance = LoggerSystem()
 
 
-def logger(
-    details: str,
-    file: str,
-    type: LogType = "info",
-    show_console: bool = False,
-    save_to_all_logs: bool = True
-):
+def get_logger(filename: str) -> Callable:
     """
-    Convenient logger function for easy imports.
+    Get a logger function bound to a specific filename.
     
     Args:
-        details: The log message/details
-        file: Source file name (e.g., "gemini_client.py")
-        type: Log type - "error", "info", "warning", "debug", or "bug"
-        show_console: Whether to print to console (default: False)
-        save_to_all_logs: Whether to also save to all.log (default: True)
+        filename: Source file name (e.g., "gemini_client.py")
     
-    Examples:
-        from services.logger import logger
+    Returns:
+        A logging function that doesn't require the 'file' parameter
+    
+    Example:
+        from services.logger import get_logger
         
-        # Standard logs (saved to specific file + all.log)
-        logger(details="Starting scan", file="scanner.py", type="info")
-        logger(details="Invalid API key", file="gemini_client.py", type="error", show_console=True)
-        
-        # Temporary debug logs (saved ONLY to debug.log, not all.log)
-        logger(details="Loop iteration 5", file="main.py", type="debug", save_to_all_logs=False)
+        log = get_logger("gemini_client.py")
+        log(details="Starting process", type="info")
+        log(details="Error occurred", type="error", show_console=True)
     """
-    _logger_instance.log(
-        details=details,
-        file=file,
-        type=type,
-        show_console=show_console,
-        save_to_all_logs=save_to_all_logs
-    )
+    def bound_logger(
+        details: str,
+        type: LogType = "info",
+        show_console: bool = False,
+        save_to_all_logs: bool = True
+    ):
+        """
+        Log a message with pre-bound filename.
+        
+        Args:
+            details: The log message/details
+            type: Log type - "error", "info", "warning", "debug", or "bug"
+            show_console: Whether to print to console (default: False)
+            save_to_all_logs: Whether to also save to all.log (default: True)
+        """
+        _logger_instance.log(
+            details=details,
+            file=filename,
+            type=type,
+            show_console=show_console,
+            save_to_all_logs=save_to_all_logs
+        )
+    
+    return bound_logger
 
 
 def get_log_location() -> Path:
@@ -269,38 +266,20 @@ def get_log_file(log_type: str) -> Path:
     return _logger_instance.get_log_file(log_type)
 
 
-# Print initialization message when module is imported
 if __name__ == "__main__":
-    # from services.logger import logger
-    
-    print("Testing logger with revised parameters...\n")
+    # Initialize once
+    log = get_logger("test_logger.py")
 
-    # Test 1: Standard logs (all go to specific file + all.log)
-    logger(details="This is an info message", file="test_logger.py", type="info")
-    logger(details="This is a debug message", file="test_logger.py", type="debug")
-    logger(details="This is a warning message", file="test_logger.py", type="warning", show_console=True)
-    logger(details="This is an error message", file="test_logger.py", type="error", show_console=True)
-    logger(details="This is a bug message", file="test_logger.py", type="bug", show_console=True)
+    print("Testing logger with file initialization...\n")
 
-    # Test 2: Logs that DON'T go to all.log (temporary debug info)
-    logger(
-        details="Temporary debug info - NOT saved to all.log",
-        file="test_logger.py",
-        type="debug",
-        save_to_all_logs=False
-    )
+    # Sample usage
+    log(details="This is an info message", type="info")
+    log(details="This is a debug message", type="debug")
+    log(details="This is a warning message", type="warning", show_console=True)
+    log(details="This is an error message", type="error", show_console=True)
+    log(details="This is a bug message", type="bug", show_console=True)
 
-    logger(
-        details="Another temp log - only in info.log",
-        file="test_logger.py",
-        type="info",
-        save_to_all_logs=False
-    )
-
-    # Test 3: Invalid type (defaults to info)
-    try:
-        logger(details="Invalid type test", file="test_logger.py", type="xyz")
-    except ValueError as e:
-        print(f"\nCaught expected error: {e}")
+    # Temporary debug - not saved to all.log
+    log(details="Temporary debug info", type="debug", save_to_all_logs=False)
 
     print("\n✓ Test complete! Check your logs/ directory")
