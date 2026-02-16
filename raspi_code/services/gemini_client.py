@@ -5,41 +5,35 @@ from abc import ABC, abstractmethod
 import mimetypes
 import os
 import time
-import logging
 from typing import Tuple, Optional
 from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
+from .logger import get_logger
+log = get_logger("gemini_client.py")
 
 class ErrorType(Enum):
     """Categorize errors to determine retry strategy"""
-    RETRYABLE = "retryable"  # Network issues, timeouts
-    AUTH_ERROR = "auth_error"  # Invalid API key
-    CLIENT_ERROR = "client_error"  # Bad request, file not found
-    QUOTA_ERROR = "quota_error"  # Rate limit, quota exceeded
+    RETRYABLE       = "retryable"  # Network issues, timeouts
+    AUTH_ERROR      = "auth_error"  # Invalid API key
+    CLIENT_ERROR    = "client_error"  # Bad request, file not found
+    QUOTA_ERROR     = "quota_error"  # Rate limit, quota exceeded
 
 
 class CircuitState(Enum):
     """Circuit breaker states"""
-    CLOSED = "closed"  # Normal operation
-    OPEN = "open"  # Service is down, fail fast
-    HALF_OPEN = "half_open"  # Testing if service recovered
+    CLOSED      = "closed"  # Normal operation
+    OPEN        = "open"  # Service is down, fail fast
+    HALF_OPEN   = "half_open"  # Testing if service recovered
 
 
 @dataclass
 class CircuitBreakerConfig:
     """Configuration for circuit breaker"""
-    failure_threshold: int = 5  # Trip after N consecutive failures
-    recovery_timeout: int = 60  # Wait N seconds before testing recovery
-    success_threshold: int = 2  # N successes needed to close circuit in half-open state
+    failure_threshold   : int = 5  # Trip after N consecutive failures
+    recovery_timeout    : int = 60  # Wait N seconds before testing recovery
+    success_threshold   : int = 2  # N successes needed to close circuit in half-open state
 
 
 class CircuitBreaker:
@@ -168,45 +162,62 @@ class GeminiClient(ABC):
 
 # --- SDK Client ---
 class GeminiSDKClient(GeminiClient):
-    def __init__(self, api_key: str, model_name: str = "gemini-1.5-flash"):
-        self.api_key = api_key
+    def __init__(self, api_key: str, model_name: str):
+        self.api_key    = api_key
         self.model_name = model_name
+
+        # TARGET: model_name
+        # POTENTIAL/CRITICAL ERROR: Mispelled or Invalid mode_name
+        # SOLUTION: Validate it first, before sending it here in the __init__() function
+        # STATUS: Not yet implemented or On going
         self.model = genai.GenerativeModel(model_name)
 
-    def send_request(self, prompt: str, image_path: str) -> str:
+    def send_request(self, prompt: str, image_path: str) -> dict:
         """Send request using the official Gemini SDK"""
+        # TARGET: image_path
+        # POTENTIAL/CRITICAL ERROR: File cannot be found or not exist.
+        # SOLUTION: Validate it first, before sending it here in the send_request() function
+        # STATUS: Not yet implemented or On going
+
         uploaded_file = None
         try:
             # PRO TIP: Get mime_type and pass it to upload_file
             _, mime_type = self._get_image_data(image_path)
-            
-            logger.info(f"Uploading file: {image_path} (type: {mime_type})")
+
+            log(f"Uploading file: {image_path} (type: {mime_type})", type="debug")
             uploaded_file = genai.upload_file(image_path, mime_type=mime_type)
             
-            logger.info("Generating content with SDK...")
+            log("Generating content with SDK...", type="debug")
             response = self.model.generate_content([prompt, uploaded_file])
             
-            return response.text
+            return {
+                "status": "success",
+                "result": response.text
+            }
             
         except Exception as e:
-            logger.error(f"SDK request failed: {type(e).__name__}: {e}")
-            raise
+            log(f"SDK request failed: {type(e).__name__}: {e}", type= "error")
+            return {
+                "status": "error",
+                "result": None
+            }
+        
         finally:
             # Always clean up uploaded file
             if uploaded_file:
                 try:
                     genai.delete_file(uploaded_file.name)
-                    logger.debug("Cleaned up uploaded file")
+                    log("Cleaned up uploaded file")
                 except Exception as e:
-                    logger.warning(f"Failed to delete uploaded file: {e}")
+                    log(f"Failed to delete uploaded file: {e}", type="warning")
+                    log(f"You can delete the file manually at {image_path}", type="warning")
 
 
 # --- HTTP Client (SECURE VERSION) ---
 class GeminiHTTPClient(GeminiClient):
-    def __init__(self, api_key: str, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: str, model_name: str):
         self.api_key = api_key
         self.model_name = model_name
-        # SECURITY: Don't put API key in URL
         self.url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent"
 
     def send_request(self, prompt: str, image_path: str) -> str:
@@ -239,8 +250,14 @@ class GeminiHTTPClient(GeminiClient):
             response = requests.post(self.url, json=payload, headers=headers, timeout=30)
             response.raise_for_status()
             
-            result = response.json()
-            return result['candidates'][0]['content']['parts'][0]['text']
+            try:
+                return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError, TypeError) as e:
+                logger.error(f"Bad REST response format: {e}")
+                return json.dumps({
+                    "status"    : "error",
+                    "message"   : f"Bad REST response format: {str(e)}"
+                })
             
         except requests.RequestException as e:
             logger.error(f"HTTP request failed: {type(e).__name__}")
