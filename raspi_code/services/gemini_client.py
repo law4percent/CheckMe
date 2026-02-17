@@ -27,11 +27,13 @@ class GeminiClient(ABC):
     def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
         pass
 
+    @abstractmethod
     def _upload_file_to_cloud(self, image_path: str) -> Any:
-        raise NotImplementedError
+        pass
 
+    @abstractmethod
     def _validate_response(self, response: Any) -> str:
-        raise NotImplementedError
+        pass
 
     def _get_image_data(self, image_path: str) -> Tuple[bytes, str]:
         """Helper to get bytes and detect mime type automatically"""
@@ -88,17 +90,17 @@ class GeminiSDKClient(GeminiClient):
             max_output_tokens = 8192
         )
 
-    def _upload_file_to_cloud(self, image_path) -> list[str, str]:
+    def _upload_file_to_cloud(self, image_path) -> Tuple[Any, str]:
         """Uploads a file to Google Cloud and returns the file object"""
         # PRO TIP: Get mime_type and pass it to upload_file to ensure correct handling in Gemini
         mime_type, _    = mimetypes.guess_type(image_path)
         mime_type       = mime_type or "image/jpeg"
         
         # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#upload
-        file_uri = self.client.files.upload(file=image_path)
-        return file_uri, mime_type
+        file = self.client.files.upload(file=image_path)
+        return file, mime_type
     
-    # Comment: Where can I read a legit documentation for _validate_response(), just to confirm if this is working?
+    # Comment: To be tested if this works
     def _validate_response(self, response: Any) -> str:
         # Safer return logic inside send_request
         if response.candidates:
@@ -119,10 +121,10 @@ class GeminiSDKClient(GeminiClient):
         # SOLUTION: Validate it first when using this in the your code somewhere, before sending it here in the send_request() function
 
         if upload_to_cloud:
-            file_uri = None
+            file = None
             try:
                 log(f"Uploading {image_path} via SDK...", type="info")
-                file_uri, mime_type = self._upload_file_to_cloud(image_path)
+                file, mime_type = self._upload_file_to_cloud(image_path)
                 log("Generating content with SDK (Upload/Referencing Version)", type="info")
                 
                 # Possible for Better or Optimization.
@@ -133,8 +135,8 @@ class GeminiSDKClient(GeminiClient):
                     model       = self.model_name,
                     contents    = [
                         # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#provide-a-list-of-non-function-call-parts    
-                        types.Part.from_text('What is this image about?'),
-                        types.Part.from_uri(file_uri, mime_type)
+                        types.Part.from_text(prompt),
+                        types.Part.from_uri(file.uri, mime_type)
                     ],
                     config      = self.config
                 )
@@ -146,15 +148,15 @@ class GeminiSDKClient(GeminiClient):
             
             finally:
                 # Always clean up uploaded file
-                if file_uri:
+                if file:
                     try:
                         # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#delete
-                        self.client.files.delete(name=file_uri.name)
+                        self.client.files.delete(name=file.name)
                         log("Cleaned up uploaded file", type="info")
                     except Exception as cleanup_error:
                         log(
                             f"\nFailed to delete the uploaded file: {cleanup_error}\n"
-                            f"You can delete the file manually at google cloud: {file_uri.name}\n" 
+                            f"You can delete the file manually at google cloud: {file.name}\n" 
                             f"Or just wait 48 hours because it auto deleted after the time.", 
                             type="warning"
                         )
@@ -348,12 +350,8 @@ def gemini_with_retry(
         log(f"Image file not found: {image_path}", type="error")
         return None
 
-    method = None
-    if prefer_method == "http":
-        method = ("HTTP Client", lambda: GeminiHTTPClient(api_key, model))
-    else:
-        method = ("SDK Client",  lambda: GeminiSDKClient(api_key, model))
-
+    client_option = ("SDK Client",  lambda: GeminiSDKClient(api_key, model)) if prefer_method == "sdk" else ("HTTP Client", lambda: GeminiHTTPClient(api_key, model))
+    method_name, client_factory = client_option
     for attempt in range(1, max_attempts + 1):
         log(
             f"\n{'='*50}\n"
@@ -362,7 +360,6 @@ def gemini_with_retry(
             type="info"
         )
         last_error_type = ErrorType.RETRYABLE
-        method_name, client_factory = method
 
         try:
             client = client_factory()
@@ -376,13 +373,12 @@ def gemini_with_retry(
 
             if error_type == ErrorType.CLIENT_ERROR:
                 # Bad file or bad prompt — no client or retry can fix this
-                log("Client error is not retryable. Aborting.", type="error")
+                log(f"Client error on {method_name} ({error_type.value}). Aborting.", type="error")
                 return None
 
             if error_type == ErrorType.AUTH_ERROR:
                 # This client cannot authenticate — skip it, let the other client try
-                suggested_client = "SDK Client" if method_name == "HTTP Client" else "HTTP Client"
-                log(f"Auth error on {method_name}. Try to use {suggested_client}.", type="error")
+                log(f"Auth error on {method_name} ({error_type.value}). Aborting — check your API key.", type="error")
                 return None
             
             log(f"✗ {method_name} failed ({error_type.value}): {e}", type="warning")
