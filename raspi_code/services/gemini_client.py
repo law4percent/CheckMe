@@ -435,7 +435,7 @@ def gemini_with_retry(
     # Pass your own CircuitBreaker() instances to isolate pipelines from each other.
     sdk_breaker   : CircuitBreaker = sdk_circuit_breaker,
     http_breaker  : CircuitBreaker = http_circuit_breaker,
-) -> Optional[str]:
+) -> str | None:
 
     # NOTE: genai.configure() sets global SDK state.
     # Calling it here on every invocation risks a race condition when
