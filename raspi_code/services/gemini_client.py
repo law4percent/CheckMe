@@ -352,11 +352,6 @@ def gemini_with_retry(
     if prefer_method == "http":
         method = ("HTTP Client", lambda: GeminiHTTPClient(api_key, model))
     else:
-        # NOTE: genai.configure() sets global SDK state.
-        # Calling it here on every invocation risks a race condition when
-        # multiple pipelines run with different api_keys (second call overwrites the first).
-        # Ideally, call genai.configure() once at startup in your entry point instead.
-        genai.configure(api_key=api_key)
         method = ("SDK Client",  lambda: GeminiSDKClient(api_key, model))
 
     for attempt in range(1, max_attempts + 1):
@@ -421,7 +416,7 @@ if __name__ == "__main__":
     # Sample usage with gemini_with_retry()
     # ============================================================
 
-    # --- 1. Basic usage (SDK first, default settings) ---
+    # --- 1. Basic usage with SDK default settings ---
     result = gemini_with_retry(
         api_key    = API_KEY,
         image_path = IMAGE_PATH,
@@ -454,55 +449,9 @@ if __name__ == "__main__":
     print(f"Fixed-wait result: {result}")
 
 
-    # --- 4. Custom circuit breaker config (stricter settings) ---
-    custom_sdk_breaker  = CircuitBreaker(CircuitBreakerConfig(
-        failure_threshold = 2,
-        recovery_timeout  = 60,
-        success_threshold = 3
-    ))
-    custom_http_breaker = CircuitBreaker(CircuitBreakerConfig(
-        failure_threshold = 2,
-        recovery_timeout  = 60,
-        success_threshold = 3
-    ))
-
-    result = gemini_with_retry(
-        api_key      = API_KEY,
-        image_path   = IMAGE_PATH,
-        prompt       = PROMPT,
-        model        = MODEL,
-        sdk_breaker  = custom_sdk_breaker,
-        http_breaker = custom_http_breaker,
-    )
-    print(f"Custom breaker result: {result}")
-
-
-    # --- 5. Isolated breakers for independent pipelines ---
-    pipeline_a = gemini_with_retry(
-        api_key      = API_KEY,
-        image_path   = IMAGE_PATH,
-        prompt       = "Pipeline A: summarize this image.",
-        model        = MODEL,
-        sdk_breaker  = CircuitBreaker(),
-        http_breaker = CircuitBreaker(),
-    )
-
-    pipeline_b = gemini_with_retry(
-        api_key      = API_KEY,
-        image_path   = IMAGE_PATH,
-        prompt       = "Pipeline B: extract text from this image.",
-        model        = MODEL,
-        sdk_breaker  = CircuitBreaker(),
-        http_breaker = CircuitBreaker(),
-    )
-
-    print(f"Pipeline A: {pipeline_a}")
-    print(f"Pipeline B: {pipeline_b}")
-
     # ============================================================
     # Direct usage samples without any retry logic
     # ============================================================
-    genai.configure(api_key=API_KEY)
 
     # --- 1. SDK Client — upload to cloud (default) ---
     sdk_client = GeminiSDKClient(API_KEY, MODEL)
@@ -513,7 +462,7 @@ if __name__ == "__main__":
     # --- 2. SDK Client — Base64 inline (no cloud upload) ---
     sdk_client = GeminiSDKClient(API_KEY, MODEL)
     result     = sdk_client.send_request(PROMPT, IMAGE_PATH, upload_to_cloud=False)
-    print(f"SDK (base64): {result}")
+    print(f"SDK (image in bytes): {result}")
 
 
     # --- 3. HTTP Client — upload to cloud (default) ---
