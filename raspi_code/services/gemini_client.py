@@ -257,37 +257,34 @@ class GeminiSDKClient(GeminiClient):
 
 class GeminiHTTPClient(GeminiClient):
     def __init__(self, api_key: str, model_name: str):
-        self.api_key = api_key
+        self.api_key    = api_key
         self.model_name = model_name
-        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        self.url        = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
 
     def _upload_file_to_cloud(self, image_path) -> Tuple[str, str]:
         """Uploads an image file to Google Cloud"""
-        mime_type, _    = mimetypes.guess_type(image_path)
-        mime_type       = mime_type or "image/jpeg"
-        upload_url      = "https://generativelanguage.googleapis.com/upload/v1beta/files"
-        upload_headers  = {
-            "x-goog-api-key": self.api_key,
+        mime_type, _   = mimetypes.guess_type(image_path)
+        mime_type      = mime_type or "image/jpeg"
+        upload_url     = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+        upload_headers = {
+            "x-goog-api-key"        : self.api_key,
             "X-Goog-Upload-Protocol": "multipart",
         }
-        metadata        = {"file": {"display_name": os.path.basename(image_path)}}
-        
-        upload_response = None
+        metadata       = {"file": {"display_name": os.path.basename(image_path)}}
         with open(image_path, 'rb') as f:
-            files           = {
+            files = {
                 'metadata': (None, json.dumps(metadata), 'application/json'),
-                'file': (os.path.basename(image_path), f, mime_type)
+                'file'    : (os.path.basename(image_path), f, mime_type)
             }
             upload_response = requests.post(
-                upload_url, 
-                headers = upload_headers, 
-                files   = files, 
+                upload_url,
+                headers = upload_headers,
+                files   = files,
                 timeout = 60
             )
             upload_response.raise_for_status()
 
-        file_info = upload_response.json()
-        file_uri = file_info['file']['uri'] # This is the "reference" to your cloud file
+        file_uri = upload_response.json()['file']['uri']
         return file_uri, mime_type
 
     def _validate_response(self, response: dict) -> str:
@@ -298,8 +295,9 @@ class GeminiHTTPClient(GeminiClient):
             log(f"Gemini blocked this request: {reason}", type="warning")
             raise ValueError(f"Gemini blocked this request: {reason}")
 
-        candidate   = response["candidates"][0]
-        parts       = candidate.get("content", {}).get("parts", [])
+        candidate = response["candidates"][0]
+        parts     = candidate.get("content", {}).get("parts", [])
+
         if parts and "text" in parts[0]:
             return parts[0]["text"]
         else:
@@ -317,10 +315,12 @@ class GeminiHTTPClient(GeminiClient):
 
         # If upload_to_cloud is True, we will upload the file to Google Cloud and reference it in the request
         if upload_to_cloud:
+            upload_succeeded = False
             try:
                 log(f"Uploading {image_path} via HTTP...", type="debug")
-                file_uri, mime_type = self._upload_file_to_cloud(image_path)        
-                gen_payload = {
+                file_uri, mime_type = self._upload_file_to_cloud(image_path)
+                upload_succeeded    = True  # Only reaches here if upload didn't throw
+                gen_payload         = {
                     "contents": [{
                         "parts": [
                             {"text": prompt},
@@ -328,37 +328,38 @@ class GeminiHTTPClient(GeminiClient):
                         ]
                     }]
                 }
-                headers = {
-                    "Content-Type": "application/json", 
+                headers             = {
+                    "Content-Type"  : "application/json",
                     "x-goog-api-key": self.api_key
                 }
                 log("Generating content...", type="debug")
-                response = requests.post(
-                    self.url, 
-                    headers = headers, 
-                    json    = gen_payload, 
+                response            = requests.post(
+                    self.url,
+                    headers = headers,
+                    json    = gen_payload,
                     timeout = 30
                 )
                 response.raise_for_status()
                 return self._validate_response(response.json())
-                
+
             except requests.RequestException as e:
                 log(f"HTTP request failed: {type(e).__name__}", type="error")
                 raise RuntimeError(f"HTTP request failed: {e}") from e
-            
+
             except (KeyError, IndexError) as e:
                 log(f"Unexpected response format: {e}", type="error")
                 raise ValueError(f"Unexpected response format: {e}") from e
-            
+
             finally:
-                log(
-                    "NOTE: Uploaded file cannot be deleted via HTTP API."
-                    "In a production system, you would want to implement a scheduled cleanup process for orphaned files in Google Cloud Storage."
-                    "Please manage your cloud storage to avoid orphaned files.",
-                    type="warning"
-                )
-        
-        # Else, we will encode the image as Base64 and send it inline (no cloud upload)
+                # Only warn if a file was actually uploaded to cloud storage
+                if upload_succeeded:
+                    log(
+                        "NOTE: Uploaded file cannot be deleted via HTTP API. "
+                        "In a production system, you would want to implement a scheduled cleanup process for orphaned files in Google Cloud Storage. "
+                        "Please manage your cloud storage to avoid orphaned files.",
+                        type="warning"
+                    )
+
         else:
             try:
                 log("Encoding image to Base64 for HTTP request...", type="debug")
@@ -370,31 +371,31 @@ class GeminiHTTPClient(GeminiClient):
                             {
                                 "inline_data": {
                                     "mime_type": mime_type,
-                                    "data": encoded_string
+                                    "data"     : encoded_string
                                 }
                             }
                         ]
                     }]
                 }
                 headers = {
-                    "Content-Type": "application/json",
+                    "Content-Type"  : "application/json",
                     "x-goog-api-key": self.api_key
                 }
-                
+
                 log("Sending HTTP request...", type="debug")
                 response = requests.post(
-                    self.url, 
-                    json    = payload, 
-                    headers = headers, 
+                    self.url,
+                    json    = payload,
+                    headers = headers,
                     timeout = 30
                 )
                 response.raise_for_status()
                 return self._validate_response(response.json())
-                
+
             except requests.RequestException as e:
                 log(f"HTTP request failed: {type(e).__name__}", type="error")
                 raise RuntimeError(f"HTTP request failed: {e}") from e
-            
+
             except (KeyError, IndexError) as e:
                 log(f"Unexpected response format: {e}", type="error")
                 raise ValueError(f"Unexpected response format: {e}") from e
@@ -429,10 +430,17 @@ def gemini_engine(
     max_attempts  : int            = 3,
     use_exponential_backoff : bool = True,
     prefer_method : str            = "sdk",
+    # NOTE: These defaults point to the module-level shared circuit breakers intentionally.
+    # State persists across calls so the breaker can actually trip.
+    # Pass your own CircuitBreaker() instances to isolate pipelines from each other.
     sdk_breaker   : CircuitBreaker = sdk_circuit_breaker,
     http_breaker  : CircuitBreaker = http_circuit_breaker,
 ) -> Optional[str]:
 
+    # NOTE: genai.configure() sets global SDK state.
+    # Calling it here on every invocation risks a race condition when
+    # multiple pipelines run with different api_keys (second call overwrites the first).
+    # Ideally, call genai.configure() once at startup in your entry point instead.
     genai.configure(api_key=api_key)
 
     if not os.path.exists(image_path):
@@ -455,12 +463,16 @@ def gemini_engine(
         log(f"ATTEMPT {attempt}/{max_attempts}", type="info")
         log(f"{'='*50}", type="info")
 
-        last_error_type = ErrorType.RETRYABLE
+        last_error_type    = ErrorType.RETRYABLE
+        all_circuits_open  = True  # Assume open, proven False when any method proceeds
 
         for method_name, client_factory, breaker in methods:
             if not breaker.can_proceed():
                 log(f"⊗ {method_name} circuit is OPEN. Skipping.", type="warning")
                 continue
+
+            # At least one method is allowed to proceed
+            all_circuits_open = False
 
             log(f"→ Trying {method_name}...", type="info")
 
@@ -479,18 +491,36 @@ def gemini_engine(
                 breaker.record_failure()
 
                 if error_type == ErrorType.CLIENT_ERROR:
+                    # Bad file or bad prompt — no client or retry can fix this
                     log("Client error is not retryable. Aborting.", type="error")
                     return None
 
                 if error_type == ErrorType.AUTH_ERROR:
+                    # This client cannot authenticate — skip it, let the other try
                     log(f"Auth error on {method_name}. Skipping to next client.", type="error")
                     continue
 
+        # Both circuits are open — no requests were even attempted this round
+        if all_circuits_open:
+            log(
+                f"Both circuits are OPEN. No requests attempted on attempt {attempt}. "
+                f"SDK recovery in ~{sdk_breaker.config.recovery_timeout}s, "
+                f"HTTP recovery in ~{http_breaker.config.recovery_timeout}s.",
+                type="error"
+            )
+            # No point in a short exponential wait — respect the recovery timeout instead
+            wait_time = min(sdk_breaker.config.recovery_timeout, http_breaker.config.recovery_timeout)
+            if attempt < max_attempts:
+                log(f"Waiting {wait_time}s for circuit recovery before next attempt...", type="info")
+                time.sleep(wait_time)
+            continue
+
+        # At least one method was tried but all failed — apply normal backoff
         if attempt < max_attempts:
             if last_error_type == ErrorType.QUOTA_ERROR:
-                wait_time = 30
+                wait_time = 30  # Quota limits need longer recovery than network blips
             elif use_exponential_backoff:
-                wait_time = 2 ** attempt
+                wait_time = 2 ** attempt  # 2, 4, 8 seconds
             else:
                 wait_time = 2
 
@@ -498,10 +528,9 @@ def gemini_engine(
             time.sleep(wait_time)
 
     log(f"All {max_attempts} attempts exhausted.", type="error")
-    log(f"SDK  circuit: {sdk_breaker.get_status()}",  type="info")
+    log(f"SDK  circuit: {sdk_breaker.get_status()}", type="info")
     log(f"HTTP circuit: {http_breaker.get_status()}", type="info")
     return None
-
 
 # ============================================================
 # USAGE
