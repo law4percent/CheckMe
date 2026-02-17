@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 import mimetypes
 import os
 import time
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime
@@ -131,7 +131,7 @@ class GeminiClient(ABC):
     def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
         pass
 
-    def _upload_file_to_cloud(self, image_path: str) -> genai.File:
+    def _upload_file_to_cloud(self, image_path: str) -> Any:
         pass
 
     def _get_image_data(self, image_path: str) -> Tuple[bytes, str]:
@@ -146,24 +146,25 @@ class GeminiClient(ABC):
         image_bytes, mime_type = self._get_image_data(image_path)
         encoded_string = base64.b64encode(image_bytes).decode('utf-8')
         return encoded_string, mime_type
+    
+    def _validate_response(self, response: Any) -> str:
+        pass
 
-    def _classify_error(self, error: Exception) -> ErrorType:
-        """Classify error to determine if retry makes sense"""
-        error_str = str(error).lower()
-        
-        # Authentication errors - don't retry
-        if any(x in error_str for x in ['401', 'unauthorized', 'invalid api key', '403', 'forbidden']):
+    def classify_error(self, error: Exception) -> ErrorType:
+        # For requests library errors, extract the real HTTP status code first
+        status_code = None
+        if isinstance(error, requests.exceptions.HTTPError) and error.response is not None:
+            status_code = error.response.status_code
+
+        if status_code in (401, 403) or (status_code is None and any(x in str(error).lower() for x in ['401', 'unauthorized', 'invalid api key', '403', 'forbidden'])):
             return ErrorType.AUTH_ERROR
-        
-        # Quota/rate limit errors - may benefit from backoff
-        if any(x in error_str for x in ['429', 'quota', 'rate limit', 'resource exhausted']):
+
+        if status_code == 429 or (status_code is None and any(x in str(error).lower() for x in ['429', 'quota', 'rate limit', 'resource exhausted'])):
             return ErrorType.QUOTA_ERROR
-        
-        # Client errors - don't retry
-        if any(x in error_str for x in ['400', 'bad request', 'invalid', 'not found', '404']):
+
+        if status_code in (400, 404) or (status_code is None and any(x in str(error).lower() for x in ['400', 'bad request', 'invalid', 'not found', '404'])):
             return ErrorType.CLIENT_ERROR
-        
-        # Network/server errors - retry
+
         return ErrorType.RETRYABLE
 
 
@@ -185,6 +186,19 @@ class GeminiSDKClient(GeminiClient):
         mime_type, _ = mimetypes.guess_type(image_path)
         mime_type = mime_type or "image/jpeg"
         return genai.upload_file(image_path, mime_type=mime_type)
+    
+    def _validate_response(self, response: genai.types.GenerateContentResponse) -> str:
+        # Safer return logic inside send_request
+        if response.candidates:
+            # Check if the first candidate actually has text
+            if response.candidates[0].content.parts:
+                return response.text
+            else:
+                finish_reason = response.candidates[0].finish_reason
+                raise ValueError(f"No text returned. Finish reason: {finish_reason}")
+        else:
+            # This happens if the prompt itself was blocked
+            raise ValueError("Request was blocked by safety filters.")
 
     def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
         """Send request using the official Gemini SDK"""
@@ -201,8 +215,7 @@ class GeminiSDKClient(GeminiClient):
                 uploaded_file = self._upload_file_to_cloud(image_path)
                 log("Generating content with SDK...", type="debug")
                 response = self.model.generate_content([prompt, uploaded_file])
-
-                return response.text
+                return self._validate_response(response)
                 
             except Exception as e:
                 log(f"SDK request failed: {type(e).__name__}: {e}", type= "error")
@@ -234,7 +247,7 @@ class GeminiSDKClient(GeminiClient):
             try:
                 log("Generating content with SDK (Base64)...", type="debug")
                 response = self.model.generate_content([prompt, image_part])
-                return response.text
+                return self._validate_response(response)
             except Exception as e:
                 log(f"SDK request with Base64 failed: {type(e).__name__}: {e}", type="error")
                 raise RuntimeError(f"SDK request with Base64 failed: {e}") from e
@@ -251,20 +264,43 @@ class GeminiHTTPClient(GeminiClient):
         """Uploads an image file to Google Cloud"""
         mime_type, _ = mimetypes.guess_type(image_path)
         upload_url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+        
         upload_headers = {
             "x-goog-api-key": self.api_key,
             "X-Goog-Upload-Protocol": "multipart",
         }
         metadata = {"file": {"display_name": os.path.basename(image_path)}}
-        files = {
-            'metadata': (None, json.dumps(metadata), 'application/json'),
-            'file': (os.path.basename(image_path), open(image_path, 'rb'), mime_type)
-        }
-        upload_response = requests.post(upload_url, headers=upload_headers, files=files)
+        
+        upload_response = None
+        with open(image_path, 'rb') as f:
+            files = {
+                'metadata': (None, json.dumps(metadata), 'application/json'),
+                'file': (os.path.basename(image_path), f, mime_type)
+            }
+            upload_response = requests.post(upload_url, headers=upload_headers, files=files)
         upload_response.raise_for_status()
+
         file_info = upload_response.json()
         file_uri = file_info['file']['uri'] # This is the "reference" to your cloud file
         return file_uri, mime_type
+
+    def _validate_response(self, response: dict) -> str:
+        # CHECK: Did the AI actually return a response? 
+        # (Safety filters often return 200 OK but 0 candidates)
+        if "candidates" not in response or not response["candidates"]:
+            reason = response.get("promptFeedback", {}).get("blockReason", "Safety Filter")
+            log(f"Gemini blocked this request: {reason}", type="warning")
+            raise ValueError(f"Gemini blocked this request: {reason}")
+
+        candidate = response["candidates"][0]
+        parts = candidate.get("content", {}).get("parts", [])
+        if parts and "text" in parts[0]:
+            return parts[0]["text"]
+        else:
+            # Handle cases where AI returns something other than text (like a finishReason)
+            finish_reason = candidate.get("finishReason")
+            log(f"No text returned. Finish reason: {finish_reason}", type="warning")
+            raise ValueError(f"No text returned. Finish reason: {finish_reason}")
 
     def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
         """Send request using direct HTTP API calls (SECURE)"""
@@ -277,8 +313,7 @@ class GeminiHTTPClient(GeminiClient):
         if upload_to_cloud:
             try:
                 log(f"Uploading {image_path} via HTTP...", type="debug")
-                file_uri, mime_type = self._upload_file_to_cloud(image_path)
-                gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"              
+                file_uri, mime_type = self._upload_file_to_cloud(image_path)        
                 gen_payload = {
                     "contents": [{
                         "parts": [
@@ -291,21 +326,31 @@ class GeminiHTTPClient(GeminiClient):
                     "Content-Type": "application/json", 
                     "x-goog-api-key": self.api_key
                 }
-                log("Generating content...", type="debug")
-                response = requests.post(f"{gen_url}", headers=headers, json=gen_payload)
-                response.raise_for_status()
                 
-                return response.json()['candidates'][0]['content']['parts'][0]['text']
-            except Exception as e:
-                log(f"HTTP request failed: {type(e).__name__}: {e}", type="error")
+                log("Generating content...", type="debug")
+                response = requests.post(f"{self.url}", headers=headers, json=gen_payload)
+                response.raise_for_status()
+
+                return self._validate_response(response.json())
+                
+            except requests.RequestException as e:
+                log(f"HTTP request failed: {type(e).__name__}", type="error")
                 raise RuntimeError(f"HTTP request failed: {e}") from e
+            
+            except (KeyError, IndexError) as e:
+                log(f"Unexpected response format: {e}", type="error")
+                raise ValueError(f"Unexpected response format: {e}") from e
             
             finally:
                 # Clean up uploaded file if possible (requires additional API call)
                 # Note: The HTTP upload endpoint does not currently provide a way to delete files,
                 # so this is a known limitation. In a production system, you would want to implement
                 # a scheduled cleanup process for orphaned files in Google Cloud Storage.
-                log("NOTE: Uploaded file cannot be deleted via HTTP API. Please manage your cloud storage to avoid orphaned files.", type="warning")
+                log(
+                    "NOTE: Uploaded file cannot be deleted via HTTP API."
+                    "Please manage your cloud storage to avoid orphaned files.",
+                    type="warning"
+                )
         
         # Else, we will encode the image as Base64 and send it inline (no cloud upload)
         else:
@@ -333,24 +378,8 @@ class GeminiHTTPClient(GeminiClient):
                 log("Sending HTTP request...", type="debug")
                 response = requests.post(self.url, json=payload, headers=headers, timeout=30)
                 response.raise_for_status()
-                data = response.json()
 
-                # CHECK: Did the AI actually return a response? 
-                # (Safety filters often return 200 OK but 0 candidates)
-                if "candidates" not in data or not data["candidates"]:
-                    reason = data.get("promptFeedback", {}).get("blockReason", "Safety Filter")
-                    log(f"Gemini blocked this request: {reason}", type="warning")
-                    raise ValueError(f"Gemini blocked this request: {reason}")
-
-                candidate = data["candidates"][0]
-                parts = candidate.get("content", {}).get("parts", [])
-                if parts and "text" in parts[0]:
-                    return parts[0]["text"]
-                else:
-                    # Handle cases where AI returns something other than text (like a finishReason)
-                    finish_reason = candidate.get("finishReason")
-                    log(f"No text returned. Finish reason: {finish_reason}", type="warning")
-                    raise ValueError(f"No text returned. Finish reason: {finish_reason}")
+                return self._validate_response(response.json())
                 
             except requests.RequestException as e:
                 log(f"HTTP request failed: {type(e).__name__}", type="error")
@@ -447,7 +476,7 @@ def try_gemini_with_retry(
                 return result
                 
             except Exception as e:
-                error_type = client._classify_error(e)
+                error_type = client.classify_error(e)
                 logger.warning(f"✗ {method_name} failed ({error_type.value})")
                 
                 # Record failure in circuit breaker
