@@ -1,15 +1,15 @@
 import base64
 import requests
-import google.generativeai as genai
 from abc import ABC, abstractmethod
 import mimetypes
 import os
 import time
 from typing import Tuple, Optional, Any
 from enum import Enum
-from dataclasses import dataclass
-from datetime import datetime
 import json
+
+from google import genai
+from google.genai import types
 
 from .logger import get_logger
 log = get_logger("gemini_client.py")
@@ -40,6 +40,7 @@ class GeminiClient(ABC):
         with open(image_path, "rb") as f:
             return f.read(), mime_type
     
+    # THIS IS NO LONGER USED BY SDK
     def _encode_image_to_base64(self, image_path: str) -> Tuple[str, str]:
         image_bytes, mime_type  = self._get_image_data(image_path)
         encoded_string          = base64.b64encode(image_bytes).decode('utf-8')
@@ -82,26 +83,20 @@ class GeminiSDKClient(GeminiClient):
     def __init__(self, api_key: str, model_name: str):
         self.api_key    = api_key
         self.model_name = model_name
+        self.client     = genai.Client(api_key=api_key)
 
-        # TARGET: model_name
-        # POTENTIAL/CRITICAL ERROR: Mispelled or Invalid mode_name
-        # SOLUTION: Validate it first, before sending it here in the __init__() function
-        # STATUS: Not yet implemented or On going
-        self.model      = genai.GenerativeModel(
-            model_name,
-            generation_config = {
-                "temperature"       : 0.1,
-                "top_p"             : 0.8,
-                "max_output_tokens" : 8192,
-            }
-        )
-
-    def _upload_file_to_cloud(self, image_path) -> genai.File:
+    def _upload_file_to_cloud(self, image_path) -> list[str, str]:
         """Uploads a file to Google Cloud and returns the file object"""
         # PRO TIP: Get mime_type and pass it to upload_file to ensure correct handling in Gemini
         mime_type, _    = mimetypes.guess_type(image_path)
         mime_type       = mime_type or "image/jpeg"
-        return genai.upload_file(image_path, mime_type=mime_type)
+        
+        # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#upload
+        file = self.client.files.upload(file=image_path)
+
+        # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#get
+        # file_info = 
+        return file, mime_type
     
     def _validate_response(self, response: genai.types.GenerateContentResponse) -> str:
         # Safer return logic inside send_request
@@ -125,13 +120,34 @@ class GeminiSDKClient(GeminiClient):
 
         # If upload_to_cloud is True, we will upload the file to Google Cloud and reference it in the request
         if upload_to_cloud:
-            uploaded_file = None
+            file_uri = None
             try:
                 log(f"Uploading {image_path} via SDK...", type="debug")
-                uploaded_file = self._upload_file_to_cloud(image_path)
+                file_uri, mime_type = self._upload_file_to_cloud(image_path)
                 log("Generating content with SDK (Upload/Referencing Version)", type="debug")
-                response = self.model.generate_content([prompt, uploaded_file])
-                return self._validate_response(response)
+        
+                # TARGET: model_name
+                # POTENTIAL/CRITICAL ERROR: Mispelled or Invalid mode_name
+                # SOLUTION: Validate it first, before sending it here in the send_request() function        
+                
+                # Possible for Better or Optimization.
+                # Explore and try this approach.
+                # Comment: I think  this ain't work for this case.
+                # Check this link: https://github.com/googleapis/python-genai?tab=readme-ov-file#json-schema-support
+                contents = [
+                    types.Part.from_text('What is this image about?'),
+                    types.Part.from_uri(file_uri, mime_type)
+                ]
+                response = self.client.models.generate_content(
+                    model       = self.model_name,
+                    contents    = contents, # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#provide-a-list-of-non-function-call-parts
+                    config      = types.GenerateContentConfig(
+                        temperature = 0,
+                        top_p       = 0.95,
+                        top_k       = 20,
+                    ),                
+                )
+                return self._validate_response(response) # To be confirm
                 
             except Exception as e:
                 log(f"SDK request failed: {type(e).__name__}: {e}", type= "error")
@@ -139,29 +155,35 @@ class GeminiSDKClient(GeminiClient):
             
             finally:
                 # Always clean up uploaded file
-                if uploaded_file:
+                if file_uri:
                     try:
-                        genai.delete_file(uploaded_file.name)
+                        # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#delete
+                        self.client.files.delete(name=file_uri.name)
                         log("Cleaned up uploaded file", type="debug")
                     except Exception as cleanup_error:
                         log(
-                            f"Failed to delete the uploaded file: {cleanup_error}"
-                            f"You can delete the file manually at google cloud: {uploaded_file.name}", 
+                            f"\nFailed to delete the uploaded file: {cleanup_error}\n"
+                            f"You can delete the file manually at google cloud: {file_uri.name}\n" 
+                            f"Or just wait 48 hours because it auto deleted after the time.", 
                             type="warning"
                         )
         
         # Else, we will encode the image as Base64 and send it inline (no cloud upload)
         else:
-            log("Uploading file as Base64 inline data...", type="debug")
-            encoded_string, mime_type = self._encode_image_to_base64(image_path)
-            image_part = {
-                "mime_type": mime_type,
-                "data": encoded_string
-            }
-            
             try:
+                log("Get file as bytes inline data...", type="debug")
+                # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#streaming-for-image-content
+                image_bytes, mime_type = self._get_image_data(image_path)
                 log("Generating content with SDK (Base64)...", type="debug")
-                response = self.model.generate_content([prompt, image_part])
+                response = self.client.models.generate_content(
+                    model       = self.model_name,
+                    contents    = [
+                        prompt, 
+                        types.Part.from_bytes(
+                            data        = image_bytes, 
+                            mime_type   = mime_type)
+                    ]
+                )
                 return self._validate_response(response)
             
             except Exception as e:
