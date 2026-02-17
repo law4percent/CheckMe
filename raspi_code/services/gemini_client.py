@@ -21,99 +21,6 @@ class ErrorType(Enum):
     QUOTA_ERROR  = "quota_error"
 
 
-class CircuitState(Enum):
-    CLOSED    = "closed"
-    OPEN      = "open"
-    HALF_OPEN = "half_open"
-
-
-@dataclass
-class CircuitBreakerConfig:
-    failure_threshold : int = 3
-    recovery_timeout  : int = 30
-    success_threshold : int = 2
-
-
-class CircuitBreaker:
-    def __init__(self, config: CircuitBreakerConfig = None):
-        self.config            = config or CircuitBreakerConfig()
-        self.failure_count     = 0
-        self.success_count     = 0
-        self.last_failure_time = 0
-        self.state             = CircuitState.CLOSED
-        self.last_state_change = datetime.now()
-
-    def can_proceed(self) -> bool:
-        if self.state == CircuitState.CLOSED:
-            return True
-
-        if self.state == CircuitState.OPEN:
-            time_since_failure = time.time() - self.last_failure_time
-            if time_since_failure > self.config.recovery_timeout:
-                log(f"Circuit transitioning to HALF-OPEN (testing recovery)", type="info")
-                self.state             = CircuitState.HALF_OPEN
-                self.success_count     = 0
-                self.last_state_change = datetime.now()
-                return True
-
-            log(
-                f"Circuit is OPEN. Failing fast. "
-                f"Recovery attempt in {self.config.recovery_timeout - time_since_failure:.0f}s",
-                type="warning"
-            )
-            return False
-
-        if self.state == CircuitState.HALF_OPEN:
-            return True
-
-        return False
-
-    def record_success(self):
-        if self.state == CircuitState.HALF_OPEN:
-            self.success_count += 1
-            log(
-                f"Circuit HALF-OPEN: Success {self.success_count}/{self.config.success_threshold}",
-                type="info"
-            )
-            if self.success_count >= self.config.success_threshold:
-                log("Circuit recovered! Transitioning to CLOSED", type="info")
-                self.state             = CircuitState.CLOSED
-                self.failure_count     = 0
-                self.success_count     = 0
-                self.last_state_change = datetime.now()
-        else:
-            self.failure_count = 0
-
-    def record_failure(self):
-        self.failure_count     += 1
-        self.last_failure_time  = time.time()
-
-        if self.state == CircuitState.HALF_OPEN:
-            log("Circuit HALF-OPEN test failed. Reopening circuit.", type="warning")
-            self.state             = CircuitState.OPEN
-            self.success_count     = 0
-            self.last_state_change = datetime.now()
-
-        elif self.failure_count >= self.config.failure_threshold:
-            log(
-                f"CIRCUIT BREAKER TRIPPED! "
-                f"({self.failure_count} consecutive failures) "
-                f"→ OPEN",
-                type="error"
-            )
-            self.state             = CircuitState.OPEN
-            self.last_state_change = datetime.now()
-
-    def get_status(self) -> dict:
-        return {
-            "state"                  : self.state.value,
-            "failure_count"          : self.failure_count,
-            "success_count"          : self.success_count,
-            "last_state_change"      : self.last_state_change.isoformat(),
-            "time_since_last_failure": time.time() - self.last_failure_time if self.last_failure_time else None
-        }
-
-
 class GeminiClient(ABC):
     @abstractmethod
     def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
@@ -180,7 +87,14 @@ class GeminiSDKClient(GeminiClient):
         # POTENTIAL/CRITICAL ERROR: Mispelled or Invalid mode_name
         # SOLUTION: Validate it first, before sending it here in the __init__() function
         # STATUS: Not yet implemented or On going
-        self.model      = genai.GenerativeModel(model_name)
+        self.model      = genai.GenerativeModel(
+            model_name,
+            generation_config = {
+                "temperature"       : 0.1,
+                "top_p"             : 0.8,
+                "max_output_tokens" : 8192,
+            }
+        )
 
     def _upload_file_to_cloud(self, image_path) -> genai.File:
         """Uploads a file to Google Cloud and returns the file object"""
@@ -402,23 +316,6 @@ class GeminiHTTPClient(GeminiClient):
 
 
 # ============================================================
-# GLOBAL CIRCUIT BREAKERS
-# ============================================================
-
-sdk_circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
-    failure_threshold = 3,
-    recovery_timeout  = 30,
-    success_threshold = 2
-))
-
-http_circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
-    failure_threshold = 3,
-    recovery_timeout  = 30,
-    success_threshold = 2
-))
-
-
-# ============================================================
 # RETRY ORCHESTRATOR
 # ============================================================
 
@@ -427,109 +324,72 @@ def gemini_with_retry(
     image_path    : str,
     prompt        : str,
     model         : str,
-    max_attempts  : int            = 3,
-    use_exponential_backoff : bool = True,
-    prefer_method : str            = "sdk",
-    # NOTE: These defaults point to the module-level shared circuit breakers intentionally.
-    # State persists across calls so the breaker can actually trip.
-    # Pass your own CircuitBreaker() instances to isolate pipelines from each other.
-    sdk_breaker   : CircuitBreaker = sdk_circuit_breaker,
-    http_breaker  : CircuitBreaker = http_circuit_breaker,
+    max_attempts  : int             = 3,
+    use_exponential_backoff : bool  = True,
+    prefer_method : str             = "sdk"
 ) -> str | None:
-
-    # NOTE: genai.configure() sets global SDK state.
-    # Calling it here on every invocation risks a race condition when
-    # multiple pipelines run with different api_keys (second call overwrites the first).
-    # Ideally, call genai.configure() once at startup in your entry point instead.
-    genai.configure(api_key=api_key)
 
     if not os.path.exists(image_path):
         log(f"Image file not found: {image_path}", type="error")
         return None
 
+    method = None
     if prefer_method == "http":
-        methods = [
-            ("HTTP Client", lambda: GeminiHTTPClient(api_key, model), http_breaker),
-            ("SDK Client",  lambda: GeminiSDKClient(api_key, model),  sdk_breaker),
-        ]
+        method = ("HTTP Client", lambda: GeminiHTTPClient(api_key, model))
     else:
-        methods = [
-            ("SDK Client",  lambda: GeminiSDKClient(api_key, model),  sdk_breaker),
-            ("HTTP Client", lambda: GeminiHTTPClient(api_key, model), http_breaker),
-        ]
+        # NOTE: genai.configure() sets global SDK state.
+        # Calling it here on every invocation risks a race condition when
+        # multiple pipelines run with different api_keys (second call overwrites the first).
+        # Ideally, call genai.configure() once at startup in your entry point instead.
+        genai.configure(api_key=api_key)
+        method = ("SDK Client",  lambda: GeminiSDKClient(api_key, model))
 
     for attempt in range(1, max_attempts + 1):
-        log(f"{'='*50}", type="info")
-        log(f"ATTEMPT {attempt}/{max_attempts}", type="info")
-        log(f"{'='*50}", type="info")
+        log(
+            f"\n{'='*50}\n"
+            f"ATTEMPT {attempt}/{max_attempts}\n"
+            f"{'='*50}\n",
+            type="info"
+        )
+        last_error_type = ErrorType.RETRYABLE
+        method_name, client_factory = method
 
-        last_error_type    = ErrorType.RETRYABLE
-        all_circuits_open  = True  # Assume open, proven False when any method proceeds
+        try:
+            client = client_factory()
+            result = client.send_request(prompt, image_path)
+            log(f"✓ {method_name} succeeded on attempt {attempt}!", type="info")
+            return result
 
-        for method_name, client_factory, breaker in methods:
-            if not breaker.can_proceed():
-                log(f"⊗ {method_name} circuit is OPEN. Skipping.", type="warning")
-                continue
+        except Exception as e:
+            error_type      = GeminiClient._classify_error(e)
+            last_error_type = error_type
 
-            # At least one method is allowed to proceed
-            all_circuits_open = False
+            if error_type == ErrorType.CLIENT_ERROR:
+                # Bad file or bad prompt — no client or retry can fix this
+                log("Client error is not retryable. Aborting.", type="error")
+                return None
 
-            log(f"→ Trying {method_name}...", type="info")
+            if error_type == ErrorType.AUTH_ERROR:
+                # This client cannot authenticate — skip it, let the other client try
+                suggested_client = "SDK Client" if method_name == "HTTP Client" else "HTTP Client"
+                log(f"Auth error on {method_name}. Try to use {suggested_client}.", type="error")
+                return None
+            
+            log(f"✗ {method_name} failed ({error_type.value}): {e}", type="warning")
 
-            client = None
-            try:
-                client = client_factory()
-                result = client.send_request(prompt, image_path)
-                breaker.record_success()
-                log(f"✓ {method_name} succeeded on attempt {attempt}!", type="info")
-                return result
-
-            except Exception as e:
-                error_type      = GeminiClient._classify_error(e)
-                last_error_type = error_type
-                log(f"✗ {method_name} failed ({error_type.value}): {e}", type="warning")
-                breaker.record_failure()
-
-                if error_type == ErrorType.CLIENT_ERROR:
-                    # Bad file or bad prompt — no client or retry can fix this
-                    log("Client error is not retryable. Aborting.", type="error")
-                    return None
-
-                if error_type == ErrorType.AUTH_ERROR:
-                    # This client cannot authenticate — skip it, let the other try
-                    log(f"Auth error on {method_name}. Skipping to next client.", type="error")
-                    continue
-
-        # Both circuits are open — no requests were even attempted this round
-        if all_circuits_open:
-            log(
-                f"Both circuits are OPEN. No requests attempted on attempt {attempt}. "
-                f"SDK recovery in ~{sdk_breaker.config.recovery_timeout}s, "
-                f"HTTP recovery in ~{http_breaker.config.recovery_timeout}s.",
-                type="error"
-            )
-            # No point in a short exponential wait — respect the recovery timeout instead
-            wait_time = min(sdk_breaker.config.recovery_timeout, http_breaker.config.recovery_timeout)
-            if attempt < max_attempts:
-                log(f"Waiting {wait_time}s for circuit recovery before next attempt...", type="info")
-                time.sleep(wait_time)
-            continue
-
-        # At least one method was tried but all failed — apply normal backoff
+        # This method was tried but all failed — apply normal backoff
         if attempt < max_attempts:
             if last_error_type == ErrorType.QUOTA_ERROR:
                 wait_time = 30  # Quota limits need longer recovery than network blips
             elif use_exponential_backoff:
                 wait_time = 2 ** attempt  # 2, 4, 8 seconds
             else:
-                wait_time = 2
+                wait_time = 3
 
-            log(f"All methods failed. Waiting {wait_time}s before attempt {attempt + 1}...", type="info")
+            log(f"Failed attempt. Waiting {wait_time}s before attempt {attempt + 1}...", type="info")
             time.sleep(wait_time)
 
     log(f"All {max_attempts} attempts exhausted.", type="error")
-    log(f"SDK  circuit: {sdk_breaker.get_status()}", type="info")
-    log(f"HTTP circuit: {http_breaker.get_status()}", type="info")
     return None
 
 # ============================================================
