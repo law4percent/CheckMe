@@ -15,113 +15,101 @@ from .logger import get_logger
 log = get_logger("gemini_client.py")
 
 class ErrorType(Enum):
-    """Categorize errors to determine retry strategy"""
-    RETRYABLE       = "retryable"  # Network issues, timeouts
-    AUTH_ERROR      = "auth_error"  # Invalid API key
-    CLIENT_ERROR    = "client_error"  # Bad request, file not found
-    QUOTA_ERROR     = "quota_error"  # Rate limit, quota exceeded
+    RETRYABLE    = "retryable"
+    AUTH_ERROR   = "auth_error"
+    CLIENT_ERROR = "client_error"
+    QUOTA_ERROR  = "quota_error"
 
 
 class CircuitState(Enum):
-    """Circuit breaker states"""
-    CLOSED      = "closed"  # Normal operation
-    OPEN        = "open"  # Service is down, fail fast
-    HALF_OPEN   = "half_open"  # Testing if service recovered
+    CLOSED    = "closed"
+    OPEN      = "open"
+    HALF_OPEN = "half_open"
 
 
 @dataclass
 class CircuitBreakerConfig:
-    """Configuration for circuit breaker"""
-    failure_threshold   : int = 5  # Trip after N consecutive failures
-    recovery_timeout    : int = 60  # Wait N seconds before testing recovery
-    success_threshold   : int = 2  # N successes needed to close circuit in half-open state
+    failure_threshold : int = 3
+    recovery_timeout  : int = 30
+    success_threshold : int = 2
 
 
 class CircuitBreaker:
-    """
-    Circuit Breaker pattern implementation to prevent resource waste
-    during prolonged API outages.
-    """
-    
     def __init__(self, config: CircuitBreakerConfig = None):
-        self.config             = config or CircuitBreakerConfig()
-        self.failure_count      = 0
-        self.success_count      = 0
-        self.last_failure_time  = 0
-        self.state              = CircuitState.CLOSED
-        self.last_state_change  = datetime.now()
-    
+        self.config            = config or CircuitBreakerConfig()
+        self.failure_count     = 0
+        self.success_count     = 0
+        self.last_failure_time = 0
+        self.state             = CircuitState.CLOSED
+        self.last_state_change = datetime.now()
+
     def can_proceed(self) -> bool:
-        """Check if requests should be allowed through"""
         if self.state == CircuitState.CLOSED:
             return True
-        
+
         if self.state == CircuitState.OPEN:
-            # Check if recovery timeout has elapsed
             time_since_failure = time.time() - self.last_failure_time
             if time_since_failure > self.config.recovery_timeout:
                 log(f"Circuit transitioning to HALF-OPEN (testing recovery)", type="info")
-                self.state              = CircuitState.HALF_OPEN
-                self.success_count      = 0
-                self.last_state_change  = datetime.now()
+                self.state             = CircuitState.HALF_OPEN
+                self.success_count     = 0
+                self.last_state_change = datetime.now()
                 return True
-            
+
             log(
                 f"Circuit is OPEN. Failing fast. "
                 f"Recovery attempt in {self.config.recovery_timeout - time_since_failure:.0f}s",
                 type="warning"
             )
             return False
-        
+
         if self.state == CircuitState.HALF_OPEN:
             return True
-        
+
         return False
-    
+
     def record_success(self):
-        """Record a successful request"""
         if self.state == CircuitState.HALF_OPEN:
             self.success_count += 1
-            logger.info(
-                f"Circuit HALF-OPEN: Success {self.success_count}/{self.config.success_threshold}"
+            log(
+                f"Circuit HALF-OPEN: Success {self.success_count}/{self.config.success_threshold}",
+                type="info"
             )
-            
             if self.success_count >= self.config.success_threshold:
-                logger.info("✓ Circuit recovered! Transitioning to CLOSED")
-                self.state = CircuitState.CLOSED
-                self.failure_count = 0
-                self.success_count = 0
+                log("Circuit recovered! Transitioning to CLOSED", type="info")
+                self.state             = CircuitState.CLOSED
+                self.failure_count     = 0
+                self.success_count     = 0
                 self.last_state_change = datetime.now()
         else:
-            # Reset failure count on any success in closed state
             self.failure_count = 0
-    
+
     def record_failure(self):
-        """Record a failed request"""
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-        
+        self.failure_count     += 1
+        self.last_failure_time  = time.time()
+
         if self.state == CircuitState.HALF_OPEN:
-            logger.warning("Circuit HALF-OPEN test failed. Reopening circuit.")
-            self.state = CircuitState.OPEN
-            self.success_count = 0
+            log("Circuit HALF-OPEN test failed. Reopening circuit.", type="warning")
+            self.state             = CircuitState.OPEN
+            self.success_count     = 0
             self.last_state_change = datetime.now()
+
         elif self.failure_count >= self.config.failure_threshold:
-            logger.error(
-                f"!!! CIRCUIT BREAKER TRIPPED !!! "
+            log(
+                f"CIRCUIT BREAKER TRIPPED! "
                 f"({self.failure_count} consecutive failures) "
-                f"State: {self.state.value} → OPEN"
+                f"→ OPEN",
+                type="error"
             )
-            self.state = CircuitState.OPEN
+            self.state             = CircuitState.OPEN
             self.last_state_change = datetime.now()
-    
+
     def get_status(self) -> dict:
-        """Get current circuit breaker status for monitoring"""
         return {
-            "state": self.state.value,
-            "failure_count": self.failure_count,
-            "success_count": self.success_count,
-            "last_state_change": self.last_state_change.isoformat(),
+            "state"                  : self.state.value,
+            "failure_count"          : self.failure_count,
+            "success_count"          : self.success_count,
+            "last_state_change"      : self.last_state_change.isoformat(),
             "time_since_last_failure": time.time() - self.last_failure_time if self.last_failure_time else None
         }
 
@@ -132,43 +120,57 @@ class GeminiClient(ABC):
         pass
 
     def _upload_file_to_cloud(self, image_path: str) -> Any:
-        pass
+        raise NotImplementedError
+
+    def _validate_response(self, response: Any) -> str:
+        raise NotImplementedError
 
     def _get_image_data(self, image_path: str) -> Tuple[bytes, str]:
         """Helper to get bytes and detect mime type automatically"""
-        mime_type, _ = mimetypes.guess_type(image_path)
-        mime_type = mime_type or "image/jpeg"
+        mime_type, _    = mimetypes.guess_type(image_path)
+        mime_type       = mime_type or "image/jpeg"
         
         with open(image_path, "rb") as f:
             return f.read(), mime_type
     
     def _encode_image_to_base64(self, image_path: str) -> Tuple[str, str]:
-        image_bytes, mime_type = self._get_image_data(image_path)
-        encoded_string = base64.b64encode(image_bytes).decode('utf-8')
+        image_bytes, mime_type  = self._get_image_data(image_path)
+        encoded_string          = base64.b64encode(image_bytes).decode('utf-8')
         return encoded_string, mime_type
-    
-    def _validate_response(self, response: Any) -> str:
-        raise NotImplementedError
 
-    def _classify_error(self, error: Exception) -> ErrorType:
-        # For requests library errors, extract the real HTTP status code first
+    @staticmethod
+    def _classify_error(error: Exception) -> ErrorType:
         status_code = None
         if isinstance(error, requests.exceptions.HTTPError) and error.response is not None:
             status_code = error.response.status_code
 
-        if status_code in (401, 403) or (status_code is None and any(x in str(error).lower() for x in ['401', 'unauthorized', 'invalid api key', '403', 'forbidden'])):
+        if status_code in (401, 403) or (
+            status_code is None and any(
+                x in str(error).lower()
+                for x in ["401", "unauthorized", "invalid api key", "403", "forbidden"]
+            )
+        ):
             return ErrorType.AUTH_ERROR
 
-        if status_code == 429 or (status_code is None and any(x in str(error).lower() for x in ['429', 'quota', 'rate limit', 'resource exhausted'])):
+        if status_code == 429 or (
+            status_code is None and any(
+                x in str(error).lower()
+                for x in ["429", "quota", "rate limit", "resource exhausted"]
+            )
+        ):
             return ErrorType.QUOTA_ERROR
 
-        if status_code in (400, 404) or (status_code is None and any(x in str(error).lower() for x in ['400', 'bad request', 'invalid', 'not found', '404'])):
+        if status_code in (400, 404) or (
+            status_code is None and any(
+                x in str(error).lower()
+                for x in ["400", "bad request", "invalid", "not found", "404"]
+            )
+        ):
             return ErrorType.CLIENT_ERROR
 
         return ErrorType.RETRYABLE
 
 
-# --- SDK Client ---
 class GeminiSDKClient(GeminiClient):
     def __init__(self, api_key: str, model_name: str):
         self.api_key    = api_key
@@ -178,13 +180,13 @@ class GeminiSDKClient(GeminiClient):
         # POTENTIAL/CRITICAL ERROR: Mispelled or Invalid mode_name
         # SOLUTION: Validate it first, before sending it here in the __init__() function
         # STATUS: Not yet implemented or On going
-        self.model = genai.GenerativeModel(model_name)
+        self.model      = genai.GenerativeModel(model_name)
 
     def _upload_file_to_cloud(self, image_path) -> genai.File:
         """Uploads a file to Google Cloud and returns the file object"""
         # PRO TIP: Get mime_type and pass it to upload_file to ensure correct handling in Gemini
-        mime_type, _ = mimetypes.guess_type(image_path)
-        mime_type = mime_type or "image/jpeg"
+        mime_type, _    = mimetypes.guess_type(image_path)
+        mime_type       = mime_type or "image/jpeg"
         return genai.upload_file(image_path, mime_type=mime_type)
     
     def _validate_response(self, response: genai.types.GenerateContentResponse) -> str:
@@ -213,7 +215,7 @@ class GeminiSDKClient(GeminiClient):
             try:
                 log(f"Uploading {image_path} via SDK...", type="debug")
                 uploaded_file = self._upload_file_to_cloud(image_path)
-                log("Generating content with SDK...", type="debug")
+                log("Generating content with SDK (Upload/Referencing Version)", type="debug")
                 response = self.model.generate_content([prompt, uploaded_file])
                 return self._validate_response(response)
                 
@@ -238,7 +240,6 @@ class GeminiSDKClient(GeminiClient):
         else:
             log("Uploading file as Base64 inline data...", type="debug")
             encoded_string, mime_type = self._encode_image_to_base64(image_path)
-
             image_part = {
                 "mime_type": mime_type,
                 "data": encoded_string
@@ -248,12 +249,12 @@ class GeminiSDKClient(GeminiClient):
                 log("Generating content with SDK (Base64)...", type="debug")
                 response = self.model.generate_content([prompt, image_part])
                 return self._validate_response(response)
+            
             except Exception as e:
                 log(f"SDK request with Base64 failed: {type(e).__name__}: {e}", type="error")
                 raise RuntimeError(f"SDK request with Base64 failed: {e}") from e
 
 
-# --- HTTP Client (SECURE VERSION) ---
 class GeminiHTTPClient(GeminiClient):
     def __init__(self, api_key: str, model_name: str):
         self.api_key = api_key
@@ -262,23 +263,27 @@ class GeminiHTTPClient(GeminiClient):
 
     def _upload_file_to_cloud(self, image_path) -> Tuple[str, str]:
         """Uploads an image file to Google Cloud"""
-        mime_type, _ = mimetypes.guess_type(image_path)
-        mime_type = mime_type or "image/jpeg"
-        upload_url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
-        
-        upload_headers = {
+        mime_type, _    = mimetypes.guess_type(image_path)
+        mime_type       = mime_type or "image/jpeg"
+        upload_url      = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+        upload_headers  = {
             "x-goog-api-key": self.api_key,
             "X-Goog-Upload-Protocol": "multipart",
         }
-        metadata = {"file": {"display_name": os.path.basename(image_path)}}
+        metadata        = {"file": {"display_name": os.path.basename(image_path)}}
         
         upload_response = None
         with open(image_path, 'rb') as f:
-            files = {
+            files           = {
                 'metadata': (None, json.dumps(metadata), 'application/json'),
                 'file': (os.path.basename(image_path), f, mime_type)
             }
-            upload_response = requests.post(upload_url, headers=upload_headers, files=files, timeout=60)
+            upload_response = requests.post(
+                upload_url, 
+                headers = upload_headers, 
+                files   = files, 
+                timeout = 60
+            )
             upload_response.raise_for_status()
 
         file_info = upload_response.json()
@@ -293,8 +298,8 @@ class GeminiHTTPClient(GeminiClient):
             log(f"Gemini blocked this request: {reason}", type="warning")
             raise ValueError(f"Gemini blocked this request: {reason}")
 
-        candidate = response["candidates"][0]
-        parts = candidate.get("content", {}).get("parts", [])
+        candidate   = response["candidates"][0]
+        parts       = candidate.get("content", {}).get("parts", [])
         if parts and "text" in parts[0]:
             return parts[0]["text"]
         else:
@@ -327,11 +332,14 @@ class GeminiHTTPClient(GeminiClient):
                     "Content-Type": "application/json", 
                     "x-goog-api-key": self.api_key
                 }
-                
                 log("Generating content...", type="debug")
-                response = requests.post(self.url, headers=headers, json=gen_payload, timeout=30)
+                response = requests.post(
+                    self.url, 
+                    headers = headers, 
+                    json    = gen_payload, 
+                    timeout = 30
+                )
                 response.raise_for_status()
-
                 return self._validate_response(response.json())
                 
             except requests.RequestException as e:
@@ -343,12 +351,9 @@ class GeminiHTTPClient(GeminiClient):
                 raise ValueError(f"Unexpected response format: {e}") from e
             
             finally:
-                # Clean up uploaded file if possible (requires additional API call)
-                # Note: The HTTP upload endpoint does not currently provide a way to delete files,
-                # so this is a known limitation. In a production system, you would want to implement
-                # a scheduled cleanup process for orphaned files in Google Cloud Storage.
                 log(
                     "NOTE: Uploaded file cannot be deleted via HTTP API."
+                    "In a production system, you would want to implement a scheduled cleanup process for orphaned files in Google Cloud Storage."
                     "Please manage your cloud storage to avoid orphaned files.",
                     type="warning"
                 )
@@ -377,9 +382,13 @@ class GeminiHTTPClient(GeminiClient):
                 }
                 
                 log("Sending HTTP request...", type="debug")
-                response = requests.post(self.url, json=payload, headers=headers, timeout=30)
+                response = requests.post(
+                    self.url, 
+                    json    = payload, 
+                    headers = headers, 
+                    timeout = 30
+                )
                 response.raise_for_status()
-
                 return self._validate_response(response.json())
                 
             except requests.RequestException as e:
@@ -391,175 +400,193 @@ class GeminiHTTPClient(GeminiClient):
                 raise ValueError(f"Unexpected response format: {e}") from e
 
 
-# --- GLOBAL CIRCUIT BREAKERS (one per method) ---
+# ============================================================
+# GLOBAL CIRCUIT BREAKERS
+# ============================================================
+
 sdk_circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
-    failure_threshold   = 3,
-    recovery_timeout    = 30,
-    success_threshold   = 2
+    failure_threshold = 3,
+    recovery_timeout  = 30,
+    success_threshold = 2
 ))
 
 http_circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
-    failure_threshold   = 3,
-    recovery_timeout    = 30,
-    success_threshold   = 2
+    failure_threshold = 3,
+    recovery_timeout  = 30,
+    success_threshold = 2
 ))
 
 
-# --- ENTERPRISE-GRADE RETRY LOGIC ---
-def try_gemini_with_retry(
-    api_key: str,
-    image_path: str,
-    prompt: str,
-    model: str = "gemini-1.5-flash",
-    max_attempts: int = 3,
-    use_exponential_backoff: bool = True,
-    prefer_method: str = "sdk"  # "sdk" or "http"
+# ============================================================
+# RETRY ORCHESTRATOR
+# ============================================================
+
+def gemini_engine(
+    api_key       : str,
+    image_path    : str,
+    prompt        : str,
+    model         : str,
+    max_attempts  : int            = 3,
+    use_exponential_backoff : bool = True,
+    prefer_method : str            = "sdk",
+    sdk_breaker   : CircuitBreaker = sdk_circuit_breaker,
+    http_breaker  : CircuitBreaker = http_circuit_breaker,
 ) -> Optional[str]:
-    """
-    Try both Gemini methods with circuit breaker protection.
-    
-    Args:
-        api_key: Gemini API key
-        image_path: Path to image file
-        prompt: Text prompt for the model
-        model: Model name to use
-        max_attempts: Maximum retry attempts
-        use_exponential_backoff: Use exponential backoff (2^n seconds)
-        prefer_method: Which method to try first ("sdk" or "http")
-    
-    Returns:
-        str: Response text if successful
-        None: If all attempts failed
-    """
-    
-    # OPTIMIZATION: Configure SDK once, globally
+
     genai.configure(api_key=api_key)
-    
-    # Pre-validate file to avoid wasting API calls
+
     if not os.path.exists(image_path):
-        logger.error(f"Image file not found: {image_path}")
+        log(f"Image file not found: {image_path}", type="error")
         return None
-    
-    # Determine method order
+
     if prefer_method == "http":
         methods = [
-            ("HTTP Client", lambda: GeminiHTTPClient(api_key, model), http_circuit_breaker),
-            ("SDK Client", lambda: GeminiSDKClient(api_key, model), sdk_circuit_breaker)
+            ("HTTP Client", lambda: GeminiHTTPClient(api_key, model), http_breaker),
+            ("SDK Client",  lambda: GeminiSDKClient(api_key, model),  sdk_breaker),
         ]
     else:
         methods = [
-            ("SDK Client", lambda: GeminiSDKClient(api_key, model), sdk_circuit_breaker),
-            ("HTTP Client", lambda: GeminiHTTPClient(api_key, model), http_circuit_breaker)
+            ("SDK Client",  lambda: GeminiSDKClient(api_key, model),  sdk_breaker),
+            ("HTTP Client", lambda: GeminiHTTPClient(api_key, model), http_breaker),
         ]
-    
+
     for attempt in range(1, max_attempts + 1):
-        logger.info(f"{'='*60}")
-        logger.info(f"ATTEMPT {attempt}/{max_attempts}")
-        logger.info(f"{'='*60}")
-        
-        # Try each method in order
+        log(f"{'='*50}", type="info")
+        log(f"ATTEMPT {attempt}/{max_attempts}", type="info")
+        log(f"{'='*50}", type="info")
+
+        last_error_type = ErrorType.RETRYABLE
+
         for method_name, client_factory, breaker in methods:
-            # Check circuit breaker
             if not breaker.can_proceed():
-                logger.warning(f"⊗ {method_name} circuit is OPEN. Skipping.")
+                log(f"⊗ {method_name} circuit is OPEN. Skipping.", type="warning")
                 continue
-            
-            logger.info(f"→ {method_name}...")
-            logger.debug(f"   Circuit state: {breaker.state.value}")
-            
+
+            log(f"→ Trying {method_name}...", type="info")
+
+            client = None
             try:
                 client = client_factory()
                 result = client.send_request(prompt, image_path)
-                
-                # SUCCESS!
                 breaker.record_success()
-                logger.info(f"✓ {method_name} succeeded!")
+                log(f"✓ {method_name} succeeded on attempt {attempt}!", type="info")
                 return result
-                
+
             except Exception as e:
-                error_type = client._classify_error(e)
-                logger.warning(f"✗ {method_name} failed ({error_type.value})")
-                
-                # Record failure in circuit breaker
+                error_type      = GeminiClient._classify_error(e)
+                last_error_type = error_type
+                log(f"✗ {method_name} failed ({error_type.value}): {e}", type="warning")
                 breaker.record_failure()
-                
-                # Don't retry on auth or client errors
-                if error_type in [ErrorType.AUTH_ERROR, ErrorType.CLIENT_ERROR]:
-                    logger.error("Non-retryable error detected. Stopping all attempts.")
+
+                if error_type == ErrorType.CLIENT_ERROR:
+                    log("Client error is not retryable. Aborting.", type="error")
                     return None
-        
-        # Both methods failed - decide if we should retry
+
+                if error_type == ErrorType.AUTH_ERROR:
+                    log(f"Auth error on {method_name}. Skipping to next client.", type="error")
+                    continue
+
         if attempt < max_attempts:
-            if use_exponential_backoff:
-                wait_time = 2 ** attempt  # 2, 4, 8 seconds
+            if last_error_type == ErrorType.QUOTA_ERROR:
+                wait_time = 30
+            elif use_exponential_backoff:
+                wait_time = 2 ** attempt
             else:
                 wait_time = 2
-            
-            logger.info(f"⚠ Both methods failed. Waiting {wait_time}s before retry...")
+
+            log(f"All methods failed. Waiting {wait_time}s before attempt {attempt + 1}...", type="info")
             time.sleep(wait_time)
-        else:
-            logger.error(f"⚠ All {max_attempts} attempts exhausted.")
-            
-            # Log circuit breaker status
-            logger.info("Circuit Breaker Status:")
-            logger.info(f"  SDK: {sdk_circuit_breaker.get_status()}")
-            logger.info(f"  HTTP: {http_circuit_breaker.get_status()}")
-    
+
+    log(f"All {max_attempts} attempts exhausted.", type="error")
+    log(f"SDK  circuit: {sdk_breaker.get_status()}",  type="info")
+    log(f"HTTP circuit: {http_breaker.get_status()}", type="info")
     return None
 
 
-# --- USAGE EXAMPLE ---
+# ============================================================
+# USAGE
+# ============================================================
+
 if __name__ == "__main__":
+    API_KEY    = "YOUR_API_KEY"
+    IMAGE_PATH = "sample.jpg"
+    PROMPT     = "Describe what you see in this image."
+    MODEL      = "gemini-2.5-flash"  # Replace with your desired model
+
+    # --- 1. Basic usage (SDK first, default settings) ---
+    result = gemini_engine(
+        api_key    = API_KEY,
+        image_path = IMAGE_PATH,
+        prompt     = PROMPT,
+        model      = MODEL
+    )
+    print(f"Basic result: {result}")
 
 
-    # --- HTTP USAGE EXAMPLE ---
-    client = GeminiHTTPClient(api_key="...", model_name="gemini-2.5-flash")
+    # --- 2. Prefer HTTP over SDK ---
+    result = gemini_engine(
+        api_key       = API_KEY,
+        image_path    = IMAGE_PATH,
+        prompt        = PROMPT,
+        model         = MODEL,
+        prefer_method = "http",
+    )
+    print(f"HTTP-first result: {result}")
 
-    try:
-        response = client.send_request("What is in this image?", "image.jpg")
-        print(response)
-    except (ValueError, RuntimeError) as e:
-        # Handle the error gracefully (e.g., show a message to the user)
-        print(f"Handled Error: {e}")
 
-    """
-        # SECURITY: Use environment variable
-        MY_KEY = os.getenv("GEMINI_API_KEY")
-        
-        if not MY_KEY:
-            logger.error("Please set GEMINI_API_KEY environment variable!")
-            logger.info("Example: export GEMINI_API_KEY='your-key-here'")
-            exit(1)
-        
-        IMAGE = "test_image.png"
-        PROMPT = "Role: You are an expert. Summarize this image."
-        MODEL = "gemini-1.5-flash"
-        
-        result = try_gemini_with_retry(
-            api_key                 = MY_KEY,
-            image_path              = IMAGE,
-            prompt                  = PROMPT,
-            model                   = MODEL,
-            max_attempts            = 3,
-            use_exponential_backoff = True,
-            prefer_method           = "sdk"  # Try SDK first, fallback to HTTP
-        )
-        
-        logger.info(f"{'='*60}")
-        if result:
-            logger.info("✓ SUCCESS: Result obtained!")
-            logger.info(f"\nResult preview:\n{result[:200]}...")
-            logger.info(f"\nTotal length: {len(result)} characters")
-        else:
-            logger.error("✗ FAILURE: Could not get result after all attempts.")
-            logger.info("\nTroubleshooting:")
-            logger.info("1. Verify GEMINI_API_KEY environment variable is set")
-            logger.info("2. Check image file exists and is readable")
-            logger.info("3. Ensure internet connection is active")
-            logger.info("4. Verify model name is correct")
-            logger.info("5. Check API quota at https://aistudio.google.com")
-            logger.info("\nCircuit Breaker Status:")
-            logger.info(f"  SDK: {sdk_circuit_breaker.get_status()}")
-            logger.info(f"  HTTP: {http_circuit_breaker.get_status()}")
-        logger.info(f"{'='*60}")
-    """
+    # --- 3. More attempts, no exponential backoff ---
+    result = gemini_engine(
+        api_key                 = API_KEY,
+        image_path              = IMAGE_PATH,
+        prompt                  = PROMPT,
+        model                   = MODEL,
+        max_attempts            = 5,
+        use_exponential_backoff = False,
+    )
+    print(f"Fixed-wait result: {result}")
+
+
+    # --- 4. Custom circuit breaker config (stricter settings) ---
+    custom_sdk_breaker  = CircuitBreaker(CircuitBreakerConfig(
+        failure_threshold = 2,
+        recovery_timeout  = 60,
+        success_threshold = 3
+    ))
+    custom_http_breaker = CircuitBreaker(CircuitBreakerConfig(
+        failure_threshold = 2,
+        recovery_timeout  = 60,
+        success_threshold = 3
+    ))
+
+    result = gemini_engine(
+        api_key      = API_KEY,
+        image_path   = IMAGE_PATH,
+        prompt       = PROMPT,
+        model        = MODEL,
+        sdk_breaker  = custom_sdk_breaker,
+        http_breaker = custom_http_breaker,
+    )
+    print(f"Custom breaker result: {result}")
+
+
+    # --- 5. Isolated breakers for independent pipelines ---
+    pipeline_a = gemini_engine(
+        api_key      = API_KEY,
+        image_path   = IMAGE_PATH,
+        prompt       = "Pipeline A: summarize this image.",
+        model        = MODEL,
+        sdk_breaker  = CircuitBreaker(),
+        http_breaker = CircuitBreaker(),
+    )
+
+    pipeline_b = gemini_engine(
+        api_key      = API_KEY,
+        image_path   = IMAGE_PATH,
+        prompt       = "Pipeline B: extract text from this image.",
+        model        = MODEL,
+        sdk_breaker  = CircuitBreaker(),
+        http_breaker = CircuitBreaker(),
+    )
+
+    print(f"Pipeline A: {pipeline_a}")
+    print(f"Pipeline B: {pipeline_b}")
