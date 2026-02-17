@@ -24,7 +24,7 @@ class ErrorType(Enum):
 
 class GeminiClient(ABC):
     @abstractmethod
-    def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
+    def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = False) -> str:
         pass
 
     @abstractmethod
@@ -114,7 +114,7 @@ class GeminiSDKClient(GeminiClient):
             # This happens if the prompt itself was blocked
             raise ValueError("Request was blocked by safety filters.")
 
-    def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
+    def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = False) -> str:
         """Send request using the official Gemini SDK"""
         # TARGET: image_path
         # POTENTIAL/CRITICAL ERROR: File cannot be found or not exist.
@@ -240,7 +240,7 @@ class GeminiHTTPClient(GeminiClient):
         encoded_string          = base64.b64encode(image_bytes).decode('utf-8')
         return encoded_string, mime_type
 
-    def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
+    def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = False) -> str:
         """Send request using direct HTTP API calls (SECURE)"""
         # TARGET: image_path
         # POTENTIAL/CRITICAL ERROR: File cannot be found or not exist.
@@ -337,13 +337,14 @@ class GeminiHTTPClient(GeminiClient):
 # ============================================================
 
 def gemini_with_retry(
-    api_key       : str,
-    image_path    : str,
-    prompt        : str,
-    model         : str,
-    max_attempts  : int             = 3,
+    api_key         : str,
+    image_path      : str,
+    prompt          : str,
+    model           : str,
+    max_attempts    : int           = 3,
     use_exponential_backoff : bool  = True,
-    prefer_method : str             = "sdk"
+    prefer_method   : str           = "sdk",
+    upload_to_cloud : bool          = False
 ) -> str | None:
 
     if not os.path.exists(image_path):
@@ -363,7 +364,7 @@ def gemini_with_retry(
 
         try:
             client = client_factory()
-            result = client.send_request(prompt, image_path)
+            result = client.send_request(prompt, image_path, upload_to_cloud)
             log(f"✓ {method_name} succeeded on attempt {attempt}!", type="info")
             return result
 
@@ -419,7 +420,7 @@ if __name__ == "__main__":
         prompt     = PROMPT,
         model      = MODEL
     )
-    print(f"Basic result: {result}")
+    print(f"SDK result: {result}")
 
 
     # --- 2. Prefer HTTP over SDK ---
@@ -430,7 +431,7 @@ if __name__ == "__main__":
         model         = MODEL,
         prefer_method = "http",
     )
-    print(f"HTTP-first result: {result}")
+    print(f"HTTP result: {result}")
 
 
     # --- 3. More attempts, no exponential backoff ---
@@ -445,6 +446,16 @@ if __name__ == "__main__":
     print(f"Fixed-wait result: {result}")
 
 
+    # --- 4. Upload to cloud ---
+    result = gemini_with_retry(
+        api_key         = API_KEY,
+        image_path      = IMAGE_PATH,
+        prompt          = PROMPT,
+        model           = MODEL,
+        upload_to_cloud = True
+    )
+    print(f"Save image to cloud result: {result}")
+
     # ============================================================
     # Direct usage samples without any retry logic
     # ============================================================
@@ -455,9 +466,9 @@ if __name__ == "__main__":
     print(f"SDK (cloud upload): {result}")
 
 
-    # --- 2. SDK Client — Base64 inline (no cloud upload) ---
+    # --- 2. SDK Client — Base64 inline (cloud upload) ---
     sdk_client = GeminiSDKClient(API_KEY, MODEL)
-    result     = sdk_client.send_request(PROMPT, IMAGE_PATH, upload_to_cloud=False)
+    result     = sdk_client.send_request(PROMPT, IMAGE_PATH, upload_to_cloud=True)
     print(f"SDK (image in bytes): {result}")
 
 
@@ -467,7 +478,7 @@ if __name__ == "__main__":
     print(f"HTTP (cloud upload): {result}")
 
 
-    # --- 4. HTTP Client — Base64 inline (no cloud upload) ---
+    # --- 4. HTTP Client — Base64 inline (cloud upload) ---
     http_client = GeminiHTTPClient(API_KEY, MODEL)
-    result      = http_client.send_request(PROMPT, IMAGE_PATH, upload_to_cloud=False)
+    result      = http_client.send_request(PROMPT, IMAGE_PATH, upload_to_cloud=True)
     print(f"HTTP (base64): {result}")
