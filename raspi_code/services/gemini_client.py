@@ -148,9 +148,9 @@ class GeminiClient(ABC):
         return encoded_string, mime_type
     
     def _validate_response(self, response: Any) -> str:
-        pass
+        raise NotImplementedError
 
-    def classify_error(self, error: Exception) -> ErrorType:
+    def _classify_error(self, error: Exception) -> ErrorType:
         # For requests library errors, extract the real HTTP status code first
         status_code = None
         if isinstance(error, requests.exceptions.HTTPError) and error.response is not None:
@@ -263,6 +263,7 @@ class GeminiHTTPClient(GeminiClient):
     def _upload_file_to_cloud(self, image_path) -> Tuple[str, str]:
         """Uploads an image file to Google Cloud"""
         mime_type, _ = mimetypes.guess_type(image_path)
+        mime_type = mime_type or "image/jpeg"
         upload_url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
         
         upload_headers = {
@@ -277,8 +278,8 @@ class GeminiHTTPClient(GeminiClient):
                 'metadata': (None, json.dumps(metadata), 'application/json'),
                 'file': (os.path.basename(image_path), f, mime_type)
             }
-            upload_response = requests.post(upload_url, headers=upload_headers, files=files)
-        upload_response.raise_for_status()
+            upload_response = requests.post(upload_url, headers=upload_headers, files=files, timeout=60)
+            upload_response.raise_for_status()
 
         file_info = upload_response.json()
         file_uri = file_info['file']['uri'] # This is the "reference" to your cloud file
@@ -328,7 +329,7 @@ class GeminiHTTPClient(GeminiClient):
                 }
                 
                 log("Generating content...", type="debug")
-                response = requests.post(f"{self.url}", headers=headers, json=gen_payload)
+                response = requests.post(self.url, headers=headers, json=gen_payload, timeout=30)
                 response.raise_for_status()
 
                 return self._validate_response(response.json())
@@ -476,7 +477,7 @@ def try_gemini_with_retry(
                 return result
                 
             except Exception as e:
-                error_type = client.classify_error(e)
+                error_type = client._classify_error(e)
                 logger.warning(f"✗ {method_name} failed ({error_type.value})")
                 
                 # Record failure in circuit breaker
