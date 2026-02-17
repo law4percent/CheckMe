@@ -10,6 +10,7 @@ import json
 
 from google import genai
 from google.genai import types
+from google.genai import errors
 
 from .logger import get_logger
 log = get_logger("gemini_client.py")
@@ -84,6 +85,14 @@ class GeminiSDKClient(GeminiClient):
         self.api_key    = api_key
         self.model_name = model_name
         self.client     = genai.Client(api_key=api_key)
+        # REFERENCE 1: https://github.com/googleapis/python-genai?tab=readme-ov-file#using-types
+        # REFERENCE 2: https://github.com/googleapis/python-genai?tab=readme-ov-file#system-instructions-and-other-configs
+        self.config     = types.GenerateContentConfig(
+            temperature = 0,
+            top_p       = 0.95,
+            top_k       = 20,
+            max_output_tokens = 8192
+        )
 
     def _upload_file_to_cloud(self, image_path) -> list[str, str]:
         """Uploads a file to Google Cloud and returns the file object"""
@@ -118,13 +127,12 @@ class GeminiSDKClient(GeminiClient):
         # SOLUTION: Validate it first when using this in the your code somewhere, before sending it here in the send_request() function
         # STATUS: Not yet implemented or On going
 
-        # If upload_to_cloud is True, we will upload the file to Google Cloud and reference it in the request
         if upload_to_cloud:
             file_uri = None
             try:
-                log(f"Uploading {image_path} via SDK...", type="debug")
+                log(f"Uploading {image_path} via SDK...", type="info")
                 file_uri, mime_type = self._upload_file_to_cloud(image_path)
-                log("Generating content with SDK (Upload/Referencing Version)", type="debug")
+                log("Generating content with SDK (Upload/Referencing Version)", type="info")
         
                 # TARGET: model_name
                 # POTENTIAL/CRITICAL ERROR: Mispelled or Invalid mode_name
@@ -134,24 +142,20 @@ class GeminiSDKClient(GeminiClient):
                 # Explore and try this approach.
                 # Comment: I think  this ain't work for this case.
                 # Check this link: https://github.com/googleapis/python-genai?tab=readme-ov-file#json-schema-support
-                contents = [
-                    types.Part.from_text('What is this image about?'),
-                    types.Part.from_uri(file_uri, mime_type)
-                ]
                 response = self.client.models.generate_content(
                     model       = self.model_name,
-                    contents    = contents, # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#provide-a-list-of-non-function-call-parts
-                    config      = types.GenerateContentConfig(
-                        temperature = 0,
-                        top_p       = 0.95,
-                        top_k       = 20,
-                    ),                
+                    contents    = [
+                        # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#provide-a-list-of-non-function-call-parts    
+                        types.Part.from_text('What is this image about?'),
+                        types.Part.from_uri(file_uri, mime_type)
+                    ],
+                    config      = self.config
                 )
                 return self._validate_response(response) # To be confirm
                 
-            except Exception as e:
-                log(f"SDK request failed: {type(e).__name__}: {e}", type= "error")
-                raise RuntimeError(f"SDK request failed: {e}") from e
+            except errors.APIError as e:
+                log(f"SDK request failed: {e.code} {e.message}", type="error")
+                raise RuntimeError(f"SDK request failed: {e.code} {e.message}") from e
             
             finally:
                 # Always clean up uploaded file
@@ -159,7 +163,7 @@ class GeminiSDKClient(GeminiClient):
                     try:
                         # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#delete
                         self.client.files.delete(name=file_uri.name)
-                        log("Cleaned up uploaded file", type="debug")
+                        log("Cleaned up uploaded file", type="info")
                     except Exception as cleanup_error:
                         log(
                             f"\nFailed to delete the uploaded file: {cleanup_error}\n"
@@ -168,13 +172,12 @@ class GeminiSDKClient(GeminiClient):
                             type="warning"
                         )
         
-        # Else, we will encode the image as Base64 and send it inline (no cloud upload)
         else:
             try:
-                log("Get file as bytes inline data...", type="debug")
+                log("Get file as bytes inline data...", type="info")
                 # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#streaming-for-image-content
                 image_bytes, mime_type = self._get_image_data(image_path)
-                log("Generating content with SDK (Base64)...", type="debug")
+                log("Generating content with SDK (bytes)...", type="info")
                 response = self.client.models.generate_content(
                     model       = self.model_name,
                     contents    = [
@@ -182,13 +185,14 @@ class GeminiSDKClient(GeminiClient):
                         types.Part.from_bytes(
                             data        = image_bytes, 
                             mime_type   = mime_type)
-                    ]
+                    ],
+                    config      = self.config
                 )
                 return self._validate_response(response)
             
-            except Exception as e:
-                log(f"SDK request with Base64 failed: {type(e).__name__}: {e}", type="error")
-                raise RuntimeError(f"SDK request with Base64 failed: {e}") from e
+            except errors.APIError as e:
+                log(f"SDK request failed: {e.code} {e.message}", type="error")
+                raise RuntimeError(f"SDK request failed: {e.code} {e.message}") from e
 
 
 class GeminiHTTPClient(GeminiClient):
@@ -253,7 +257,7 @@ class GeminiHTTPClient(GeminiClient):
         if upload_to_cloud:
             upload_succeeded = False
             try:
-                log(f"Uploading {image_path} via HTTP...", type="debug")
+                log(f"Uploading {image_path} via HTTP...", type="info")
                 file_uri, mime_type = self._upload_file_to_cloud(image_path)
                 upload_succeeded    = True  # Only reaches here if upload didn't throw
                 gen_payload         = {
@@ -268,7 +272,7 @@ class GeminiHTTPClient(GeminiClient):
                     "Content-Type"  : "application/json",
                     "x-goog-api-key": self.api_key
                 }
-                log("Generating content...", type="debug")
+                log("Generating content...", type="info")
                 response            = requests.post(
                     self.url,
                     headers = headers,
@@ -298,7 +302,7 @@ class GeminiHTTPClient(GeminiClient):
 
         else:
             try:
-                log("Encoding image to Base64 for HTTP request...", type="debug")
+                log("Encoding image to Base64 for HTTP request...", type="info")
                 encoded_string, mime_type = self._encode_image_to_base64(image_path)
                 payload = {
                     "contents": [{
@@ -318,7 +322,7 @@ class GeminiHTTPClient(GeminiClient):
                     "x-goog-api-key": self.api_key
                 }
 
-                log("Sending HTTP request...", type="debug")
+                log("Sending HTTP request...", type="info")
                 response = requests.post(
                     self.url,
                     json    = payload,
