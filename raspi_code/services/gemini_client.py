@@ -40,12 +40,6 @@ class GeminiClient(ABC):
         
         with open(image_path, "rb") as f:
             return f.read(), mime_type
-    
-    # THIS IS NO LONGER USED BY SDK
-    def _encode_image_to_base64(self, image_path: str) -> Tuple[str, str]:
-        image_bytes, mime_type  = self._get_image_data(image_path)
-        encoded_string          = base64.b64encode(image_bytes).decode('utf-8')
-        return encoded_string, mime_type
 
     @staticmethod
     def _classify_error(error: Exception) -> ErrorType:
@@ -101,13 +95,11 @@ class GeminiSDKClient(GeminiClient):
         mime_type       = mime_type or "image/jpeg"
         
         # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#upload
-        file = self.client.files.upload(file=image_path)
-
-        # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#get
-        # file_info = 
-        return file, mime_type
+        file_uri = self.client.files.upload(file=image_path)
+        return file_uri, mime_type
     
-    def _validate_response(self, response: genai.types.GenerateContentResponse) -> str:
+    # Comment: Where can I read a legit documentation for _validate_response(), just to confirm if this is working?
+    def _validate_response(self, response: Any) -> str:
         # Safer return logic inside send_request
         if response.candidates:
             # Check if the first candidate actually has text
@@ -125,7 +117,6 @@ class GeminiSDKClient(GeminiClient):
         # TARGET: image_path
         # POTENTIAL/CRITICAL ERROR: File cannot be found or not exist.
         # SOLUTION: Validate it first when using this in the your code somewhere, before sending it here in the send_request() function
-        # STATUS: Not yet implemented or On going
 
         if upload_to_cloud:
             file_uri = None
@@ -133,10 +124,6 @@ class GeminiSDKClient(GeminiClient):
                 log(f"Uploading {image_path} via SDK...", type="info")
                 file_uri, mime_type = self._upload_file_to_cloud(image_path)
                 log("Generating content with SDK (Upload/Referencing Version)", type="info")
-        
-                # TARGET: model_name
-                # POTENTIAL/CRITICAL ERROR: Mispelled or Invalid mode_name
-                # SOLUTION: Validate it first, before sending it here in the send_request() function        
                 
                 # Possible for Better or Optimization.
                 # Explore and try this approach.
@@ -151,7 +138,7 @@ class GeminiSDKClient(GeminiClient):
                     ],
                     config      = self.config
                 )
-                return self._validate_response(response) # To be confirm
+                return self._validate_response(response) # To be confirm if this works or not
                 
             except errors.APIError as e:
                 log(f"SDK request failed: {e.code} {e.message}", type="error")
@@ -246,6 +233,11 @@ class GeminiHTTPClient(GeminiClient):
             log(f"No text returned. Finish reason: {finish_reason}", type="warning")
             raise ValueError(f"No text returned. Finish reason: {finish_reason}")
 
+    def _encode_image_to_base64(self, image_path: str) -> Tuple[str, str]:
+        image_bytes, mime_type  = self._get_image_data(image_path)
+        encoded_string          = base64.b64encode(image_bytes).decode('utf-8')
+        return encoded_string, mime_type
+
     def send_request(self, prompt: str, image_path: str, upload_to_cloud: bool = True) -> str:
         """Send request using direct HTTP API calls (SECURE)"""
         # TARGET: image_path
@@ -253,7 +245,6 @@ class GeminiHTTPClient(GeminiClient):
         # SOLUTION: Validate it first when using this in the your code somewhere, before sending it here in the send_request() function
         # STATUS: Not yet implemented or On going
 
-        # If upload_to_cloud is True, we will upload the file to Google Cloud and reference it in the request
         if upload_to_cloud:
             upload_succeeded = False
             try:
@@ -291,18 +282,17 @@ class GeminiHTTPClient(GeminiClient):
                 raise ValueError(f"Unexpected response format: {e}") from e
 
             finally:
-                # Only warn if a file was actually uploaded to cloud storage
                 if upload_succeeded:
                     log(
-                        "NOTE: Uploaded file cannot be deleted via HTTP API. "
-                        "In a production system, you would want to implement a scheduled cleanup process for orphaned files in Google Cloud Storage. "
+                        "\nNOTE: Uploaded file cannot be deleted via HTTP API.\n"
+                        "In a production system, you would want to implement a scheduled cleanup process for orphaned files in Google Cloud Storage.\n"
                         "Please manage your cloud storage to avoid orphaned files.",
                         type="warning"
                     )
 
         else:
             try:
-                log("Encoding image to Base64 for HTTP request...", type="info")
+                log(f"Encoding {image_path} to Base64 for HTTP request...", type="info")
                 encoded_string, mime_type = self._encode_image_to_base64(image_path)
                 payload = {
                     "contents": [{
@@ -321,8 +311,7 @@ class GeminiHTTPClient(GeminiClient):
                     "Content-Type"  : "application/json",
                     "x-goog-api-key": self.api_key
                 }
-
-                log("Sending HTTP request...", type="info")
+                log("Generating content...", type="info")
                 response = requests.post(
                     self.url,
                     json    = payload,
