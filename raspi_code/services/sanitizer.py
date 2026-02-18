@@ -33,7 +33,7 @@ def sanitize_gemini_json(raw: str) -> dict:
                 if len(stripped) == 1 and stripped.isalpha():
                     stripped = stripped.upper()
 
-                # Normalize True/False variants
+                # Normalize True/False — decide: "True" or "TRUE"?
                 elif stripped.lower() in ("true", "t"):
                     stripped = "TRUE"
                 elif stripped.lower() in ("false", "f"):
@@ -42,10 +42,14 @@ def sanitize_gemini_json(raw: str) -> dict:
                 # Normalize sentinels
                 elif stripped.lower() == "unreadable":
                     stripped = "unreadable"
-                elif stripped.lower() == "no_answer":
-                    stripped = "no_answer"
-                elif stripped.lower() == "no_question":
-                    stripped = "no_question"
+                elif stripped.lower() == "missing_uid":
+                    stripped = "missing_uid"
+                elif stripped.lower() == "missing_answer":
+                    stripped = "missing_answer"
+                elif stripped.lower() == "missing_question":
+                    stripped = "missing_question"
+                elif stripped.lower() == "essay_answer":
+                    stripped = "essay_answer"
 
                 normalized[key] = stripped
             else:
