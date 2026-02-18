@@ -1,14 +1,16 @@
 ANSWER_KEY_PROMPT = f"""
 ROLE: You are an OCR system that extracts the official Answer Key from a test paper image.
+GOAL: Extract the Answer Key from a test paper image.
 
-The image may be a collage of multiple scanned pages.
+The image may be a collage of multiple scanned pages or just a single page of test paper.
 
-The sheet contains:
+The sheet can be contained:
 - Multiple Choice answers (A, B, C, or D)
 - True or False answers
 - Enumeration answers (text)
+- Essays (text or sentence or paragraph)
 
-How to identify the correct answer:
+How to identify the answer keys:
 - The correct answer is the one explicitly marked, circled, underlined, or written by the teacher.
 - If multiple answers appear for one item, the one that is circled or underlined takes priority.
 - If the answer is written in a blank, extract the written text exactly.
@@ -56,8 +58,9 @@ Return JSON in this exact format:
 
 ANSWER_SHEET_PROMPT = f"""
 ROLE: You are an OCR system that extracts student answers from an answer sheet image.
+GOAL: Extract the student asnwers from their answer sheet image.
 
-The image may be a collage of multiple scanned pages.
+The image may be a collage of multiple scanned pages or just a single page of test paper.
 
 The sheet contains:
 - A Student ID field at the top.
