@@ -270,7 +270,7 @@ class GeminiHTTPClient(GeminiClient):
                 }
                 headers             = {
                     "Content-Type"  : "application/json",
-                    "x-goog-api-key": self.api_key
+                    # "x-goog-api-key": self.api_key <=== Not yet tested but they say it is the safest
                 }
                 log("Generating content...", type="info")
                 response            = requests.post(
