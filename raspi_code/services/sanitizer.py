@@ -1,5 +1,8 @@
 import json
 import re
+from .logger import get_log_file
+
+log = get_log_file("sanitizer.py")
 
 def sanitize_gemini_json(raw: str) -> dict:
     """
@@ -17,6 +20,7 @@ def sanitize_gemini_json(raw: str) -> dict:
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as e:
+        log(f"\nFailed to parse Gemini response as JSON: {e}\nRaw:\n{cleaned}", type="error")
         raise ValueError(f"Failed to parse Gemini response as JSON: {e}\nRaw:\n{cleaned}")
 
     # Step 3: Normalize answer values
