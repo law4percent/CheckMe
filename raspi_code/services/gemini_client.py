@@ -84,7 +84,7 @@ class GeminiSDKClient(GeminiClient):
         # REFERENCE 1: https://github.com/googleapis/python-genai?tab=readme-ov-file#using-types
         # REFERENCE 2: https://github.com/googleapis/python-genai?tab=readme-ov-file#system-instructions-and-other-configs
         self.config     = types.GenerateContentConfig(
-            temperature = 0,
+            temperature = 1.0,
             top_p       = 0.95,
             top_k       = 20,
             max_output_tokens = 8192
@@ -188,7 +188,13 @@ class GeminiHTTPClient(GeminiClient):
     def __init__(self, api_key: str, model_name: str):
         self.api_key    = api_key
         self.model_name = model_name
-        self.url        = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        self.url        = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        self.config     = {
+            "temperature": 1.0,
+            "topP": 0.95,
+            "topK": 20,
+            "maxOutputTokens": 8192
+        }
 
     def _upload_file_to_cloud(self, image_path) -> Tuple[str, str]:
         """Uploads an image file to Google Cloud"""
@@ -259,7 +265,8 @@ class GeminiHTTPClient(GeminiClient):
                             {"text": prompt},
                             {"file_data": {"mime_type": mime_type, "file_uri": file_uri}}
                         ]
-                    }]
+                    }],
+                    "generationConfig": self.config
                 }
                 headers             = {
                     "Content-Type"  : "application/json",
@@ -279,6 +286,7 @@ class GeminiHTTPClient(GeminiClient):
                 log(f"HTTP request failed: {type(e).__name__}", type="error")
                 raise RuntimeError(f"HTTP request failed: {e}") from e
 
+
             except (KeyError, IndexError) as e:
                 log(f"Unexpected response format: {e}", type="error")
                 raise ValueError(f"Unexpected response format: {e}") from e
@@ -294,24 +302,28 @@ class GeminiHTTPClient(GeminiClient):
 
         else:
             try:
+                # REFERENCE: https://github.com/google/generative-ai-docs/blob/main/site/en/gemini-api/docs/get-started/rest.ipynb
                 log(f"Encoding {image_path} to Base64 for HTTP request...", type="info")
-                encoded_string, mime_type = self._encode_image_to_base64(image_path)
+                image_base64, mime_type = self._encode_image_to_base64(image_path)
                 payload = {
-                    "contents": [{
-                        "parts": [
-                            {"text": prompt},
-                            {
-                                "inline_data": {
-                                    "mime_type": mime_type,
-                                    "data"     : encoded_string
+                    "contents": [
+                        {
+                            "parts": [
+                                {"text": prompt},
+                                {
+                                    "inline_data": {
+                                        "mime_type": mime_type,
+                                        "data"     : image_base64
+                                    }
                                 }
-                            }
-                        ]
-                    }]
+                            ]
+                        }
+                    ],
+                    "generationConfig": self.config
                 }
                 headers = {
                     "Content-Type"  : "application/json",
-                    "x-goog-api-key": self.api_key
+                    # "x-goog-api-key": self.api_key <=== Not yet tested but they say it is the safest
                 }
                 log("Generating content...", type="info")
                 response = requests.post(
