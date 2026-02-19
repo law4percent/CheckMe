@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
-import warnings
-import os
 
+from .logger import get_log_file
+
+log = get_log_file("smart_collage.log")
 
 class SmartCollage:
 
@@ -26,10 +27,7 @@ class SmartCollage:
         elif count in [7, 8, 9]:
             return 3, 3
         else:
-            warnings.warn(
-                f"{count} images detected. Auto-adjusting grid layout.",
-                RuntimeWarning
-            )
+            log(f"Found {count} images. Using dynamic grid with 3 columns and {int(np.ceil(count / 3))} rows. This may result in a very tall collage.", type="warning")
             cols = 3
             rows = int(np.ceil(count / 3))
             return cols, rows
