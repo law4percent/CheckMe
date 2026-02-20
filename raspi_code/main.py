@@ -1,5 +1,27 @@
 def main() -> None:
     """
+    Prequisite:
+    - Raspi should be connected to the internet
+    - L3210-Scanner should be connected to the Raspi and ready to scan the answer sheets
+    - The system should have access to the Cloudinary and Gemini API for uploading images and extracting data from the images
+    - The system should have access to the RTDB for saving and retrieving data such as Answer Key, Assessment UID, and Student's Score
+    - Keypad 3x4
+    
+    Services:
+    - firebase_rtdb_client.py 
+    - gemini_client.py 
+    - image_uploader.py 
+    - keypad_hardware.py 
+    - l3210_scanner.py 
+    - lcd_hardware.py 
+    - logger.py 
+    - prompts.py 
+    - sanitizer.py 
+    - scorer.py 
+    - smart_collage.py 
+    - utils.py
+
+
     STEP 1: Auth/User Verification
     [] Description: System will check the cred.txt and check the details for {teacher_uid} and {username}.
         [] - IF the system cannot find the the cred.txt THEN it will make new one cred.txt file and return {NOT_AUHTENTICATED}.
@@ -17,7 +39,7 @@ def main() -> None:
             Options
             [1] Scan new Ans Key
             [2] Start checking Ans Sheets
-            [3] Settings <--- NOTE: Not prio for now
+            [3] Settings
     
         STEP 2.A: Scan new Ans Key
         [] System will ask the exact number of the questions and initially save the data to variable {exact_number_of_questions}
@@ -88,23 +110,29 @@ def main() -> None:
                                 - IF extraction OCR with gemini was success,
                                     - THEN save the {is_final_score}, {total_score}, {extracted_student_id}, {extracted_assessment_uid}, {extracted_answer_sheet}, and {exact_number_of_question} to the RTBD
                                 - {is_gemmini_task_done} = True
+                                - IF gemini failed and no more retry for gemini,
+                                    - THEN show warning to the teacher like:
+                                        "Gemini out of quota, cannot process the image for now, please try again later"
+                                        "Gemini failed to extract the image, please try again"
+                                        "Gemini OCR has problem, please try again"
+                                        - In short, this will warning base on the health of the gemini and the error message from gemini
+                                        - THEN redirect to the base such as STEP 2.B
                                     
-                            - IF success to upload all the images, 
+                            - IF success to upload all the images in cloudinary,
                                 - THEN save the {image_URLs} to RTDB
                                 - THEN just inform the Teacher that has done to upload and {total_score}/{exact_number_of_questions} 
                                 - THEN show other option:
-                                    Sample options to display: - SAME
+                                    Sample options to display:
                                         Options
                                         [1] Next sheet
                                         [2] Exit
 
                                     FLOW:
                                         [1] Next sheet
-                                            - _________________________
+                                            - Discard all the data from local AND delete the scanned local images
 
-                                        [2] Discard warning and proceed to the next sheet
-                                            - THEN _______________________
-                                            - ________________________________
+                                        [2] Exit
+                                            - Just go back to the base such as STEP 2 
                             
                             - ELSE, 
                                 -THEN tell the teacher that uploading images was failed AND display options
@@ -119,11 +147,11 @@ def main() -> None:
                                             - Repeat the procees of [2] Done and Save
 
                                         [2] Discard warning and proceed to the next sheet
-                                            - THEN _______________________
-                                            - ________________________________
+                                            - Discard all the data from local AND run a backgound process to reupload the images to cloudinary, use multiprocessing to do this in the background, and then just proceed to the next sheet
+                                            - In the background processing, add three attempts to re-upload the images to cloudinary if it's failed then delete the local scanned images and just save the {image_URLs} as empty list in RTDB
                                         
                                         [3] EXIT
-                                            - __________________________________________
+                                            - Just go back to the base such as STEP 2
                             
                         [3] Cancel
                             - Discard all the data from local AND delete the scanned local images

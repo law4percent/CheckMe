@@ -64,14 +64,9 @@ def sanitize_gemini_json(raw: str) -> dict:
     return data
 
 
-def save_to_json(data: dict, output_path: str) -> None:
-    """Saves a dict to a formatted JSON file."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Saved to {output_path}")
-
 if __name__ == "__main__":
     from .gemini_client import gemini_with_retry
+    from .utils import save_to_json
 
     API_KEY    = "YOUR_API_KEY"
     MODEL      = "gemini-2.5-flash"
