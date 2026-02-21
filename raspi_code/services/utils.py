@@ -32,9 +32,9 @@ def normalize_path(path) -> str:
         Absolute path as string
     
     Examples:
-        normalize_path("/home/pi/scans")
-        normalize_path(("home", "pi", "scans"))
-        normalize_path(Path("/home/pi/scans"))
+        - normalize_path("/home/pi/scans")
+        - normalize_path(("home", "pi", "scans"))
+        - normalize_path(Path("/home/pi/scans"))
     """
     if isinstance(path, tuple):
         path = os.path.join(*path)

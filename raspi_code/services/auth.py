@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass
 
+from . import utils
 
 class AuthStatus(Enum):
     """Authentication status states"""
@@ -36,8 +37,8 @@ class CodeValidationStatus(Enum):
 @dataclass
 class Credentials:
     """Teacher credentials data structure"""
-    teacher_uid: Optional[str] = None
-    username: Optional[str] = None
+    teacher_uid : Optional[str] = None
+    username    : Optional[str] = None
     
     def is_valid(self) -> bool:
         """Check if credentials are valid (both fields non-null)"""
@@ -85,11 +86,9 @@ class TeacherAuth:
     Example usage:
         auth = TeacherAuth()
         
-        # Check existing session
         if auth.is_authenticated():
             print("Already logged in!")
         else:
-            # Prompt for temp code
             temp_code = input("Enter code from mobile app: ")
             success, message = auth.login_with_temp_code(temp_code)
             
@@ -101,7 +100,7 @@ class TeacherAuth:
     
     def __init__(
         self,
-        credentials_file : str  = "/home/checkme2025/Desktop/grading_system/cred.txt",
+        credentials_file : str  = "credentials/cred.txt",
         firebase_url     : str  = "https://project-rtdb.asia-southeast1.firebasedatabase.app",
         auto_create      : bool = True
     ):
@@ -113,15 +112,15 @@ class TeacherAuth:
             firebase_url: Firebase Realtime Database base URL
             auto_create: Automatically create credentials file if missing
         """
-        self.credentials_file = credentials_file
-        self.firebase_url = firebase_url.rstrip('/')
-        self.auto_create = auto_create
+        self.credentials_file   = utils.normalize_path(credentials_file)
+        self.firebase_url       = firebase_url.rstrip('/')
+        self.auto_create        = auto_create
         self._current_credentials: Optional[Credentials] = None
         
         # Ensure parent directory exists
         parent_dir = os.path.dirname(self.credentials_file)
         if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
+            utils.create_directories(parent_dir)
         
         # Auto-create empty credentials file if needed
         if auto_create and not os.path.exists(self.credentials_file):
