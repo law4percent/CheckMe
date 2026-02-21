@@ -161,18 +161,12 @@ class TeacherAuth:
                 json.dump(credentials.to_dict(), f, indent=2)
         except Exception as e:
             raise CredentialsFileError(f"Failed to save credentials: {e}")
-    
-    def _normalize_temp_code(self, temp_code: str) -> str:
-        """Normalize temporary code to uppercase"""
-        return temp_code.strip().upper()
-    
+        
     def _validate_temp_code_format(self, temp_code: str) -> bool:
         """Validate temporary code format: 4 letters + 4 digits"""
         if len(temp_code) != 8:
             return False
-        if not temp_code[:4].isalpha():
-            return False
-        if not temp_code[4:].isdigit():
+        if not temp_code.isdigit():
             return False
         return True
     
@@ -187,12 +181,11 @@ class TeacherAuth:
             ├─ uid: "TCHR-12345"
             └─ username: "prof_smith"
         """
-        normalized_code = self._normalize_temp_code(temp_code)
         
-        if not self._validate_temp_code_format(normalized_code):
+        if not self._validate_temp_code_format(temp_code):
             return (CodeValidationStatus.INVALID, None)
         
-        url = f"{self.firebase_url}/users_temp_code/{normalized_code}.json"
+        url = f"{self.firebase_url}/users_temp_code/{temp_code}.json"
         
         try:
             response = requests.get(url, timeout=10)
@@ -334,19 +327,20 @@ if __name__ == "__main__":
     print("="*70)
     
     test_codes = [
-        ("ABCD1234", True),
-        ("abcd1234", True),
-        (" ABCD1234 ", True),
+        ("ABCD1234", False),
+        ("abcd1234", False),
+        (" ABCD1234 ", False),
         ("ABC1234", False),
         ("ABCD12345", False),
         ("1234ABCD", False),
+        ("12344567", True),
+        (" 12344567", False),
     ]
     
     for code, expected in test_codes:
-        normalized = auth._normalize_temp_code(code)
-        is_valid = auth._validate_temp_code_format(normalized)
+        is_valid = auth._validate_temp_code_format(code)
         symbol = "✅" if is_valid == expected else "❌"
-        print(f"{symbol} '{code}' → '{normalized}' → Valid: {is_valid}")
+        print(f"{symbol} '{code}' → Valid: {is_valid}")
     
     
     print("\n" + "="*70)
@@ -418,7 +412,7 @@ if __name__ == "__main__":
         
         # Read from keypad
         # temp_code = keypad.read_input(length=8, uppercase=True)
-        temp_code = "ABCD1234"  # Simulated
+        temp_code = "12351234"  # Simulated
         print(f"\nKeypad: {temp_code}")
         
         success, message = auth.login_with_temp_code(temp_code)
@@ -453,9 +447,8 @@ if __name__ == "__main__":
     
     error_tests = [
         ("", "Empty code"),
-        ("ABC123", "Too short"),
-        ("ABCD12345", "Too long"),
-        ("1234ABCD", "Numbers first"),
+        ("123123", "Too short"),
+        ("235512345", "Too long"),
     ]
     
     for code, desc in error_tests:
