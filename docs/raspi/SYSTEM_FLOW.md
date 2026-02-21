@@ -68,7 +68,7 @@ flowchart TD
     UploadFailChoice1 -->|1| UploadCloud1
     UploadFailChoice1 -->|2| DeleteLocal1
     
-    ScanChoice1 -->|3| Cancel1[Delete local images]
+    ScanChoice1 -->|3| Cancel1[Delete local images if list of filename is not None]
     Cancel1 --> HomeMenu
     
     %% OPTION 2: CHECK ANSWER SHEETS
