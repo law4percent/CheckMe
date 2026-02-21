@@ -11,9 +11,9 @@ from enum import Enum
 
 class KeypadMode(Enum):
     """Keypad operation modes"""
-    NUMERIC = "numeric"       # 0-9 only
-    ALPHANUMERIC = "alphanumeric"  # 0-9, *, #
-    CUSTOM = "custom"         # Custom matrix
+    NUMERIC         = "numeric"       # 0-9 only
+    ALPHANUMERIC    = "alphanumeric"  # 0-9, *, #
+    CUSTOM          = "custom"         # Custom matrix
 
 
 class KeypadError(Exception):
@@ -213,13 +213,12 @@ class Keypad3x4:
     
     def read_input(
         self,
-        length: int = None,
-        valid_keys: Optional[List[str]] = None,
-        end_key: str = '#',
-        cancel_key: str = '*',
-        uppercase: bool = False,
-        echo_callback: Optional[Callable[[str], None]] = None,
-        timeout: Optional[float] = None
+        length          : int = None,
+        valid_keys      : Optional[List[str]] = None,
+        end_key         : str = '#',
+        cancel_key      : str = '*',
+        echo_callback   : Optional[Callable[[str], None]] = None,
+        timeout         : Optional[float] = None
     ) -> Optional[str]:
         """
         Read multi-character input from keypad.
@@ -229,7 +228,6 @@ class Keypad3x4:
             valid_keys: List of acceptable keys (excluding end_key, cancel_key)
             end_key: Key to confirm input (default: '#')
             cancel_key: Key to cancel input (default: '*')
-            uppercase: Convert alphabetic input to uppercase
             echo_callback: Function to call for each key (e.g., lcd.show)
             timeout: Maximum time to wait in seconds
         
@@ -244,10 +242,10 @@ class Keypad3x4:
                 echo_callback=lambda s: lcd.show(f"PIN: {s}")
             )
             
-            # Read until # is pressed
+            # Read 8-digit code
             code = keypad.read_input(
-                end_key='#',
-                uppercase=True
+                length=8,
+                valid_keys=['0','1','2','3','4','5','6','7','8','9']
             )
         """
         input_buffer = ""
@@ -279,9 +277,6 @@ class Keypad3x4:
                     return input_buffer
                 
                 # Add key to buffer
-                if uppercase and key.isalpha():
-                    key = key.upper()
-                
                 input_buffer += key
                 
                 # Echo callback
@@ -292,9 +287,9 @@ class Keypad3x4:
     
     def read_numeric(
         self,
-        length: int,
-        echo_callback: Optional[Callable[[str], None]] = None,
-        timeout: Optional[float] = None
+        length          : int,
+        echo_callback   : Optional[Callable[[str], None]] = None,
+        timeout         : Optional[float] = None
     ) -> Optional[str]:
         """
         Read numeric input only (0-9).
@@ -309,17 +304,17 @@ class Keypad3x4:
         """
         valid_keys = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
         return self.read_input(
-            length=length,
-            valid_keys=valid_keys,
-            echo_callback=echo_callback,
-            timeout=timeout
+            length          = length,
+            valid_keys      = valid_keys,
+            echo_callback   = echo_callback,
+            timeout         = timeout
         )
     
     def confirm_action(
         self,
-        confirm_key: str = '#',
-        cancel_key: str = '*',
-        timeout: Optional[float] = None
+        confirm_key : str = '#',
+        cancel_key  : str = '*',
+        timeout     : Optional[float] = None
     ) -> bool:
         """
         Wait for user confirmation.
@@ -416,25 +411,26 @@ if __name__ == "__main__":
     
     
     print("\n" + "="*70)
-    print("Example 4: Read temporary code (8 characters)")
+    print("Example 4: Read 8-digit temporary code")
     print("="*70)
     
     def show_code(code):
         print(f"\rCode: {code}", end='', flush=True)
     
-    print("Enter 8-character code (letters will be uppercase):")
-    print("Press # to confirm, * to cancel")
+    print("Enter 8-digit code:")
+    print("(will auto-confirm when 8 digits entered)")
     
     code = keypad.read_input(
-        length=8,
-        uppercase=True,
-        echo_callback=show_code
+        length          = 8,
+        valid_keys      = ['0','1','2','3','4','5','6','7','8','9'],
+        echo_callback   = show_code,
+        timeout         = 30
     )
     
     if code:
         print(f"\nCode entered: {code}")
     else:
-        print("\nCancelled")
+        print("\nCancelled or timeout")
     
     
     print("\n" + "="*70)
@@ -492,31 +488,33 @@ if __name__ == "__main__":
     
     
     print("\n" + "="*70)
-    print("Example 9: Login flow integration")
+    print("Example 9: Login flow integration (8-digit code)")
     print("="*70)
     
     def login_with_temp_code():
-        """Simulate login with temporary code from mobile app"""
+        """Simulate login with 8-digit temporary code from mobile app"""
         keypad = Keypad3x4()
         
         def show_lcd(text):
             """Simulate LCD display"""
-            print(f"\rLCD: Enter code: {text}", end='', flush=True)
+            masked = '*' * len(text)  # Mask for security
+            print(f"\rLCD: Enter code: {masked}", end='', flush=True)
         
         print("\n--- Login Screen ---")
-        print("Enter 8-character temporary code")
-        print("Format: ABCD1234 (4 letters + 4 digits)")
-        print("Press # to confirm, * to cancel")
+        print("Enter 8-digit temporary code")
+        print("Format: 12345678 (8 numbers)")
+        print("Press * to cancel")
+        print("(auto-confirms when 8 digits entered)")
         
         code = keypad.read_input(
-            length=8,
-            uppercase=True,
-            echo_callback=show_lcd,
-            timeout=30  # 30 second timeout
+            length          = 8,
+            valid_keys      = ['0','1','2','3','4','5','6','7','8','9'],
+            echo_callback   = show_lcd,
+            timeout         = 30  # 30 second timeout
         )
         
         if code:
-            print(f"\n\n✅ Code entered: {code}")
+            print(f"\n\n✅ Code entered successfully")
             print("Validating with Firebase...")
             # In real system: auth.login_with_temp_code(code)
             return code
