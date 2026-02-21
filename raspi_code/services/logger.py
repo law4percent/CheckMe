@@ -8,12 +8,10 @@ Usage:
     log = get_logger("gemini_client.py")
     
     # Then use it throughout the file
-    log(details="Connection established", type="info")
-    log(details="API error occurred", type="error", show_console=True)
+    log(details="Connection established", log_type="info")
+    log(details="API error occurred", log_type="error", show_console=True)
 """
 
-import os
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Callable
@@ -35,12 +33,12 @@ LOGS_DIR.mkdir(exist_ok=True)
 
 # Log file configuration
 LOG_FILES = {
-    "error": LOGS_DIR / "error.log",
-    "info": LOGS_DIR / "info.log",
-    "warning": LOGS_DIR / "warning.log",
-    "debug": LOGS_DIR / "debug.log",
-    "bug": LOGS_DIR / "bug.log",
-    "all": LOGS_DIR / "all.log"
+    "error"     : LOGS_DIR / "error.log",
+    "info"      : LOGS_DIR / "info.log",
+    "warning"   : LOGS_DIR / "warning.log",
+    "debug"     : LOGS_DIR / "debug.log",
+    "bug"       : LOGS_DIR / "bug.log",
+    "all"       : LOGS_DIR / "all.log"
 }
 
 # Rotation settings: 10MB max per file, keep last 5 files
@@ -49,12 +47,12 @@ BACKUP_COUNT = 5
 
 # Color codes for console output
 COLORS = {
-    "error": "\033[91m",    # Red
-    "warning": "\033[93m",  # Yellow
-    "info": "\033[92m",     # Green
-    "debug": "\033[94m",    # Blue
-    "bug": "\033[95m",      # Magenta
-    "reset": "\033[0m"      # Reset
+    "error"     : "\033[91m",    # Red
+    "warning"   : "\033[93m",  # Yellow
+    "info"      : "\033[92m",     # Green
+    "debug"     : "\033[94m",    # Blue
+    "bug"       : "\033[95m",      # Magenta
+    "reset"     : "\033[0m"      # Reset
 }
 
 
@@ -70,16 +68,16 @@ class LoggerSystem:
         """Initialize rotating file handlers for each log type"""
         for log_type, log_path in LOG_FILES.items():
             handler = RotatingFileHandler(
-                filename=log_path,
-                maxBytes=MAX_BYTES,
-                backupCount=BACKUP_COUNT,
-                encoding='utf-8'
+                filename    = log_path,
+                maxBytes    = MAX_BYTES,
+                backupCount = BACKUP_COUNT,
+                encoding    = 'utf-8'
             )
             
             # Set format: [2025-02-16 14:23:01.123] [ERROR] [gemini_client.py:45] Message
             formatter = logging.Formatter(
-                fmt='[%(asctime)s.%(msecs)03d] [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                fmt     = '[%(asctime)s.%(msecs)03d] [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
+                datefmt = '%Y-%m-%d %H:%M:%S'
             )
             handler.setFormatter(formatter)
             
@@ -114,25 +112,25 @@ class LoggerSystem:
         """Write log message to appropriate file(s)"""
         # Create a temporary LogRecord for formatting
         record = logging.LogRecord(
-            name="raspi_logger",
-            level=logging.INFO,
-            pathname=filename,
-            lineno=lineno,
-            msg=message,
-            args=(),
-            exc_info=None
+            name     = "raspi_logger",
+            level    = logging.INFO,
+            pathname = filename,
+            lineno   = lineno,
+            msg      = message,
+            args     = (),
+            exc_info = None
         )
         
         # Map log type to logging level
-        level_map = {
-            "debug": logging.DEBUG,
-            "info": logging.INFO,
-            "warning": logging.WARNING,
-            "error": logging.ERROR,
-            "bug": logging.CRITICAL
+        level_map           = {
+            "debug"     : logging.DEBUG,
+            "info"      : logging.INFO,
+            "warning"   : logging.WARNING,
+            "error"     : logging.ERROR,
+            "bug"       : logging.CRITICAL
         }
-        record.levelno = level_map.get(log_type, logging.INFO)
-        record.levelname = log_type.upper()
+        record.levelno      = level_map.get(log_type, logging.INFO)
+        record.levelname    = log_type.upper()
         
         # Write to specific log file
         handler = self._handlers[log_type]
@@ -145,9 +143,9 @@ class LoggerSystem:
     
     def _print_to_console(self, log_type: str, message: str, filename: str):
         """Print formatted log message to console with colors"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        color = COLORS.get(log_type, COLORS["reset"])
-        reset = COLORS["reset"]
+        timestamp   = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        color       = COLORS.get(log_type, COLORS["reset"])
+        reset       = COLORS["reset"]
         
         console_msg = (
             f"{color}[{timestamp}] [{log_type.upper()}] "
@@ -157,11 +155,11 @@ class LoggerSystem:
     
     def log(
         self,
-        details: str,
-        file: str,
-        type: LogType = "info",
-        show_console: bool = False,
-        save_to_all_logs: bool = True
+        details         : str,
+        file            : str,
+        log_type        : LogType   = "info",
+        show_console    : bool      = False,
+        save_to_all_logs: bool      = True
     ):
         """
         Main logging function with flexible parameters.
@@ -169,14 +167,14 @@ class LoggerSystem:
         Args:
             details: The log message/details
             file: Source file name (e.g., "gemini_client.py")
-            type: Log type - "error", "info", "warning", "debug", or "bug"
+            log_type: Log type - "error", "info", "warning", "debug", or "bug"
             show_console: Whether to print to console (default: False)
             save_to_all_logs: Whether to also save to all.log (default: True)
         """
         try:
             # Validate log type (raises error but continues with default)
             try:
-                validated_type = self._validate_type(type)
+                validated_type = self._validate_type(log_type)
             except ValueError:
                 validated_type = "info"  # Default fallback
             
@@ -196,7 +194,7 @@ class LoggerSystem:
         except Exception as e:
             # Fallback: print to console if logging system fails
             print(f"LOGGER ERROR: {e}")
-            print(f"Original message: [{type.upper()}] {file}: {details}")
+            print(f"Original message: [{log_type.upper()}] {file}: {details}")
     
     def get_log_location(self) -> Path:
         """Return the logs directory path"""
@@ -227,30 +225,30 @@ def get_logger(filename: str) -> Callable:
         from services.logger import get_logger
         
         log = get_logger("gemini_client.py")
-        log(details="Starting process", type="info")
-        log(details="Error occurred", type="error", show_console=True)
+        log(details="Starting process", log_type="info")
+        log(details="Error occurred", log_type="error", show_console=True)
     """
     def bound_logger(
-        details: str,
-        type: LogType = "info",
-        show_console: bool = False,
-        save_to_all_logs: bool = True
+        details         : str,
+        log_type        : LogType   = "info",
+        show_console    : bool      = False,
+        save_to_all_logs: bool      = True
     ):
         """
         Log a message with pre-bound filename.
         
         Args:
             details: The log message/details
-            type: Log type - "error", "info", "warning", "debug", or "bug"
+            log_type: Log type - "error", "info", "warning", "debug", or "bug"
             show_console: Whether to print to console (default: False)
             save_to_all_logs: Whether to also save to all.log (default: True)
         """
         _logger_instance.log(
-            details=details,
-            file=filename,
-            type=type,
-            show_console=show_console,
-            save_to_all_logs=save_to_all_logs
+            details         = details,
+            file            = filename,
+            log_type        = log_type,
+            show_console    = show_console,
+            save_to_all_logs= save_to_all_logs
         )
     
     return bound_logger
@@ -273,13 +271,13 @@ if __name__ == "__main__":
     print("Testing logger with file initialization...\n")
 
     # Sample usage
-    log(details="This is an info message", type="info")
-    log(details="This is a debug message", type="debug")
-    log(details="This is a warning message", type="warning", show_console=True)
-    log(details="This is an error message", type="error", show_console=True)
-    log(details="This is a bug message", type="bug", show_console=True)
+    log(details="This is an info message", log_type="info")
+    log(details="This is a debug message", log_type="debug")
+    log(details="This is a warning message", log_type="warning", show_console=True)
+    log(details="This is an error message", log_type="error", show_console=True)
+    log(details="This is a bug message", log_type="bug", show_console=True)
 
     # Temporary debug - not saved to all.log
-    log(details="Temporary debug info", type="debug", save_to_all_logs=False)
+    log(details="Temporary debug info", log_type="debug", save_to_all_logs=False)
 
     print("\n✓ Test complete! Check your logs/ directory")
