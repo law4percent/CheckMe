@@ -67,7 +67,7 @@ class L3210Scanner:
         Args:
             resolution          : DPI resolution (75, 150, 300, 600)
             mode                : Scan mode (Lineart, Gray, Color)
-            format              : Output file format
+            scan_format         : Output file format
             auto_create_subdirs : Automatically create answer_keys and answer_sheets subdirectories
             base_dir            : Directory to save scanned files
             answer_keys_dir     : Sub dirs inside of scan folder
@@ -76,7 +76,7 @@ class L3210Scanner:
         self.base_dir           = base_dir
         self.resolution         = resolution
         self.mode               = mode
-        self.format             = scan_format
+        self.scan_format        = scan_format
         self._last_scan_path: Optional[str] = None
         self._is_scanning       = False
         self.answer_keys_dir    = f"{base_dir}/{answer_keys_dir}"
@@ -128,14 +128,14 @@ class L3210Scanner:
         # Add extension
         filepath = utils.join_and_ensure_path(
             target_directory    = target_directory, 
-            filename            = f"{filename}.{self.format.value}", 
+            filename            = f"{filename}.{self.scan_format.value}", 
             source              = "l3210_scanner_hardware.py"
         )
         
         # Build scanimage command
         command = [
             "scanimage",
-            f"--format={self.format.value}",
+            f"--format={self.scan_format.value}",
             f"--resolution={scan_resolution}",
             f"--mode={scan_mode.value}"
         ]
@@ -265,7 +265,7 @@ class L3210Scanner:
         
         files = [
             f for f in os.listdir(normalized_path)
-            if f.endswith(f".{self.format.value}")
+            if f.endswith(f".{self.scan_format.value}")
         ]
         return len(files)
     
@@ -285,7 +285,7 @@ class L3210Scanner:
         
         scans = []
         for filename in os.listdir(normalized_path):
-            if filename.endswith(f".{self.format.value}"):
+            if filename.endswith(f".{self.scan_format.value}"):
                 filepath    = os.path.dirname(utils.join_and_ensure_path(target_directory, filename))
                 timestamp   = os.path.getmtime(filepath)
                 scans.append((filename, filepath, datetime.fromtimestamp(timestamp)))
@@ -343,7 +343,7 @@ class L3210Scanner:
         return (
             f"L3210Scanner(save_directory='{self.base_dir}', "
             f"resolution={self.resolution}, mode={self.mode.value}, "
-            f"format={self.format.value})"
+            f"format={self.scan_format.value})"
         )
 
 
