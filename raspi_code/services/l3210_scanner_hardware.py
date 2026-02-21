@@ -55,7 +55,7 @@ class L3210Scanner:
         self,
         resolution          : int           = 300,
         mode                : ScanMode      = ScanMode.LINEART,
-        format              : ScanFormat    = ScanFormat.PNG,
+        scan_format         : ScanFormat    = ScanFormat.PNG,
         auto_create_subdirs : bool          = True,
         base_dir            : str           = "scans",
         answer_keys_dir     : str           = "answer_keys",
@@ -76,7 +76,7 @@ class L3210Scanner:
         self.base_dir           = base_dir
         self.resolution         = resolution
         self.mode               = mode
-        self.format             = format
+        self.format             = scan_format
         self._last_scan_path: Optional[str] = None
         self._is_scanning       = False
         self.answer_keys_dir    = f"{base_dir}/{answer_keys_dir}"
