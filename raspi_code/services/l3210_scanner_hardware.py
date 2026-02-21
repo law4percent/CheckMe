@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Optional, Tuple
 from enum import Enum
 
+from . import utils
+
 
 class ScanMode(Enum):
     """Available scan modes"""
@@ -51,154 +53,72 @@ class L3210Scanner:
     
     def __init__(
         self,
-        save_directory: str = "/home/checkme2025/Desktop/l3210_test/scans",
-        resolution: int = 300,
-        mode: ScanMode = ScanMode.COLOR,
-        format: ScanFormat = ScanFormat.PNG,
-        auto_create_subdirs: bool = True
+        resolution          : int           = 300,
+        mode                : ScanMode      = ScanMode.LINEART,
+        format              : ScanFormat    = ScanFormat.PNG,
+        auto_create_subdirs : bool          = True,
+        base_dir            : str           = "scans",
+        answer_keys_dir     : str           = "answer_keys",
+        answer_sheets_dir   : str           = "answer_sheets"
     ):
         """
         Initialize scanner with default settings.
         
         Args:
-            save_directory: Directory to save scanned files
-            resolution: DPI resolution (75, 150, 300, 600)
-            mode: Scan mode (Lineart, Gray, Color)
-            format: Output file format
-            auto_create_subdirs: Automatically create answer_keys and answer_sheets subdirectories
+            resolution          : DPI resolution (75, 150, 300, 600)
+            mode                : Scan mode (Lineart, Gray, Color)
+            format              : Output file format
+            auto_create_subdirs : Automatically create answer_keys and answer_sheets subdirectories
+            base_dir            : Directory to save scanned files
+            answer_keys_dir     : Sub dirs inside of scan folder
+            answer_sheets_dir   : Sub dirs inside of scan folder
         """
-        self.save_directory = save_directory
-        self.resolution = resolution
-        self.mode = mode
-        self.format = format
-        self.last_scan_path: Optional[str] = None
-        self._is_scanning = False
+        self.base_dir           = base_dir
+        self.resolution         = resolution
+        self.mode               = mode
+        self.format             = format
+        self._last_scan_path: Optional[str] = None
+        self._is_scanning       = False
+        self.answer_keys_dir    = f"{base_dir}/{answer_keys_dir}"
+        self.answer_sheets_dir  = f"{base_dir}/{answer_sheets_dir}"
         
-        # Create base directory if it doesn't exist
-        os.makedirs(self.save_directory, exist_ok=True)
-        
-        # Create standard subdirectories for organized storage
         if auto_create_subdirs:
-            self._create_standard_directories()
-    
-    def _create_standard_directories(self) -> dict:
-        """
-        Create standard subdirectories for organized file storage.
-        Creates answer_keys and answer_sheets folders if they don't exist.
-        
-        Returns:
-            dict: Paths to created directories with creation status
-        """
-        subdirs = {
-            "answer_keys": os.path.join(self.save_directory, "answer_keys"),
-            "answer_sheets": os.path.join(self.save_directory, "answer_sheets")
-        }
-        
-        result = {}
-        for name, path in subdirs.items():
-            try:
-                # exist_ok=True means no error if directory already exists
-                os.makedirs(path, exist_ok=True)
-                
-                # Check if directory now exists
-                if os.path.exists(path) and os.path.isdir(path):
-                    result[name] = {
-                        "path": path,
-                        "status": "created" if not os.listdir(path) else "exists",
-                        "success": True
-                    }
-                else:
-                    result[name] = {
-                        "path": path,
-                        "status": "failed",
-                        "success": False
-                    }
-            except Exception as e:
-                result[name] = {
-                    "path": path,
-                    "status": f"error: {e}",
-                    "success": False
-                }
-        
-        return result
-    
-    def get_standard_directories(self) -> dict:
-        """
-        Get paths to standard subdirectories.
-        
-        Returns:
-            dict: Dictionary with 'answer_keys' and 'answer_sheets' paths
-        """
-        return {
-            "answer_keys": os.path.join(self.save_directory, "answer_keys"),
-            "answer_sheets": os.path.join(self.save_directory, "answer_sheets"),
-            "base": self.save_directory
-        }
-    
-    def verify_directories(self) -> dict:
-        """
-        Verify that all standard directories exist and are writable.
-        
-        Returns:
-            dict: Status of each directory (exists, writable)
-        """
-        dirs = self.get_standard_directories()
-        status = {}
-        
-        for name, path in dirs.items():
-            exists = os.path.exists(path) and os.path.isdir(path)
-            writable = os.access(path, os.W_OK) if exists else False
-            
-            status[name] = {
-                "path": path,
-                "exists": exists,
-                "writable": writable,
-                "ready": exists and writable
-            }
-        
-        return status
+            utils.create_directories(answer_keys_dir, answer_sheets_dir)
     
     def scan(
         self,
-        filename: Optional[str] = None,
-        resolution: Optional[int] = None,
-        mode: Optional[ScanMode] = None,
-        subdirectory: Optional[str] = None
+        target_directory : str,
+        filename         : Optional[str]        = None,
+        resolution       : Optional[int]        = None,
+        mode             : Optional[ScanMode]   = None
     ) -> str:
         """
         Perform a scan with current or provided settings.
         
         Args:
-            filename: Custom filename (without extension). If None, auto-generates timestamp.
-            resolution: Override default resolution for this scan
-            mode: Override default mode for this scan
-            subdirectory: Save to subdirectory ('answer_keys' or 'answer_sheets'). 
-                         If None, saves to base directory.
+            target_directory : Director to store the scan images
+            filename     : Custom filename (without extension). If None, auto-generates timestamp.
+            resolution   : Override default resolution for this scan
+            mode         : Override default mode for this scan
         
         Returns:
             str: Full path to the saved scan file
         
         Raises:
-            ScannerNotFoundError: If scanner is not connected
-            ScanFailedError: If scan operation fails
-            ValueError: If subdirectory is invalid
+            ScannerNotFoundError : If scanner is not connected
+            ScanFailedError      : If scan operation fails
+            ValueError           : If subdirectory is invalid
         """
         # Use instance defaults if not overridden
         scan_resolution = resolution or self.resolution
-        scan_mode = mode or self.mode
+        scan_mode       = mode or self.mode
         
         # Determine save directory
-        if subdirectory:
-            if subdirectory not in ["answer_keys", "answer_sheets"]:
-                raise ValueError(
-                    f"Invalid subdirectory '{subdirectory}'. "
-                    "Must be 'answer_keys' or 'answer_sheets'"
-                )
-            save_dir = os.path.join(self.save_directory, subdirectory)
-            # Ensure subdirectory exists
-            os.makedirs(save_dir, exist_ok=True)
-        else:
-            save_dir = self.save_directory
+        if target_directory not in [self.answer_keys_dir, self.answer_sheets_dir]:
+            raise ValueError(
+                f"Invalid subdirectory '{target_directory}'. "
+                "Must be 'answer_keys' or 'answer_sheets'"
+            )
         
         # Generate filename
         if filename is None:
@@ -206,7 +126,11 @@ class L3210Scanner:
             filename = f"scan_{timestamp}"
         
         # Add extension
-        filepath = os.path.join(save_dir, f"{filename}.{self.format.value}")
+        filepath = utils.join_and_ensure_path(
+            target_directory    = target_directory, 
+            filename            = f"{filename}.{self.format.value}", 
+            source              = "l3210_scanner_hardware.py"
+        )
         
         # Build scanimage command
         command = [
@@ -228,16 +152,16 @@ class L3210Scanner:
             with open(filepath, "wb") as file:
                 result = subprocess.run(
                     command,
-                    stdout=file,
-                    stderr=subprocess.PIPE,
-                    timeout=60  # 60 second timeout
+                    stdout  = file,
+                    stderr  = subprocess.PIPE,
+                    timeout = 60  # 60 second timeout
                 )
             
             if result.returncode != 0:
                 error_msg = result.stderr.decode() if result.stderr else "Unknown error"
                 raise ScanFailedError(f"Scan failed: {error_msg}")
             
-            self.last_scan_path = filepath
+            self._last_scan_path = filepath
             return filepath
             
         except subprocess.TimeoutExpired:
@@ -259,9 +183,9 @@ class L3210Scanner:
         try:
             result = subprocess.run(
                 ["scanimage", "--list-devices"],
-                capture_output=True,
-                text=True,
-                timeout=5
+                capture_output  = True,
+                text            = True,
+                timeout         = 5
             )
             return result.returncode == 0 and len(result.stdout.strip()) > 0
         except Exception:
@@ -277,9 +201,9 @@ class L3210Scanner:
         try:
             result = subprocess.run(
                 ["scanimage", "--list-devices"],
-                capture_output=True,
-                text=True,
-                timeout=5
+                capture_output  = True,
+                text            = True,
+                timeout         = 5
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -303,7 +227,7 @@ class L3210Scanner:
         Returns:
             str: Path to last scanned file, or None if no scans performed
         """
-        return self.last_scan_path
+        return self._last_scan_path
     
     def set_resolution(self, resolution: int) -> None:
         """
@@ -325,37 +249,45 @@ class L3210Scanner:
         """
         self.mode = mode
     
-    def get_scan_count(self) -> int:
+    def get_scan_count(self, target_directory: str) -> int:
         """
         Get the number of scan files in the save directory.
+        
+        Args:
+            target_directory: Use the self.answer_keys_dir or self.answer_sheets_dir
         
         Returns:
             int: Number of files in save directory
         """
-        if not os.path.exists(self.save_directory):
+        normalized_path = utils.normalize_path(target_directory)
+        if not os.path.exists(normalized_path):
             return 0
         
         files = [
-            f for f in os.listdir(self.save_directory)
+            f for f in os.listdir(normalized_path)
             if f.endswith(f".{self.format.value}")
         ]
         return len(files)
     
-    def list_scans(self) -> list:
+    def list_scans(self, target_directory: str) -> list:
         """
         List all scan files in the save directory.
+        
+        Args:
+            target_directory: Use the self.answer_keys_dir or self.answer_sheets_dir
         
         Returns:
             list: List of tuples (filename, full_path, timestamp)
         """
-        if not os.path.exists(self.save_directory):
+        normalized_path = utils.normalize_path(target_directory)
+        if not os.path.exists(normalized_path):
             return []
         
         scans = []
-        for filename in os.listdir(self.save_directory):
+        for filename in os.listdir(normalized_path):
             if filename.endswith(f".{self.format.value}"):
-                filepath = os.path.join(self.save_directory, filename)
-                timestamp = os.path.getmtime(filepath)
+                filepath    = os.path.dirname(utils.join_and_ensure_path(target_directory, filename))
+                timestamp   = os.path.getmtime(filepath)
                 scans.append((filename, filepath, datetime.fromtimestamp(timestamp)))
         
         # Sort by timestamp, newest first
@@ -373,30 +305,30 @@ class L3210Scanner:
             bool: True if deleted successfully, False otherwise
         """
         try:
-            if os.path.exists(filepath):
-                os.remove(filepath)
-                if self.last_scan_path == filepath:
-                    self.last_scan_path = None
+            if utils.delete_file(filepath):
+                self._last_scan_path = None
                 return True
-            return False
-        except Exception:
+        except Exception as e:
             return False
     
-    def clear_all_scans(self) -> Tuple[int, int]:
+    def clear_all_scans(self, target_directory: str) -> Tuple[int, int]:
         """
         Delete all scan files in the save directory.
         
         Returns:
             tuple: (successful_deletions, failed_deletions)
         """
-        if not os.path.exists(self.save_directory):
+        # utils.delete_files()
+        
+        normalized_path = utils.normalize_path(target_directory)
+        if not os.path.exists(normalized_path):
             return (0, 0)
         
         success = 0
         failed = 0
         
-        for filename in os.listdir(self.save_directory):
-            filepath = os.path.join(self.save_directory, filename)
+        for filename in os.listdir(normalized_path):
+            filepath = utils.join_and_ensure_path(target_directory, filename)
             if os.path.isfile(filepath):
                 try:
                     os.remove(filepath)
@@ -404,12 +336,12 @@ class L3210Scanner:
                 except Exception:
                     failed += 1
         
-        self.last_scan_path = None
+        self._last_scan_path = None
         return (success, failed)
     
     def __repr__(self) -> str:
         return (
-            f"L3210Scanner(save_directory='{self.save_directory}', "
+            f"L3210Scanner(save_directory='{self.base_dir}', "
             f"resolution={self.resolution}, mode={self.mode.value}, "
             f"format={self.format.value})"
         )
@@ -490,7 +422,7 @@ if __name__ == "__main__":
     print("="*60)
     
     scanner_no_auto = L3210Scanner(
-        save_directory="/tmp/custom_scans",
+        base_dir="/tmp/custom_scans",
         auto_create_subdirs=False
     )
     print("Scanner initialized without auto-subdirectories")
@@ -547,7 +479,7 @@ if __name__ == "__main__":
     print("="*60)
     
     scanner = L3210Scanner(
-        save_directory="/home/pi/custom_scans",
+        base_dir="/home/pi/custom_scans",
         resolution=600,
         mode=ScanMode.GRAY
     )

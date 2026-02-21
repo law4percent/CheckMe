@@ -191,15 +191,16 @@ def delete_file(filepath: str, silent: bool = False) -> bool:
         True if deleted, False if failed
     """
     try:
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        path = normalize_path(filepath)
+        if os.path.exists(path):
+            os.remove(path)
             if not silent:
-                print(f"✅ Deleted: {filepath}")
+                print(f"✅ Deleted: {path}")
             return True
         return False
     except Exception as e:
         if not silent:
-            print(f"⚠ Failed to delete {filepath}: {e}")
+            print(f"⚠ Failed to delete {path}: {e}")
         return False
 
 
@@ -215,10 +216,10 @@ def delete_files(filepaths: List[str], silent: bool = False) -> tuple:
         (success_count, failed_count)
     """
     success = 0
-    failed = 0
+    failed  = 0
     
     for filepath in filepaths:
-        if delete_file(filepath, silent=True):
+        if delete_file(normalize_path(filepath), silent=True):
             success += 1
         else:
             failed += 1
