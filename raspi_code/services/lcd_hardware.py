@@ -59,6 +59,15 @@ class LCD_I2C:
         ### Position text
         lcd.write_at(0, 0, "Top Left")
         lcd.write_at(10, 1, "Mid Right")
+        
+        ### Scrollable list (more lines than LCD rows)
+        lcd.show_scrollable([
+            "Option 1",
+            "Option 2",
+            "Option 3",
+            "Option 4",
+            "Option 5",
+        ], scroll_up_key='2', scroll_down_key='8')
     """
     
     # LCD Commands
@@ -318,7 +327,307 @@ class LCD_I2C:
         if duration:
             time.sleep(duration)
             self.clear()
-    
+
+    # -------------------------------------------------------------------------
+    # SCROLLABLE DISPLAY
+    # -------------------------------------------------------------------------
+
+    def _render_scroll_view(
+        self,
+        lines       : List[str],
+        offset      : int,
+        title       : Optional[str] = None,
+        show_scroll_indicator : bool = True,
+    ) -> None:
+        """
+        Internal helper – renders one 'page' of a scrollable list.
+
+        Layout (20x4 with title):
+            Row 0  →  title (fixed header)
+            Row 1-3 →  content lines [offset … offset+visible_rows-1]
+
+        Layout (20x4 without title):
+            Row 0-3 →  content lines [offset … offset+3]
+
+        A small scroll indicator is written at the far-right of the first and
+        last content rows so the user knows there is more content above/below.
+        """
+        self.clear()
+
+        content_start_row = 0
+        if title is not None:
+            self.write_at(0, 0, title[:self.cols].center(self.cols))
+            content_start_row = 1
+
+        visible_rows = self.rows - content_start_row
+        total        = len(lines)
+
+        for i in range(visible_rows):
+            line_index = offset + i
+            if line_index >= total:
+                break
+
+            line = lines[line_index][:self.cols]
+
+            # Scroll indicators (^ at top content row when scrollable up,
+            # v at bottom content row when scrollable down)
+            indicator = " "
+            if show_scroll_indicator:
+                if i == 0 and offset > 0:
+                    indicator = "^"
+                elif i == visible_rows - 1 and (offset + visible_rows) < total:
+                    indicator = "v"
+
+            # Reserve last character for indicator; pad line to fill the rest
+            display_line = f"{line:<{self.cols - 1}}{indicator}"
+            self.write_at(0, content_start_row + i, display_line)
+
+    def show_scrollable(
+        self,
+        lines             : List[str],
+        title             : Optional[str] = None,
+        scroll_up_key     : str  = "2",
+        scroll_down_key   : str  = "8",
+        exit_key          : str  = "#",
+        keypad            = None,
+        get_key_func      = None,
+        show_scroll_indicator : bool = True,
+    ) -> Optional[int]:
+        """
+        Display a scrollable list that is longer than the LCD row count.
+
+        The caller provides a *key-reading function* so this method stays
+        hardware-agnostic.  Pass either:
+          • keypad     – an object with a ``get_key()`` method (e.g. keypad_4x4)
+          • get_key_func – any callable() that blocks until a key is pressed
+                           and returns a single-character string, or None on
+                           timeout.
+
+        If neither is supplied the function falls back to ``input()`` so you
+        can test it on a regular terminal.
+
+        Args:
+            lines        : List of text lines to display (any length).
+            title        : Optional fixed header shown on row 0.
+            scroll_up_key   : Key that scrolls the view up   (default '2').
+            scroll_down_key : Key that scrolls the view down (default '8').
+            exit_key     : Key that exits the scroll loop    (default '#').
+            keypad       : Object with .get_key() method.
+            get_key_func : Callable() → str | None.
+            show_scroll_indicator : Show '^'/'v' scroll hint characters.
+
+        Returns:
+            The current scroll offset when the user pressed exit_key, or None.
+
+        Example (with a keypad library)::
+
+            from keypad_4x4 import Keypad
+            kp = Keypad(...)
+
+            lcd.show_scrollable(
+                lines=[
+                    "Alice  – 48/50",
+                    "Bob    – 45/50",
+                    "Carol  – 50/50",
+                    "Dave   – 40/50",
+                    "Eve    – 47/50",
+                    "Frank  – 43/50",
+                    "Grace  – 49/50",
+                ],
+                title="STUDENT SCORES",
+                scroll_up_key="2",
+                scroll_down_key="8",
+                exit_key="#",
+                keypad=kp,
+            )
+
+        Example (terminal / testing without real keypad)::
+
+            lcd.show_scrollable(
+                lines=["Line " + str(i) for i in range(20)],
+                title="BIG LIST",
+            )
+            # Uses input() automatically – press 2/8/# in the terminal.
+        """
+        if not lines:
+            self.show("(empty list)")
+            return None
+
+        # Resolve the key-reading callable
+        if get_key_func is not None:
+            _get_key = get_key_func
+        elif keypad is not None:
+            _get_key = keypad.get_key
+        else:
+            # Fallback: terminal input (useful for testing)
+            def _get_key():
+                return input("Key [2=up 8=down #=exit]: ").strip() or None
+
+        content_start_row = 1 if title is not None else 0
+        visible_rows      = self.rows - content_start_row
+        total             = len(lines)
+        offset            = 0  # Index of the topmost visible line
+
+        # Initial render
+        self._render_scroll_view(lines, offset, title, show_scroll_indicator)
+
+        while True:
+            key = _get_key()
+
+            if key is None:
+                continue
+
+            if key == scroll_down_key:
+                # Scroll down: shift the window down by one line
+                if offset + visible_rows < total:
+                    offset += 1
+                    self._render_scroll_view(lines, offset, title, show_scroll_indicator)
+
+            elif key == scroll_up_key:
+                # Scroll up: shift the window up by one line
+                if offset > 0:
+                    offset -= 1
+                    self._render_scroll_view(lines, offset, title, show_scroll_indicator)
+
+            elif key == exit_key:
+                break
+
+        return offset
+
+    def show_scrollable_menu(
+        self,
+        title             : str,
+        options           : List[str],
+        scroll_up_key     : str  = "2",
+        scroll_down_key   : str  = "8",
+        select_key        : str  = "*",
+        exit_key          : str  = "#",
+        keypad            = None,
+        get_key_func      = None,
+        cursor_char       : str  = ">",
+    ) -> Optional[int]:
+        """
+        Interactive scrollable menu with a cursor – returns the selected index.
+
+        The cursor highlights which option is currently focused.  Use the
+        scroll keys to move it; press select_key to confirm the choice.
+
+        Args:
+            title           : Fixed header row.
+            options         : List of option strings (any length).
+            scroll_up_key   : Move cursor up   (default '2').
+            scroll_down_key : Move cursor down (default '8').
+            select_key      : Confirm selection (default '*').
+            exit_key        : Abort without selecting (default '#').
+            keypad          : Object with .get_key() method.
+            get_key_func    : Callable() → str | None.
+            cursor_char     : Character shown to the left of the focused option.
+
+        Returns:
+            Index of the selected option (0-based), or None if aborted.
+
+        Example::
+
+            choice = lcd.show_scrollable_menu(
+                title="SELECT MODE",
+                options=[
+                    "[1] Scan Answer Key",
+                    "[2] Check Sheets",
+                    "[3] View Scores",
+                    "[4] Export CSV",
+                    "[5] Settings",
+                    "[6] About",
+                ],
+                scroll_up_key="2",
+                scroll_down_key="8",
+                select_key="*",
+                exit_key="#",
+                keypad=kp,
+            )
+            if choice is not None:
+                print(f"User chose option {choice}: {options[choice]}")
+        """
+        if not options:
+            self.show("(no options)")
+            return None
+
+        # Resolve the key-reading callable
+        if get_key_func is not None:
+            _get_key = get_key_func
+        elif keypad is not None:
+            _get_key = keypad.get_key
+        else:
+            def _get_key():
+                return input(
+                    f"Key [{scroll_up_key}=up {scroll_down_key}=down "
+                    f"{select_key}=select {exit_key}=exit]: "
+                ).strip() or None
+
+        content_start_row = 1  # Row 0 is always the title
+        visible_rows      = self.rows - content_start_row
+        total             = len(options)
+        cursor            = 0   # Currently focused option index
+        offset            = 0   # Top of the visible window
+
+        def _render():
+            self.clear()
+            self.write_at(0, 0, title[:self.cols].center(self.cols))
+
+            for i in range(visible_rows):
+                line_index = offset + i
+                if line_index >= total:
+                    break
+
+                is_selected = (line_index == cursor)
+                prefix      = cursor_char if is_selected else " "
+
+                # Reserve 1 char for prefix + 1 for scroll hint
+                text = options[line_index]
+                max_text_len = self.cols - 2
+
+                # Scroll hint
+                hint = " "
+                if i == 0 and offset > 0:
+                    hint = "^"
+                elif i == visible_rows - 1 and (offset + visible_rows) < total:
+                    hint = "v"
+
+                display_line = f"{prefix}{text[:max_text_len]:<{max_text_len}}{hint}"
+                self.write_at(0, content_start_row + i, display_line)
+
+        _render()
+
+        while True:
+            key = _get_key()
+            if key is None:
+                continue
+
+            if key == scroll_down_key:
+                if cursor < total - 1:
+                    cursor += 1
+                    # Scroll window down if cursor moves past visible area
+                    if cursor >= offset + visible_rows:
+                        offset += 1
+                    _render()
+
+            elif key == scroll_up_key:
+                if cursor > 0:
+                    cursor -= 1
+                    # Scroll window up if cursor moves above visible area
+                    if cursor < offset:
+                        offset -= 1
+                    _render()
+
+            elif key == select_key:
+                return cursor
+
+            elif key == exit_key:
+                return None
+
+    # -------------------------------------------------------------------------
+    # END SCROLLABLE DISPLAY
+    # -------------------------------------------------------------------------
+
     def show_menu(
         self,
         title: str,
@@ -326,8 +635,10 @@ class LCD_I2C:
         clear_first: bool = True
     ) -> None:
         """
-        Display a menu.
-        
+        Display a static menu (no scrolling).
+
+        For menus longer than the available rows, use show_scrollable_menu().
+
         Args:
             title: Menu title (row 0)
             options: List of menu options (remaining rows)
@@ -735,8 +1046,80 @@ if __name__ == "__main__":
         "Press # to continue"
     ])
     time.sleep(3)
-    
-    
+
+
+    # =========================================================================
+    # NEW — Example 15: Scrollable list (more lines than LCD rows)
+    # =========================================================================
+    print("\n" + "="*70)
+    print("Example 15: Scrollable list  (2=up  8=down  #=exit)")
+    print("="*70)
+    print("This uses terminal input as a stand-in for a real keypad.")
+    print("On your Pi, pass  keypad=<your_keypad_object>  instead.")
+
+    long_list = [
+        "Alice  – 48/50",
+        "Bob    – 45/50",
+        "Carol  – 50/50",
+        "Dave   – 40/50",
+        "Eve    – 47/50",
+        "Frank  – 43/50",
+        "Grace  – 49/50",
+        "Henry  – 38/50",
+        "Iris   – 46/50",
+        "Jack   – 42/50",
+    ]
+
+    lcd.show_scrollable(
+        lines=long_list,
+        title="STUDENT SCORES",
+        scroll_up_key="2",
+        scroll_down_key="8",
+        exit_key="#",
+        # keypad=kp   ← uncomment and pass your keypad object on real hardware
+    )
+
+
+    # =========================================================================
+    # NEW — Example 16: Scrollable interactive menu with cursor
+    # =========================================================================
+    print("\n" + "="*70)
+    print("Example 16: Scrollable menu  (2=up  8=down  *=select  #=exit)")
+    print("="*70)
+
+    menu_options = [
+        "Scan Answer Key",
+        "Check Sheets",
+        "View Scores",
+        "Export CSV",
+        "Settings",
+        "About",
+        "Logout",
+    ]
+
+    selected = lcd.show_scrollable_menu(
+        title="MAIN MENU",
+        options=menu_options,
+        scroll_up_key="2",
+        scroll_down_key="8",
+        select_key="*",
+        exit_key="#",
+        # keypad=kp   ← uncomment and pass your keypad object on real hardware
+    )
+
+    if selected is not None:
+        lcd.show([
+            "Selected:",
+            menu_options[selected][:20],
+            "",
+            "Press # to continue"
+        ], duration=3)
+        print(f"User selected [{selected}]: {menu_options[selected]}")
+    else:
+        lcd.show("Cancelled.", duration=2)
+        print("User cancelled menu.")
+
+
     print("\n" + "="*70)
     print("Cleanup")
     print("="*70)
