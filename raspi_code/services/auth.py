@@ -12,10 +12,11 @@ Authentication Flow:
 
 import os
 import json
-import requests
+from services.firebase_rtdb_client import FirebaseRTDB
 from typing import Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass
+from datetime import datetime
 
 from . import utils
 
@@ -36,27 +37,26 @@ class CodeValidationStatus(Enum):
 
 @dataclass
 class Credentials:
-    """Teacher credentials data structure"""
     teacher_uid : Optional[str] = None
     username    : Optional[str] = None
-    
+    logged_in_at: Optional[str] = None
+
     def is_valid(self) -> bool:
-        """Check if credentials are valid (both fields non-null)"""
         return self.teacher_uid is not None and self.username is not None
-    
+
     def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization"""
         return {
-            "teacher_uid": self.teacher_uid,
-            "username": self.username
+            "teacher_uid"   : self.teacher_uid,
+            "username"      : self.username,
+            "logged_in_at"  : self.logged_in_at
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'Credentials':
-        """Create Credentials from dictionary"""
         return cls(
-            teacher_uid=data.get("teacher_uid"),
-            username=data.get("username")
+            teacher_uid     = data.get("teacher_uid"),
+            username        = data.get("username"),
+            logged_in_at    = data.get("logged_in_at")
         )
 
 
@@ -104,22 +104,25 @@ class TeacherAuth:
     
     def __init__(
         self,
-        credentials_file : str  = "credentials/cred.txt",
-        firebase_url     : str  = "https://project-rtdb.asia-southeast1.firebasedatabase.app",
-        auto_create      : bool = True
+        credentials_file            : str   = "cred.txt",
+        firebase_credentials_path   : str   = "firebase.json",
+        firebase_url                : str   = "https://project-rtdb.asia-southeast1.firebasedatabase.app",
+        auto_create                 : bool  = True
     ):
         """
         Initialize authentication manager.
         
         Args:
-            credentials_file: Path to local credentials cache file
-            firebase_url: Firebase Realtime Database base URL
-            auto_create: Automatically create credentials file if missing
+            credentials_file: Path to local credentials cache file (Credentials of the user)
+            firebase_credentials_path: Path of the firebase credentials for SDK
+            firebase_url    : Firebase Realtime Database base URL
+            auto_create     : Automatically create credentials file if missing
         """
         self.credentials_file   = utils.normalize_path(credentials_file)
         self.firebase_url       = firebase_url.rstrip('/')
         self.auto_create        = auto_create
-        self._current_credentials: Optional[Credentials] = None
+        self._current_credentials: Optional[Credentials]    = None
+        self.firebase_credentials_path                      = firebase_credentials_path
         
         # Ensure parent directory exists
         parent_dir = os.path.dirname(self.credentials_file)
@@ -182,67 +185,25 @@ class TeacherAuth:
             return False
         return True
     
-    def _fetch_credentials_from_firebase(
-        self, temp_code: str
-    ) -> Tuple[CodeValidationStatus, Optional[Credentials]]:
-        """
-        Validate temporary code against Firebase RTDB and retrieve credentials.
-        
-        Args:
-            temp_code: 8-digit temporary code
-        
-        Returns:
-            (validation_status, credentials or None)
-        
-        Firebase RTDB structure:
-        /users_temp_code/{temp_code}/
-            ├─ uid: "TCHR-12345"
-            └─ username: "prof_smith"
-        """
-        # Normalize and validate format
-        temp_code = temp_code.strip()
-        
-        if not self._validate_temp_code_format(temp_code):
+    def _fetch_credentials_from_firebase(self, temp_code: str):
+        firebase = FirebaseRTDB(
+            database_url        = self.firebase_url,
+            credentials_path    = self.firebase_credentials_path
+        )
+        data = firebase.get_temp_code_data(temp_code)
+
+        if data is None:
+            return (CodeValidationStatus.NOT_FOUND, None)
+        if "uid" not in data or "username" not in data:
             return (CodeValidationStatus.INVALID, None)
-        
-        # Build Firebase URL
-        url = f"{self.firebase_url}/users_temp_code/{temp_code}.json"
-        
-        try:
-            response = requests.get(url, timeout=10)
-            
-            if response.status_code == 404:
-                return (CodeValidationStatus.NOT_FOUND, None)
-            
-            response.raise_for_status()
-            data = response.json()
-            
-            # Check if data exists (null means expired/not found)
-            if data is None:
-                return (CodeValidationStatus.NOT_FOUND, None)
-            
-            # Validate required fields
-            if "uid" not in data or "username" not in data:
-                return (CodeValidationStatus.INVALID, None)
-            
-            # Check if fields are non-null
-            if data["uid"] is None or data["username"] is None:
-                return (CodeValidationStatus.EXPIRED, None)
-            
-            # Create credentials
-            credentials = Credentials(
-                teacher_uid = data["uid"],
-                username    = data["username"]
-            )
-            
-            return (CodeValidationStatus.VALID, credentials)
-            
-        except requests.Timeout:
-            return (CodeValidationStatus.NETWORK_ERROR, None)
-        except requests.RequestException:
-            return (CodeValidationStatus.NETWORK_ERROR, None)
-        except Exception:
-            return (CodeValidationStatus.INVALID, None)
+        if data["uid"] is None or data["username"] is None:
+            return (CodeValidationStatus.EXPIRED, None)
+
+        return (CodeValidationStatus.VALID, Credentials(
+            teacher_uid     = data["uid"],
+            username        = data["username"],
+            logged_in_at    = datetime.now().isoformat()
+        ))
     
     def check_authentication(self) -> Tuple[AuthStatus, Optional[Credentials]]:
         """
