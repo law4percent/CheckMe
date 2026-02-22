@@ -344,7 +344,7 @@ def gemini_with_retry(
     use_exponential_backoff : bool  = True,
     prefer_method   : str           = "sdk",
     upload_to_cloud : bool          = False
-) -> str | None:
+) -> str:
 
     normalized_image_path = utils.normalize_path(image_path)
     if not os.path.exists(normalized_image_path):

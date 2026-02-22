@@ -6,10 +6,12 @@ Handles the full scan → upload → Gemini OCR → save to RTDB flow for answer
 import time
 
 from services.logger import get_logger
-from services.utils import delete_files, normalize_path
+from services.utils import delete_files, normalize_path, join_and_ensure_path
+from services.sanitizer import sanitize_gemini_json
 from services.l3210_scanner_hardware import L3210Scanner
 from services.prompts import answer_key_prompt
 
+import time
 import os
 from dotenv import load_dotenv
 load_dotenv(normalize_path("config/.env"))
@@ -108,7 +110,13 @@ def run(lcd, keypad, user) -> None:
 # Private helpers
 # =============================================================================
 
-def _do_scan(lcd, keypad, scanned_files: list, page_number: int, debounce: int = 3) -> None:
+def _do_scan(
+        lcd, 
+        keypad, 
+        scanned_files   : list, 
+        page_number     : int, 
+        debounce        : int = 3
+    ) -> None:
     """Trigger the scanner and append the result to scanned_files."""
     scanner = L3210Scanner()
 
@@ -133,7 +141,16 @@ def _do_scan(lcd, keypad, scanned_files: list, page_number: int, debounce: int =
         lcd.show(["Scan failed!", "Try again."], duration=2)
 
 
-def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions: int) -> bool:
+def _do_upload_and_save(
+        lcd, 
+        keypad, 
+        user, 
+        scanned_files           : list, 
+        total_questions         : int, 
+        collage_save_to_local   : bool  = True, 
+        delete_local_collage    : bool  = False,
+        target_path             : str   = "scans/answer_keys"
+    ) -> bool:
     """
     Upload images → Gemini OCR → save to RTDB.
 
@@ -146,38 +163,42 @@ def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions:
     from services.firebase_rtdb_client import FirebaseRTDB
     from services.smart_collage import SmartCollage
 
+    skip_image_reupload     = False
+    skip_image_recollaged   = False
+    skip_image_extraction   = False
+    cloudinary_image_upload_result = None
+    
     while True:
         # -----------------------------------------------------------------
-        # Upload to Cloudinary
+        # A.1 Upload to Cloudinary
         # -----------------------------------------------------------------
         lcd.show(["Uploading...", "Please wait."])
+        if not skip_image_reupload:
+            try:
+                image_uploader = ImageUploader(
+                    cloud_name  = CLOUDINARY_NAME, 
+                    api_key     = CLOUDINARY_API_KEY,
+                    api_secret  = CLOUDINARY_API_SECRET
+                )
 
-        result = None
-        try:
-            image_uploader = ImageUploader(
-                cloud_name  = CLOUDINARY_NAME, 
-                api_key     = CLOUDINARY_API_KEY,
-                api_secret  = CLOUDINARY_API_SECRET
-            )
-
-            if len(scanned_files) > 1:
-                # Batch upload
-                result = image_uploader.upload_batch(scanned_files)
+                if len(scanned_files) > 1:
+                    # Batch upload
+                    cloudinary_image_upload_result = image_uploader.upload_batch(scanned_files)
+                    
+                    urls = [r["url"] for r in cloudinary_image_upload_result]
+                else:
+                    # Single upload
+                    cloudinary_image_upload_result = image_uploader.upload_single("image.jpg")
+                    url = cloudinary_image_upload_result["url"]
                 
-                urls = [r["url"] for r in result]
-            else:
-                # Single upload
-                result = image_uploader.upload_single("image.jpg")
-                url = result["url"]
-            
-            upload_success  = url is not None or urls is not None
+                upload_success  = url is not None or urls is not None
 
-        except Exception as e:
-            log(f"Upload error: {e}", "error")
-            upload_success = False
+            except Exception as e:
+                log(f"Upload error: {e}", "error")
+                upload_success = False
 
         # -----------------------------------------------------------------
-        # Upload failed → ask user
+        # A.2 Upload failed → ask user
         # -----------------------------------------------------------------
         if not upload_success:
             choice = lcd.show_scrollable_menu(
@@ -195,50 +216,107 @@ def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions:
             else:
                 delete_files(scanned_files)
                 return True                     # exit to Main Menu
+        
+        skip_image_reupload = True
+        
+        # -----------------------------------------------------------------
+        # B.1 Collage images
+        # -----------------------------------------------------------------
+        if not skip_image_recollaged:
+            try:
+                if len(scanned_files) > 1:
+                    collage_builder         = SmartCollage(scanned_files)
+                    image_to_send_gemini    = collage_builder.create_collage()
+                else:
+                    image_to_send_gemini = scanned_files[0]
+                
+            except Exception as e:
+                log(f"Collage error: {e}", "error")
+                collage_success = False
 
+            finally:
+                if collage_save_to_local:
+                    collage_builder.save(
+                        raw_collage = image_to_send_gemini,
+                        output_path = normalize_path(f"{target_path}/collage_at_{time.localtime}.png")
+                    )
+                collage_success = True
+        
         # -----------------------------------------------------------------
-        # Collage images
+        # B.2 Collaged failed → ask user
         # -----------------------------------------------------------------
-        try:
-            if len(scanned_files) > 1:
-                collage_builder         = SmartCollage(scanned_files)
-                image_to_send_gemini    = collage_builder.create_collage()
+        if not collage_success:
+            choice = lcd.show_scrollable_menu(
+                title           = "Collage FAILED",
+                options         = ["Re-collage", "Exit"],
+                scroll_up_key   = "2",
+                scroll_down_key = "8",
+                select_key      = "*",
+                exit_key        = "#",
+                get_key_func    = keypad.read_key
+            )
+
+            if choice == 0:
+                continue                        # retry upload
             else:
-                image_to_send_gemini = scanned_files[0]  
-        except Exception as e:
-            return False
+                delete_files(scanned_files)
+                return True                     # exit to Main Menu
 
+        skip_image_recollaged = True
+        
         # -----------------------------------------------------------------
-        # Gemini OCR
+        # C.1 Gemini OCR
         # -----------------------------------------------------------------
         lcd.show(["Processing with", "Gemini OCR..."])
+        if not skip_image_extraction:
+            try:
+                extraction_result = gemini_with_retry(
+                    api_key         = GEMINI_API_KEY,
+                    image_path      = image_to_send_gemini, # it is a raw image
+                    prompt          = answer_key_prompt(total_number_of_questions=total_questions),
+                    model           = GEMINI_MODEL,
+                    prefer_method   = "sdk"
+                )
+                answer_key_data = sanitize_gemini_json(extraction_result)
+                assessment_uid  = answer_key_data.get("assessment_uid")
+                answer_key      = answer_key_data.get("answer_key")
 
-        try:
-            gemini_with_retry(
-                api_key         = GEMINI_API_KEY,
-                image_path      = normalize_path(image_to_send_gemini),
-                prompt          = answer_key_prompt(total_number_of_questions=total_questions),
-                model           = GEMINI_MODEL,
-                prefer_method   = "sdk"
-            )
-            result = gemini.extract_answer_key(
-                image_url       = image_info["url"],
-                total_questions = total_questions
-            )
-
-            assessment_uid  = result.get("assessment_uid")
-            answer_key      = result.get("answer_key")
-
-        except Exception as e:
-            log(f"Gemini error: {e}", "error")
-            lcd.show(["Gemini failed!", "Retrying..."], duration=2)
-            continue  # retry from upload
+            except Exception as e:
+                log(f"Gemini error: {e}", "error")
+                lcd.show("Gemini failed!", duration=2)
+                # Delete the uploaded images in Cloudinary
+                extraction_success = False
+            
+            finally:
+                extraction_success = True
 
         # -----------------------------------------------------------------
-        # Save to RTDB
+        # C.2 Gemini OCR failed → ask user
+        # -----------------------------------------------------------------
+        if not extraction_success:
+            choice = lcd.show_scrollable_menu(
+                title           = "Extraction FAILED",
+                options         = ["Re-extract", "Exit"],
+                scroll_up_key   = "2",
+                scroll_down_key = "8",
+                select_key      = "*",
+                exit_key        = "#",
+                get_key_func    = keypad.read_key
+            )
+
+            if choice == 0:
+                continue                        # retry upload
+            else:
+                delete_files(scanned_files)
+                return True                     # exit to Main Menu
+
+        skip_image_extraction = True
+        
+        # -----------------------------------------------------------------
+        # D.1 Save to RTDB
         # -----------------------------------------------------------------
         try:
-            firebase = FirebaseService()
+            firebase = FirebaseRTDB()
             firebase.save_answer_key(
                 teacher_uid     = user.teacher_uid,
                 assessment_uid  = assessment_uid,
@@ -249,11 +327,34 @@ def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions:
 
         except Exception as e:
             log(f"Firebase error: {e}", "error")
-            lcd.show(["Save failed!", "Try again."], duration=2)
-            continue  # retry from upload
+            lcd.show(["RTDB failed!", "Try again."], duration=2)
+            rtdb_success = False
+        
+        finally:
+            rtdb_success = True
+        
+        # -----------------------------------------------------------------
+        # D.2 Save to RTDB failed → ask user
+        # -----------------------------------------------------------------
+        if not rtdb_success:
+            choice = lcd.show_scrollable_menu(
+                title           = "Posting DB FAILED",
+                options         = ["Re-posting DB", "Exit"],
+                scroll_up_key   = "2",
+                scroll_down_key = "8",
+                select_key      = "*",
+                exit_key        = "#",
+                get_key_func    = keypad.read_key
+            )
+
+            if choice == 0:
+                continue                        # retry upload
+            else:
+                delete_files(scanned_files)
+                return True                     # exit to Main Menu
 
         # -----------------------------------------------------------------
         # Cleanup
         # -----------------------------------------------------------------
-        delete_local_files(scanned_files)
+        delete_files(scanned_files)
         return True  # done → back to Main Menu
