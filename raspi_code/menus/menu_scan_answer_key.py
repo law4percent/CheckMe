@@ -3,8 +3,6 @@ Menu Flow: Scan Answer Key
 Handles the full scan → upload → Gemini OCR → save to RTDB flow for answer keys.
 """
 
-import time
-
 from services.logger import get_logger
 from services.utils import delete_files, normalize_path, join_and_ensure_path, delete_file
 from services.sanitizer import sanitize_gemini_json
@@ -22,6 +20,10 @@ CLOUDINARY_NAME         = os.getenv("CLOUDINARY_NAME")
 CLOUDINARY_API_KEY      = os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET   = os.getenv("CLOUDINARY_API_SECRET")
 FIREBASE_RTDB_REFERENCE = os.getenv("FIREBASE_RTDB_REFERENCE")
+
+MAX_QUESTION_DIGITS     = 2
+SCAN_DEBOUNCE_SECONDS   = 3
+INPUT_TIMEOUT_SECONDS   = 300
 
 log = get_logger("menu_scan_answer_key.py")
 
@@ -47,13 +49,18 @@ def run(lcd, keypad, user) -> None:
     lcd.show(["Enter total no.", "of questions:"])
 
     exact_total_number_of_questions = keypad.read_input(
-        length      = 2,        # up to 99 questions
+        length      = MAX_QUESTION_DIGITS,        # up to 99 questions
         valid_keys  = ['0','1','2','3','4','5','6','7','8','9'],
         end_key     = '#',
-        timeout     = 60 * 5
+        timeout     = INPUT_TIMEOUT_SECONDS 
     )
 
     if exact_total_number_of_questions is None:
+        return  # Back to Main Menu
+
+    total_q = int(exact_total_number_of_questions)
+    if total_q <= 0 or total_q > 99:
+        lcd.show(["Invalid number!", "Enter 1-99"], duration=2)
         return  # Back to Main Menu
 
     scanned_files = []
@@ -102,8 +109,8 @@ def run(lcd, keypad, user) -> None:
         # =====================================================================
         elif selected == 2:
             if scanned_files:
-                delete_local_files(scanned_files)
-            lcd.show("Cancelled.", duration=2)
+                delete_files(scanned_files)
+            lcd.show(["Cancelled."], duration=2)
             break  # back to Main Menu
 
 
@@ -116,7 +123,7 @@ def _do_scan(
         keypad, 
         scanned_files   : list, 
         page_number     : int, 
-        debounce        : int = 3
+        debounce        : int = SCAN_DEBOUNCE_SECONDS 
     ) -> None:
     """Trigger the scanner and append the result to scanned_files."""
     scanner = L3210Scanner()
@@ -138,7 +145,7 @@ def _do_scan(
         )
 
     except Exception as e:
-        log(f"Scan error: {e}", "error")
+        log(f"Scan error: {e}", log_type="error")
         lcd.show(["Scan failed!", "Try again."], duration=2)
 
 
@@ -149,7 +156,7 @@ def _do_upload_and_save(
         scanned_files           : list, 
         total_questions         : int, 
         collage_save_to_local   : bool  = True, 
-        delete_local_collage    : bool  = False,
+        keep_local_collage      : bool  = False,
         target_path             : str   = "scans/answer_keys"
     ) -> bool:
     """
@@ -181,7 +188,7 @@ def _do_upload_and_save(
                     cloud_name  = CLOUDINARY_NAME,
                     api_key     = CLOUDINARY_API_KEY,
                     api_secret  = CLOUDINARY_API_SECRET,
-                    folder      = normalize_path(target_path)
+                    folder      = "answer-keys"
                 )
                 
                 if len(scanned_files) > 1:
@@ -192,10 +199,8 @@ def _do_upload_and_save(
                 image_urls = [r["url"] for r in results]
                 image_public_ids = [r["public_id"] for r in results]
                 
-                log(f"Uploaded {len(image_urls)} images", "info")
-                
             except Exception as e:
-                log(f"Upload error: {e}", "error")
+                log(f"Upload error: {e}", log_type="error")
                 
                 choice = lcd.show_scrollable_menu(
                     title           = "UPLOAD FAILED",
@@ -235,7 +240,7 @@ def _do_upload_and_save(
                     image_to_send_gemini = scanned_files[0]
                 
             except Exception as e:
-                log(f"Collage error: {e}", "error")
+                log(f"Collage error: {e}", log_type="error")
                 
                 choice = lcd.show_scrollable_menu(
                     title           = "COLLAGE FAILED",
@@ -281,7 +286,7 @@ def _do_upload_and_save(
                         f"assessment_uid    : {assessment_uid}\n"
                         f"answer_key        : {answer_key}\n"
                         f"Bad gemini response.", 
-                        "error"
+                        log_type="error"
                     )
                     raise Exception(
                         f"\nAssessment UID or Answers not found.\n"
@@ -289,10 +294,12 @@ def _do_upload_and_save(
                         f"answer_key        : {answer_key}\n"
                         f"Bad gemini response."
                     )
+                # Should also log the raw Gemini response for debugging
+                log(f"Raw Gemini response: {raw_result}", "debug")
                 
                 
             except Exception as e:
-                log(f"Gemini error: {e}", "error")
+                log(f"Gemini error: {e}", log_type="error")
                 
                 choice = lcd.show_scrollable_menu(
                     title           = "EXTRACTION FAILED",
@@ -310,6 +317,11 @@ def _do_upload_and_save(
                     # Cleanup Cloudinary uploads
                     if image_public_ids:
                         try:
+                            uploader = ImageUploader(
+                                cloud_name  = CLOUDINARY_NAME,
+                                api_key     = CLOUDINARY_API_KEY,
+                                api_secret  = CLOUDINARY_API_SECRET
+                            )
                             uploader.delete_batch(image_public_ids)
                         except:
                             pass
@@ -332,16 +344,13 @@ def _do_upload_and_save(
                 teacher_uid     = user.teacher_uid
             )
             
-            log(f"Saved to RTDB: {assessment_uid}", "info")
             lcd.show(["Saved!", f"ID: {assessment_uid}"], duration=3)
             
             # Cleanup local files
             delete_files(scanned_files)
             
-            return True  # Success - exit to menu
-            
         except Exception as e:
-            log(f"Firebase error: {e}", "error")
+            log(f"Firebase error: {e}", log_type="error")
             
             choice = lcd.show_scrollable_menu(
                 title           = "DATABASE FAILED",
@@ -357,13 +366,15 @@ def _do_upload_and_save(
                 continue  # Retry save
             else:
                 delete_files(scanned_files)
-                upload_and_save_status = False
                 break
         
         upload_and_save_status = True
         break
-            
-    if collage_path and delete_local_collage:
-        delete_file(collage_path)
+    
+    try:        
+        if collage_path and keep_local_collage:
+            delete_file(collage_path)
+    except Exception as e:
+        log(f"Delete collage failde: {e}", log_type="error")
     
     return upload_and_save_status
