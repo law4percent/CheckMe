@@ -1,34 +1,35 @@
 ```mermaid
 flowchart TD
     Start([run function called]) --> AskQuestions[LCD: Enter total no. of questions]
-    AskQuestions --> ReadInput[keypad.read_input\nlength=2, end_key=#, timeout=300]
+    AskQuestions --> ReadInput[keypad.read_input length=2, timeout=300s]
     
     ReadInput --> CheckInput{Input is None?}
     CheckInput -->|Yes| ReturnMenu1([Return to Main Menu])
-    CheckInput -->|No| ValidateInput{total_q <= 0\nOR total_q > 99?}
+    CheckInput -->|No| ConvertInt[total_q = int input]
     
-    ValidateInput -->|Yes| ShowError[LCD: Invalid number!\nEnter 1-99]
+    ConvertInt --> ValidateInput{total_q <= 0 OR > 99?}
+    ValidateInput -->|Yes| ShowError[LCD: Invalid number! Enter 1-99]
     ShowError --> ReturnMenu2([Return to Main Menu])
     
-    ValidateInput -->|No| InitVars[scanned_files = empty list\nall_scanned_files = empty list\npage_number = 1]
+    ValidateInput -->|No| InitVars[scanned_files = empty, page_number = 1]
     
     InitVars --> MenuLoop[Show SCAN ANSWER KEY Menu]
     MenuLoop --> GetSelection{User selects option}
     
-    GetSelection -->|0: Scan| DoScan[Call _do_scan]
-    DoScan --> ScanPlace[LCD: Place document, then press #]
-    ScanPlace --> ScanWait[Wait for # key]
+    GetSelection -->|0: Scan| CallDoScan[Call _do_scan]
+    CallDoScan --> ScanPlace[LCD: Place document, press #]
+    ScanPlace --> ScanWait[keypad.wait_for_key valid_keys=#]
     ScanWait --> ScanStart[LCD: Scanning page N...]
-    ScanStart --> ScanExecute[scanner.scan\ntarget_directory=scans/answer_keys]
+    ScanStart --> ScanTry[Try scanner.scan target_directory=scans/answer_keys]
     
-    ScanExecute --> ScanSuccess{Scan successful?}
-    ScanSuccess -->|Yes| ScanDebounce[time.sleep debounce]
+    ScanTry --> ScanSuccess{Success?}
+    ScanSuccess -->|Yes| ScanDebounce[time.sleep SCAN_DEBOUNCE_SECONDS]
     ScanDebounce --> ScanAppend[Append filename to scanned_files]
     ScanAppend --> ScanShow[LCD: Page N scanned! Total: X]
-    ScanShow --> IncrementPage[page_number = len scanned_files + 1]
+    ScanShow --> IncrementPage[page_number = len + 1]
     IncrementPage --> MenuLoop
     
-    ScanSuccess -->|No| ScanError[Log error\nLCD: Scan failed! Try again.]
+    ScanSuccess -->|No| ScanError[Log error, LCD: Scan failed! Try again]
     ScanError --> MenuLoop
     
     GetSelection -->|1: Done & Save| CheckScans{scanned_files empty?}
@@ -37,129 +38,148 @@ flowchart TD
     
     CheckScans -->|No| CallUpload[Call _do_upload_and_save]
     
-    CallUpload --> InitUploadVars[image_urls=None\nimage_public_ids=None\nimage_to_send_gemini=None\nassessment_uid=None\nanswer_key=None\ncollage_path=None\nupload_and_save_status=False]
+    CallUpload --> InitUploadVars[image_urls=None, image_public_ids=None, image_to_send_gemini=None, assessment_uid=None, answer_key=None, collage_path=None, upload_and_save_status=False]
     
-    InitUploadVars --> UploadLoop[Start while True loop]
+    InitUploadVars --> UploadLoop[while True loop]
     
     UploadLoop --> CheckUrls{image_urls is None?}
+    CheckUrls -->|No| CheckCollage{image_to_send_gemini is None?}
     
-    CheckUrls -->|Yes| LCDUpload[LCD: Uploading... Please wait.]
-    LCDUpload --> TryUpload[ImageUploader\nupload_batch or upload_single]
-    TryUpload --> UploadSuccess{Upload success?}
-    UploadSuccess -->|Yes| StoreUrls[Store image_urls\nand image_public_ids]
+    CheckUrls -->|Yes| LCDUpload[LCD: Uploading... Please wait]
+    LCDUpload --> CreateUploader[ImageUploader cloud_name, api_key, api_secret, folder=answer-keys]
+    CreateUploader --> CheckFileCount{len scanned_files > 1?}
+    
+    CheckFileCount -->|Yes| BatchUpload[uploader.upload_batch scanned_files]
+    CheckFileCount -->|No| SingleUpload[uploader.upload_single scanned_files 0]
+    SingleUpload --> WrapSingle[results = single result]
+    BatchUpload --> StoreUrls
+    WrapSingle --> StoreUrls[image_urls = urls from results, image_public_ids = ids from results]
+    
     StoreUrls --> CheckCollage
     
-    UploadSuccess -->|No| UploadError[Log error]
-    UploadError --> UploadMenu[Show UPLOAD FAILED menu\nRe-upload / Exit]
-    UploadMenu --> UploadChoice{User choice}
+    CreateUploader --> UploadError{Exception?}
+    UploadError -->|Yes| LogUploadError[Log Upload error]
+    LogUploadError --> UploadMenu[Show UPLOAD FAILED Menu]
+    UploadMenu --> UploadChoice{choice?}
     UploadChoice -->|0: Re-upload| UploadLoop
     UploadChoice -->|1: Exit| DeleteFiles1[delete_files scanned_files]
     DeleteFiles1 --> BreakLoop1[break]
     
-    CheckUrls -->|No| CheckCollage{image_to_send_gemini\nis None?}
+    CheckCollage -->|No| CheckUID{assessment_uid is None?}
     
     CheckCollage -->|Yes| LCDProcess[LCD: Processing images...]
     LCDProcess --> CheckMultiPage{len scanned_files > 1?}
     
-    CheckMultiPage -->|Yes| CreateCollage[SmartCollage.create_collage]
-    CreateCollage --> CollageError{Collage error?}
-    CollageError -->|Yes| LogCollageError[Log error]
-    LogCollageError --> CollageMenu[Show COLLAGE FAILED menu\nRetry / Exit]
-    CollageMenu --> CollageChoice{User choice}
-    CollageChoice -->|0: Retry| UploadLoop
-    CollageChoice -->|1: Exit| DeleteFiles2[delete_files scanned_files]
-    DeleteFiles2 --> BreakLoop2[break]
+    CheckMultiPage -->|Yes| CreateCollageObj[SmartCollage scanned_files]
+    CreateCollageObj --> BuildCollage[collage_builder.create_collage]
+    BuildCollage --> CheckSaveLocal{collage_save_to_local?}
     
-    CollageError -->|No| SaveCollageCheck{collage_save_to_local?}
-    SaveCollageCheck -->|Yes| SaveCollage[Save collage to disk\ncollage_path = join_and_ensure_path]
-    SaveCollage --> SetImageMulti[image_to_send_gemini = collage]
-    SaveCollageCheck -->|No| SetImageMulti
+    CheckSaveLocal -->|Yes| BuildPath[collage_path = join_and_ensure_path target_path, collage_timestamp.png]
+    BuildPath --> SaveCollageDisk[collage_builder.save image, collage_path]
+    SaveCollageDisk --> SetImageMulti[image_to_send_gemini = collage]
+    
+    CheckSaveLocal -->|No| SetImageMulti
     SetImageMulti --> CheckUID
     
     CheckMultiPage -->|No| SetImageSingle[image_to_send_gemini = scanned_files 0]
     SetImageSingle --> CheckUID
     
-    CheckCollage -->|No| CheckUID{assessment_uid is None?}
+    CreateCollageObj --> CollageError{Exception?}
+    CollageError -->|Yes| LogCollageError[Log Collage error]
+    LogCollageError --> CollageMenu[Show COLLAGE FAILED Menu]
+    CollageMenu --> CollageChoice{choice?}
+    CollageChoice -->|0: Retry| UploadLoop
+    CollageChoice -->|1: Exit| DeleteFiles2[delete_files scanned_files]
+    DeleteFiles2 --> BreakLoop2[break]
+    
+    CheckUID -->|No| ValidateTeacher
     
     CheckUID -->|Yes| LCDGemini[LCD: Processing with Gemini OCR...]
-    LCDGemini --> TryGemini[gemini_with_retry\napi_key, image_path, prompt, model]
+    LCDGemini --> TryGemini[gemini_with_retry api_key, image_path, prompt, model, prefer_method=sdk]
     
-    TryGemini --> GeminiSuccess{Gemini success?\nresult not None}
-    GeminiSuccess -->|Yes| SanitizeJSON[sanitize_gemini_json]
-    SanitizeJSON --> ExtractData[Extract assessment_uid\nand answers]
-    ExtractData --> ValidateData{assessment_uid AND\nanswers present?}
+    TryGemini --> CheckRawResult{raw_result is None?}
+    CheckRawResult -->|Yes| RaiseNone[Raise Exception: Gemini returned None]
+    RaiseNone --> GeminiError
     
-    ValidateData -->|No| LogBadResponse[Log error: Bad response]
-    LogBadResponse --> RaiseException[Raise Exception]
+    CheckRawResult -->|No| SanitizeJSON[sanitize_gemini_json raw_result]
+    SanitizeJSON --> ExtractData[assessment_uid = data.get assessment_uid, answer_key = data.get answers]
+    ExtractData --> ValidateExtracted{Both None?}
+    
+    ValidateExtracted -->|Yes| LogBadResponse[Log error: Assessment UID or Answers not found]
+    LogBadResponse --> RaiseException[Raise Exception: Bad gemini response]
     RaiseException --> GeminiError
     
-    ValidateData -->|Yes| LogDebug[Log raw Gemini response]
-    LogDebug --> CheckUID
+    ValidateExtracted -->|No| LogDebug[Log Raw Gemini response debug]
+    LogDebug --> ValidateTeacher
     
-    GeminiSuccess -->|No| GeminiError[Log error]
-    GeminiError --> GeminiMenu[Show EXTRACTION FAILED menu\nRetry / Exit]
-    GeminiMenu --> GeminiChoice{User choice}
+    TryGemini --> GeminiError{Exception?}
+    GeminiError -->|Yes| LogGeminiError[Log Gemini error]
+    LogGeminiError --> GeminiMenu[Show EXTRACTION FAILED Menu]
+    GeminiMenu --> GeminiChoice{choice?}
     GeminiChoice -->|0: Retry| UploadLoop
-    GeminiChoice -->|1: Exit| CleanupCloudinary[Try ImageUploader\ndelete_batch image_public_ids]
-    CleanupCloudinary --> DeleteFiles3[delete_files scanned_files]
+    GeminiChoice -->|1: Exit| RecreateUploader[Create ImageUploader again]
+    RecreateUploader --> TryDeleteBatch[Try uploader.delete_batch image_public_ids]
+    TryDeleteBatch --> DeleteFiles3[delete_files scanned_files]
     DeleteFiles3 --> BreakLoop3[break]
     
-    CheckUID -->|No| LCDSaving[LCD: Saving to database...]
-    LCDSaving --> ValidateTeacher[firebase.validate_teacher_exists\nuser.teacher_uid]
+    ValidateTeacher[LCD: Saving to database...] --> CreateFirebase[FirebaseRTDB database_url, credentials_path]
+    CreateFirebase --> ValidateTeacherExists[firebase.validate_teacher_exists user.teacher_uid]
     
-    ValidateTeacher --> TeacherValid{Teacher exists?}
-    TeacherValid -->|No| LCDInvalidTeacher[LCD: INVALID user UID\n# to continue]
-    LCDInvalidTeacher --> RaiseFirebaseDataError1[Raise FirebaseDataError]
-    RaiseFirebaseDataError1 --> FirebaseDataErrorHandler
+    ValidateTeacherExists --> TeacherCheck{Teacher exists?}
+    TeacherCheck -->|No| LCDInvalidUser[LCD: INVALID user UID, # to continue]
+    LCDInvalidUser --> RaiseTeacherError[Raise FirebaseDataError: Teacher not found in /users/teachers/]
+    RaiseTeacherError --> ValidationError
     
-    TeacherValid -->|Yes| ValidateAssessment[firebase.validate_assessment_exists_get_data\nassessment_uid, teacher_uid]
-    ValidateAssessment --> AssessmentValid{Assessment exists\nin RTDB?}
-    AssessmentValid -->|No| LCDInvalidAss[LCD: INVALID ass_uid\n# to continue]
-    LCDInvalidAss --> RaiseFirebaseDataError2[Raise FirebaseDataError]
-    RaiseFirebaseDataError2 --> FirebaseDataErrorHandler
+    TeacherCheck -->|Yes| ValidateAssessment[firebase.validate_assessment_exists_get_data assessment_uid, teacher_uid]
     
-    AssessmentValid -->|Yes| TryFirebase[firebase.save_answer_key\nassessment_uid, answer_key,\ntotal_questions, image_urls,\nteacher_uid, section_uid, subject_uid]
+    ValidateAssessment --> AssessmentCheck{assessment_data exists?}
+    AssessmentCheck -->|No| LCDInvalidAssess[LCD: INVALID assesUid, # to continue]
+    LCDInvalidAssess --> RaiseAssessError[Raise FirebaseDataError: Assessment doesn't exist in /assessments/]
+    RaiseAssessError --> ValidationError
     
-    TryFirebase --> FirebaseSuccess{Firebase success?}
-    FirebaseSuccess -->|Yes| LCDSaved[LCD: Saved! ID: assessment_uid]
-    LCDSaved --> DeleteScans[delete_files scanned_files]
-    DeleteScans --> SetStatusTrue[upload_and_save_status = True]
+    AssessmentCheck -->|Yes| SaveToRTDB[firebase.save_answer_key assessment_uid, answer_key, total_questions, image_urls, teacher_uid, section_uid, subject_uid]
+    
+    SaveToRTDB --> SaveSuccess{Success?}
+    SaveSuccess -->|Yes| LCDSaved[LCD: Saved! ID: assessment_uid duration=3]
+    LCDSaved --> DeleteScansSuccess[delete_files scanned_files]
+    DeleteScansSuccess --> SetStatusTrue[upload_and_save_status = True]
     SetStatusTrue --> BreakLoop4[break]
     
-    FirebaseDataErrorHandler[Log FirebaseDataError\nwait_for_key #] --> BreakLoop4
-    
-    FirebaseSuccess -->|No| FirebaseError[Log error]
-    FirebaseError --> FirebaseMenu[Show DATABASE FAILED menu\nRetry / Exit]
-    FirebaseMenu --> FirebaseChoice{User choice}
+    SaveSuccess -->|No| FirebaseError[Log Firebase error]
+    FirebaseError --> FirebaseMenu[Show DATABASE FAILED Menu]
+    FirebaseMenu --> FirebaseChoice{choice?}
     FirebaseChoice -->|0: Retry| UploadLoop
-    FirebaseChoice -->|1: Exit| DeleteFiles4[delete_files scanned_files]
-    DeleteFiles4 --> BreakLoop4
+    FirebaseChoice -->|1: Exit| DeleteFiles5[delete_files scanned_files]
+    DeleteFiles5 --> BreakLoop5[break]
+    
+    CreateFirebase --> ValidationError{FirebaseDataError?}
+    ValidationError -->|Yes| LogValidationError[Log Validation error]
+    LogValidationError --> WaitForKey[keypad.wait_for_key valid_keys=#]
+    WaitForKey --> BreakLoop6[break]
     
     BreakLoop1 --> CheckDeleteCollage
     BreakLoop2 --> CheckDeleteCollage
     BreakLoop3 --> CheckDeleteCollage
     BreakLoop4 --> CheckDeleteCollage
+    BreakLoop5 --> CheckDeleteCollage
+    BreakLoop6 --> CheckDeleteCollage
     
-    CheckDeleteCollage{collage_path exists\nAND NOT keep_local_collage?}
-    CheckDeleteCollage -->|Yes| DeleteCollage[delete_file collage_path]
-    CheckDeleteCollage -->|No| ReturnStatus
-    DeleteCollage --> ReturnStatus[Return upload_and_save_status]
+    CheckDeleteCollage{collage_path exists AND NOT keep_local_collage?}
+    CheckDeleteCollage -->|Yes| TryDelete[Try delete_file collage_path]
+    TryDelete --> DeleteError{Exception?}
+    DeleteError -->|Yes| LogDeleteError[Log Delete collage failed]
+    DeleteError -->|No| ReturnStatus
+    CheckDeleteCollage -->|No| ReturnStatus[Return upload_and_save_status]
+    LogDeleteError --> ReturnStatus
     
     ReturnStatus --> CheckDone{done is True?}
+    CheckDone -->|Yes| BreakMainLoop[break to Main Menu]
     CheckDone -->|No| MenuLoop
     
-    CheckDone -->|Yes| ScanAnotherMenu[Show SCAN ANSWER KEY menu\nScan Another / Exit]
-    ScanAnotherMenu --> ScanAnotherChoice{User choice}
-    
-    ScanAnotherChoice -->|0: Scan Another| ResetState[all_scanned_files += scanned_files\nscanned_files.clear\npage_number = 1]
-    ResetState --> MenuLoop
-    
-    ScanAnotherChoice -->|1: Exit| BreakMainLoop[break]
-    
-    GetSelection -->|2: Cancel| CheckFiles{scanned_files\nnot empty?}
+    GetSelection -->|2: Cancel| CheckFiles{scanned_files not empty?}
     CheckFiles -->|Yes| DeleteFilesCancel[delete_files scanned_files]
+    CheckFiles -->|No| ShowCancelled[LCD: Cancelled duration=2]
     DeleteFilesCancel --> ShowCancelled
-    CheckFiles -->|No| ShowCancelled[LCD: Cancelled.]
     ShowCancelled --> BreakMainLoop
     
     BreakMainLoop --> End([Return to Main Menu])
@@ -168,14 +188,13 @@ flowchart TD
 
     style Start fill:#90EE90
     style End fill:#FFB6C1
-    style UploadError fill:#FFD700
+    style LogUploadError fill:#FFD700
     style ScanError fill:#FFD700
-    style CollageError fill:#FFD700
-    style GeminiError fill:#FFD700
+    style LogCollageError fill:#FFD700
+    style LogGeminiError fill:#FFD700
     style FirebaseError fill:#FFD700
-    style FirebaseDataErrorHandler fill:#FFD700
+    style LogValidationError fill:#FFD700
     style LCDSaved fill:#90EE90
     style UploadLoop fill:#87CEEB
     style MenuLoop fill:#87CEEB
-    style ScanAnotherMenu fill:#90EE90
 ```
