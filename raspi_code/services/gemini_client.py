@@ -123,9 +123,7 @@ class GeminiSDKClient(GeminiClient):
         if upload_to_cloud:
             file = None
             try:
-                log(f"Uploading {image_path} via SDK...", type="info")
                 file, mime_type = self._upload_file_to_cloud(image_path)
-                log("Generating content with SDK (Upload/Referencing Version)", type="info")
                 
                 # Possible for Better or Optimization.
                 # Explore and try this approach.
@@ -143,7 +141,6 @@ class GeminiSDKClient(GeminiClient):
                 return self._validate_response(response) # To be confirm if this works or not
                 
             except errors.APIError as e:
-                log(f"SDK request failed: {e.code} {e.message}", type="error")
                 raise RuntimeError(f"SDK request failed: {e.code} {e.message}") from e
             
             finally:
@@ -152,21 +149,18 @@ class GeminiSDKClient(GeminiClient):
                     try:
                         # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#delete
                         self.client.files.delete(name=file.name)
-                        log("Cleaned up uploaded file", type="info")
                     except Exception as cleanup_error:
                         log(
                             f"\nFailed to delete the uploaded file: {cleanup_error}\n"
                             f"You can delete the file manually at google cloud: {file.name}\n" 
                             f"Or just wait 48 hours because it auto deleted after the time.", 
-                            type="warning"
+                            log_type="warning"
                         )
         
         else:
             try:
-                log("Get file as bytes inline data...", type="info")
                 # REFERENCE: https://github.com/googleapis/python-genai?tab=readme-ov-file#streaming-for-image-content
                 image_bytes, mime_type = self._get_image_data(image_path)
-                log("Generating content with SDK (bytes)...", type="info")
                 response = self.client.models.generate_content(
                     model       = self.model_name,
                     contents    = [
@@ -180,7 +174,6 @@ class GeminiSDKClient(GeminiClient):
                 return self._validate_response(response)
             
             except errors.APIError as e:
-                log(f"SDK request failed: {e.code} {e.message}", type="error")
                 raise RuntimeError(f"SDK request failed: {e.code} {e.message}") from e
 
 
@@ -227,7 +220,7 @@ class GeminiHTTPClient(GeminiClient):
         # (Safety filters often return 200 OK but 0 candidates)
         if "candidates" not in response or not response["candidates"]:
             reason = response.get("promptFeedback", {}).get("blockReason", "Safety Filter")
-            log(f"Gemini blocked this request: {reason}", type="warning")
+            log(f"Gemini blocked this request: {reason}", log_type="warning")
             raise ValueError(f"Gemini blocked this request: {reason}")
 
         candidate = response["candidates"][0]
@@ -238,7 +231,7 @@ class GeminiHTTPClient(GeminiClient):
         else:
             # Handle cases where AI returns something other than text (like a finishReason)
             finish_reason = candidate.get("finishReason")
-            log(f"No text returned. Finish reason: {finish_reason}", type="warning")
+            log(f"No text returned. Finish reason: {finish_reason}", log_type="warning")
             raise ValueError(f"No text returned. Finish reason: {finish_reason}")
 
     def _encode_image_to_base64(self, image_path: str) -> Tuple[str, str]:
@@ -256,7 +249,6 @@ class GeminiHTTPClient(GeminiClient):
         if upload_to_cloud:
             upload_succeeded = False
             try:
-                log(f"Uploading {image_path} via HTTP...", type="info")
                 file_uri, mime_type = self._upload_file_to_cloud(image_path)
                 upload_succeeded    = True  # Only reaches here if upload didn't throw
                 gen_payload         = {
@@ -272,7 +264,6 @@ class GeminiHTTPClient(GeminiClient):
                     "Content-Type"  : "application/json",
                     # "x-goog-api-key": self.api_key <=== Not yet tested but they say it is the safest
                 }
-                log("Generating content...", type="info")
                 response            = requests.post(
                     self.url,
                     headers = headers,
@@ -283,12 +274,10 @@ class GeminiHTTPClient(GeminiClient):
                 return self._validate_response(response.json())
 
             except requests.RequestException as e:
-                log(f"HTTP request failed: {type(e).__name__}", type="error")
                 raise RuntimeError(f"HTTP request failed: {e}") from e
 
 
             except (KeyError, IndexError) as e:
-                log(f"Unexpected response format: {e}", type="error")
                 raise ValueError(f"Unexpected response format: {e}") from e
 
             finally:
@@ -297,13 +286,12 @@ class GeminiHTTPClient(GeminiClient):
                         "\nNOTE: Uploaded file cannot be deleted via HTTP API.\n"
                         "In a production system, you would want to implement a scheduled cleanup process for orphaned files in Google Cloud Storage.\n"
                         "Please manage your cloud storage to avoid orphaned files.",
-                        type="warning"
+                        log_type="warning"
                     )
 
         else:
             try:
                 # REFERENCE: https://github.com/google/generative-ai-docs/blob/main/site/en/gemini-api/docs/get-started/rest.ipynb
-                log(f"Encoding {image_path} to Base64 for HTTP request...", type="info")
                 image_base64, mime_type = self._encode_image_to_base64(image_path)
                 payload = {
                     "contents": [
@@ -325,7 +313,6 @@ class GeminiHTTPClient(GeminiClient):
                     "Content-Type"  : "application/json",
                     # "x-goog-api-key": self.api_key <=== Not yet tested but they say it is the safest
                 }
-                log("Generating content...", type="info")
                 response = requests.post(
                     self.url,
                     json    = payload,
@@ -336,17 +323,17 @@ class GeminiHTTPClient(GeminiClient):
                 return self._validate_response(response.json())
 
             except requests.RequestException as e:
-                log(f"HTTP request failed: {type(e).__name__}", type="error")
                 raise RuntimeError(f"HTTP request failed: {e}") from e
 
             except (KeyError, IndexError) as e:
-                log(f"Unexpected response format: {e}", type="error")
                 raise ValueError(f"Unexpected response format: {e}") from e
 
 
 # ============================================================
 # RETRY ORCHESTRATOR
 # ============================================================
+
+from . import utils
 
 def gemini_with_retry(
     api_key         : str,
@@ -359,25 +346,18 @@ def gemini_with_retry(
     upload_to_cloud : bool          = False
 ) -> str | None:
 
-    if not os.path.exists(image_path):
-        log(f"Image file not found: {image_path}", type="error")
-        return None
+    normalized_image_path = utils.normalize_path(image_path)
+    if not os.path.exists(normalized_image_path):
+        raise (f"Image file not found: {normalized_image_path}")
 
     client_option = ("SDK Client",  lambda: GeminiSDKClient(api_key, model)) if prefer_method == "sdk" else ("HTTP Client", lambda: GeminiHTTPClient(api_key, model))
     method_name, client_factory = client_option
     for attempt in range(1, max_attempts + 1):
-        log(
-            f"\n{'='*50}\n"
-            f"ATTEMPT {attempt}/{max_attempts}\n"
-            f"{'='*50}\n",
-            type="info"
-        )
         last_error_type = ErrorType.RETRYABLE
 
         try:
             client = client_factory()
-            result = client.send_request(prompt, image_path, upload_to_cloud)
-            log(f"✓ {method_name} succeeded on attempt {attempt}!", type="info")
+            result = client.send_request(prompt, normalized_image_path, upload_to_cloud)
             return result
 
         except Exception as e:
@@ -386,15 +366,13 @@ def gemini_with_retry(
 
             if error_type == ErrorType.CLIENT_ERROR:
                 # Bad file or bad prompt — no client or retry can fix this
-                log(f"Client error on {method_name} ({error_type.value}). Aborting.", type="error")
-                return None
+                raise (f"Client error on {method_name} ({error_type.value}). Aborting.")
 
             if error_type == ErrorType.AUTH_ERROR:
                 # This client cannot authenticate — skip it, let the other client try
-                log(f"Auth error on {method_name} ({error_type.value}). Aborting — check your API key.", type="error")
-                return None
+                raise (f"Auth error on {method_name} ({error_type.value}). Aborting — check your API key.")
             
-            log(f"✗ {method_name} failed ({error_type.value}): {e}", type="warning")
+            log(f"✗ {method_name} failed ({error_type.value}): {e}", log_type="warning")
 
         # This method was tried but all failed — apply normal backoff
         if attempt < max_attempts:
@@ -405,10 +383,10 @@ def gemini_with_retry(
             else:
                 wait_time = 3
 
-            log(f"Failed attempt. Waiting {wait_time}s before attempt {attempt + 1}...", type="info")
+            log(f"Failed attempt. Waiting {wait_time}s before attempt {attempt + 1}...", log_type="warning")
             time.sleep(wait_time)
 
-    log(f"All {max_attempts} attempts exhausted.", type="error")
+    log(f"All {max_attempts} attempts exhausted.", log_type="warning")
     return None
 
 # ============================================================
