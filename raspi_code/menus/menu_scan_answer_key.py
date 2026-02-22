@@ -22,6 +22,7 @@ CLOUDINARY_API_KEY              = os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET           = os.getenv("CLOUDINARY_API_SECRET")
 
 FIREBASE_RTDB_BASE_REFERENCE    = os.getenv("FIREBASE_RTDB_BASE_REFERENCE")
+FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
 MAX_QUESTION_DIGITS     = 2
 SCAN_DEBOUNCE_SECONDS   = 3
@@ -351,10 +352,13 @@ def _do_upload_and_save(
         # =================================================================
         # STEP 4: Save to Firebase RTDB
         # =================================================================
-        lcd.show(["Saving to database..."])
+        lcd.show("Saving to database...")
         
         try:
-            firebase = FirebaseRTDB(database_url=FIREBASE_RTDB_BASE_REFERENCE)
+            firebase = FirebaseRTDB(
+                database_url        = FIREBASE_RTDB_BASE_REFERENCE,
+                credentials_path    = normalize_path(FIREBASE_CREDENTIALS_PATH)
+            )
             
             # Validate teacher exists in system
             if not firebase.validate_teacher_exists(user.teacher_uid):
@@ -371,7 +375,7 @@ def _do_upload_and_save(
             assessment_data = firebase.validate_assessment_exists_get_data(assessment_uid, user.teacher_uid)
             if not assessment_data:
                 lcd.show([
-                    "INVALID ass_uid",
+                    "INVALID assesUid",
                     "# to continue"
                 ])
                 raise FirebaseDataError(
