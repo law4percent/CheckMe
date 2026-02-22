@@ -66,6 +66,7 @@ def run(lcd, keypad, user) -> None:
         return  # Back to Main Menu
 
     scanned_files = []
+    all_scanned_files = []
     page_number   = 1
 
     # =========================================================================
@@ -104,14 +105,31 @@ def run(lcd, keypad, user) -> None:
             )
 
             if done:
-                break  # back to Main Menu
+                next_action = lcd.show_scrollable_menu(
+                    title           = "SCAN ANSWER KEY",
+                    options         = ["Scan Another", "Exit"],
+                    scroll_up_key   = "2",
+                    scroll_down_key = "8",
+                    select_key      = "*",
+                    exit_key        = "#",
+                    get_key_func    = keypad.read_key
+                )
+
+                if next_action == 0:
+                    # Reset state, reuse same total_questions and credentials
+                    all_scanned_files = all_scanned_files + scanned_files
+                    scanned_files.clear()
+                    page_number = 1
+                    continue  # back to scan menu loop
+                else:
+                    break  # back to Main Menu
 
         # =====================================================================
         # [2] Cancel
         # =====================================================================
         elif selected == 2:
-            if scanned_files:
-                delete_files(scanned_files)
+            if all_scanned_files:
+                delete_files(all_scanned_files)
             lcd.show(["Cancelled."], duration=2)
             break  # back to Main Menu
 
