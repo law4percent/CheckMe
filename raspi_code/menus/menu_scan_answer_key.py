@@ -161,7 +161,7 @@ def _do_upload_and_save(
     ) -> bool:
     """
     Upload images → Gemini OCR → save to RTDB.
-    Returns True if done (success or exit), False means failed.
+    Returns True if done (success or exit), False means User cancelled/exited.
     """
     from services.cloudinary_client import ImageUploader
     from services.gemini_client import gemini_with_retry
@@ -295,7 +295,7 @@ def _do_upload_and_save(
                         f"Bad gemini response."
                     )
                 # Should also log the raw Gemini response for debugging
-                log(f"Raw Gemini response: {raw_result}", "debug")
+                log(f"Raw Gemini response: {raw_result}", log_type="debug")
                 
                 
             except Exception as e:
@@ -372,9 +372,9 @@ def _do_upload_and_save(
         break
     
     try:        
-        if collage_path and keep_local_collage:
+        if collage_path and not keep_local_collage:
             delete_file(collage_path)
     except Exception as e:
-        log(f"Delete collage failde: {e}", log_type="error")
+        log(f"Delete collage failed: {e}", log_type="error")
     
     return upload_and_save_status
