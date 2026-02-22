@@ -348,7 +348,7 @@ def gemini_with_retry(
 
     normalized_image_path = utils.normalize_path(image_path)
     if not os.path.exists(normalized_image_path):
-        raise (f"Image file not found: {normalized_image_path}")
+        raise ValueError(f"Image file not found: {normalized_image_path}")
 
     client_option = ("SDK Client",  lambda: GeminiSDKClient(api_key, model)) if prefer_method == "sdk" else ("HTTP Client", lambda: GeminiHTTPClient(api_key, model))
     method_name, client_factory = client_option
@@ -366,11 +366,11 @@ def gemini_with_retry(
 
             if error_type == ErrorType.CLIENT_ERROR:
                 # Bad file or bad prompt — no client or retry can fix this
-                raise (f"Client error on {method_name} ({error_type.value}). Aborting.")
+                raise RuntimeError(f"Client error on {method_name} ({error_type.value}). Aborting.")
 
             if error_type == ErrorType.AUTH_ERROR:
                 # This client cannot authenticate — skip it, let the other client try
-                raise (f"Auth error on {method_name} ({error_type.value}). Aborting — check your API key.")
+                raise RuntimeError(f"Auth error on {method_name} ({error_type.value}). Aborting — check your API key.")
             
             log(f"✗ {method_name} failed ({error_type.value}): {e}", log_type="warning")
 
@@ -387,7 +387,7 @@ def gemini_with_retry(
             time.sleep(wait_time)
 
     log(f"All {max_attempts} attempts exhausted.", log_type="warning")
-    return None
+    raise RuntimeWarning(f"All {max_attempts} attempts exhausted.")
 
 # ============================================================
 # USAGE

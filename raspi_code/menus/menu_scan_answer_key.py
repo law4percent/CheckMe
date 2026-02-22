@@ -4,11 +4,21 @@ Handles the full scan → upload → Gemini OCR → save to RTDB flow for answer
 """
 
 import time
-import os
 
 from services.logger import get_logger
-from services.utils import delete_local_files
+from services.utils import delete_files, normalize_path
 from services.l3210_scanner_hardware import L3210Scanner
+from services.prompts import answer_key_prompt
+
+import os
+from dotenv import load_dotenv
+load_dotenv(normalize_path("config/.env"))
+
+GEMINI_API_KEY          = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL            = os.getenv("GEMINI_MODEL")
+CLOUDINARY_NAME         = os.getenv("CLOUDINARY_NAME")
+CLOUDINARY_API_KEY      = os.getenv("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET   = os.getenv("CLOUDINARY_API_SECRET")
 
 log = get_logger("menu_scan_answer_key.py")
 
@@ -98,7 +108,7 @@ def run(lcd, keypad, user) -> None:
 # Private helpers
 # =============================================================================
 
-def _do_scan(lcd, keypad, scanned_files: list, page_number: int) -> None:
+def _do_scan(lcd, keypad, scanned_files: list, page_number: int, debounce: int = 3) -> None:
     """Trigger the scanner and append the result to scanned_files."""
     scanner = L3210Scanner()
 
@@ -108,9 +118,8 @@ def _do_scan(lcd, keypad, scanned_files: list, page_number: int) -> None:
     lcd.show(["Scanning page", f"{page_number}..."])
 
     try:
-        filename = scanner.scan()   # expected to return the saved filename
-
-        time.sleep(10)              # 10s debounce / scanner settle time
+        filename = scanner.scan(target_directory="scans/answer_keys")
+        time.sleep(debounce)
 
         scanned_files.append(filename)
 
@@ -132,9 +141,10 @@ def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions:
         True  if the full flow completed (success or user chose to exit).
         False if the user chose to re-upload (caller should stay in loop).
     """
-    from services.cloudinary_service import CloudinaryService
-    from services.gemini_service import GeminiService
-    from services.firebase_service import FirebaseService
+    from services.cloudinary_client import ImageUploader
+    from services.gemini_client import gemini_with_retry
+    from services.firebase_rtdb_client import FirebaseRTDB
+    from services.smart_collage import SmartCollage
 
     while True:
         # -----------------------------------------------------------------
@@ -142,17 +152,25 @@ def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions:
         # -----------------------------------------------------------------
         lcd.show(["Uploading...", "Please wait."])
 
+        result = None
         try:
-            cloudinary = CloudinaryService()
+            image_uploader = ImageUploader(
+                cloud_name  = CLOUDINARY_NAME, 
+                api_key     = CLOUDINARY_API_KEY,
+                api_secret  = CLOUDINARY_API_SECRET
+            )
 
             if len(scanned_files) > 1:
-                from services.image_utils import create_collage
-                image_to_send = create_collage(scanned_files)
+                # Batch upload
+                result = image_uploader.upload_batch(scanned_files)
+                
+                urls = [r["url"] for r in result]
             else:
-                image_to_send = scanned_files[0]
-
-            upload_url      = cloudinary.upload(image_to_send)
-            upload_success  = upload_url is not None
+                # Single upload
+                result = image_uploader.upload_single("image.jpg")
+                url = result["url"]
+            
+            upload_success  = url is not None or urls is not None
 
         except Exception as e:
             log(f"Upload error: {e}", "error")
@@ -175,8 +193,20 @@ def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions:
             if choice == 0:
                 continue                        # retry upload
             else:
-                delete_local_files(scanned_files)
+                delete_files(scanned_files)
                 return True                     # exit to Main Menu
+
+        # -----------------------------------------------------------------
+        # Collage images
+        # -----------------------------------------------------------------
+        try:
+            if len(scanned_files) > 1:
+                collage_builder         = SmartCollage(scanned_files)
+                image_to_send_gemini    = collage_builder.create_collage()
+            else:
+                image_to_send_gemini = scanned_files[0]  
+        except Exception as e:
+            return False
 
         # -----------------------------------------------------------------
         # Gemini OCR
@@ -184,9 +214,15 @@ def _do_upload_and_save(lcd, keypad, user, scanned_files: list, total_questions:
         lcd.show(["Processing with", "Gemini OCR..."])
 
         try:
-            gemini = GeminiService()
+            gemini_with_retry(
+                api_key         = GEMINI_API_KEY,
+                image_path      = normalize_path(image_to_send_gemini),
+                prompt          = answer_key_prompt(total_number_of_questions=total_questions),
+                model           = GEMINI_MODEL,
+                prefer_method   = "sdk"
+            )
             result = gemini.extract_answer_key(
-                image_url       = upload_url,
+                image_url       = image_info["url"],
                 total_questions = total_questions
             )
 
