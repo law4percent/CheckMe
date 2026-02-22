@@ -24,6 +24,8 @@ CLOUDINARY_API_SECRET           = os.getenv("CLOUDINARY_API_SECRET")
 FIREBASE_RTDB_BASE_REFERENCE    = os.getenv("FIREBASE_RTDB_BASE_REFERENCE")
 FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
+ANSWER_KEYS_PATH                = os.getenv("ANSWER_KEYS_PATH")
+
 MAX_QUESTION_DIGITS     = 2
 SCAN_DEBOUNCE_SECONDS   = 3
 INPUT_TIMEOUT_SECONDS   = 300
@@ -137,7 +139,7 @@ def _do_scan(
     lcd.show(["Scanning page", f"{page_number}..."])
 
     try:
-        filename = scanner.scan(target_directory="scans/answer_keys")
+        filename = scanner.scan(target_directory=normalize_path(ANSWER_KEYS_PATH))
         time.sleep(debounce)
 
         scanned_files.append(filename)
@@ -160,7 +162,7 @@ def _do_upload_and_save(
         total_questions         : int, 
         collage_save_to_local   : bool  = True, 
         keep_local_collage      : bool  = False,
-        target_path             : str   = "scans/answer_keys"
+        target_path             : str   = "scans"
     ) -> bool:
     """
     Upload images → Gemini OCR → save to RTDB.

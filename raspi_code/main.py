@@ -4,11 +4,20 @@ from services.keypad_hardware import Keypad3x4
 from services.auth import TeacherAuth
 from services.lcd_hardware import detect_i2c_address, LCD_I2C, LCDSize
 from services.logger import get_logger
+from services.utils import normalize_path
 
 import menus.menu_scan_answer_key   as menu_scan_answer_key
 import menus.menu_check_answer_sheets as menu_check_answer_sheets
 
 log = get_logger("main.py")
+
+import os
+from dotenv import load_dotenv
+load_dotenv(normalize_path("config/.env"))
+
+USER_CREDENTIALS_FILE           = os.getenv("USER_CREDENTIALS_FILE")
+FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
+FIREBASE_RTDB_BASE_REFERENCE    = os.getenv("FIREBASE_RTDB_BASE_REFERENCE")
 
 
 def main():
@@ -21,7 +30,11 @@ def main():
         keypad = Keypad3x4()
 
         # Authentication setup
-        auth = TeacherAuth()
+        auth = TeacherAuth(
+            credentials_file            = normalize_path(USER_CREDENTIALS_FILE),
+            firebase_credentials_path   = normalize_path(FIREBASE_CREDENTIALS_PATH), 
+            firebase_url                = FIREBASE_RTDB_BASE_REFERENCE
+        )
     except Exception as e:
         log(f"Error occurred during setup: {e}", "error")
         return
