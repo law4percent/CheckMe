@@ -8,6 +8,7 @@ import json
 from typing import Optional, Dict, Any, List
 from enum import Enum
 from datetime import datetime
+from firebase_admin import db
 
 
 class FirebaseError(Exception):
@@ -36,11 +37,13 @@ class FirebaseRTDB:
         
         # Save answer key
         db.save_answer_key(
-            assessment_uid="MATH-001",
-            answer_key={"Q1": "A", "Q2": "TRUE"},
-            total_questions=50,
-            image_urls=["https://..."],
-            teacher_uid="TCHR-001"
+            assessment_uid  = "MATH-001",
+            answer_key      = {"Q1": "A", "Q2": "TRUE"},
+            total_questions = 50,
+            image_urls      = ["https://..."],
+            teacher_uid     = "TCHR-001",
+            section_uid     = "-Fkk3f-..",
+            subject_uid     = "-SFkk3f-.."
         )
         
         # Get answer keys
@@ -48,13 +51,13 @@ class FirebaseRTDB:
         
         # Save student result
         db.save_student_result(
-            student_id="STUD-001",
-            assessment_uid="MATH-001",
-            answer_sheet={"Q1": "A", "Q2": "FALSE"},
-            total_score=45,
-            total_questions=50,
-            image_urls=["https://..."],
-            teacher_uid="TCHR-001"
+            student_id      = "STUD-001",
+            assessment_uid  = "MATH-001",
+            answer_sheet    = {"Q1": "A", "Q2": "FALSE"},
+            total_score     = 45,
+            total_questions = 50,
+            image_urls      = ["https://..."],
+            teacher_uid     = "TCHR-001"
         )
     """
     
@@ -75,17 +78,17 @@ class FirebaseRTDB:
     
     def _make_request(
         self,
-        method: str,
-        path: str,
-        data: Optional[Dict] = None
+        method  : str,
+        path    : str,
+        data    : Optional[Dict] = None
     ) -> Any:
         """
         Make HTTP request to Firebase RTDB.
         
         Args:
-            method: HTTP method (GET, POST, PUT, PATCH, DELETE)
-            path: Database path (e.g., /answer_keys/MATH-001)
-            data: Data to send (for POST, PUT, PATCH)
+            method  : HTTP method (GET, POST, PUT, PATCH, DELETE)
+            path    : Database path (e.g., /answer_keys/MATH-001)
+            data    : Data to send (for POST, PUT, PATCH)
         
         Returns:
             Response data
@@ -123,28 +126,32 @@ class FirebaseRTDB:
     
     def save_answer_key(
         self,
-        assessment_uid: str,
-        answer_key: Dict[str, str],
-        total_questions: int,
-        image_urls: List[str],
-        teacher_uid: str
+        assessment_uid  : str,
+        answer_key      : Dict[str, str],
+        total_questions : int,
+        image_urls      : List[str],
+        teacher_uid     : str,
+        section_uid     : str,
+        subject_uid     : str
     ) -> bool:
         """
         Save answer key to Firebase RTDB.
         
         Args:
-            assessment_uid: Unique assessment identifier
-            answer_key: Dictionary of answers (e.g., {"Q1": "A", "Q2": "TRUE"})
-            total_questions: Total number of questions
-            image_urls: List of Cloudinary URLs
-            teacher_uid: Teacher identifier
+            assessment_uid  : Unique assessment identifier
+            answer_key      : Dictionary of answers (e.g., {"Q1": "A", "Q2": "TRUE"})
+            total_questions : Total number of questions
+            image_urls      : List of Cloudinary URLs
+            teacher_uid     : Teacher identifier
+            section_uid     : Section identifier
+            subject_uid     : Subject identifier
         
         Returns:
             True if successful
         
         Raises:
-            FirebaseDataError: If validation fails
-            FirebaseConnectionError: If save fails
+            FirebaseDataError       : If validation fails
+            FirebaseConnectionError : If save fails
         """
         # Validate inputs
         if not assessment_uid or not assessment_uid.strip():
@@ -158,17 +165,18 @@ class FirebaseRTDB:
         
         # Build data structure
         data = {
-            "assessment_uid": assessment_uid,
-            "answer_key": answer_key,
-            "total_questions": total_questions,
-            "image_urls": image_urls or [],
-            "created_by": teacher_uid,
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "assessment_uid"    : assessment_uid,
+            "answer_key"        : answer_key,
+            "total_questions"   : total_questions,
+            "image_urls"        : image_urls or [],
+            "created_by"        : teacher_uid,
+            "created_at"        : db.SERVER_TIMESTAMP,
+            "updated_at"        : db.SERVER_TIMESTAMP,
+            "section_uid"       : section_uid,
+            "subject_uid"       : subject_uid,
         }
         
-        # Save to RTDB at /answer_keys/{assessment_uid}
-        path = f"/answer_keys/{assessment_uid}"
+        path = f"/answer_keys/{teacher_uid}/{assessment_uid}"
         self._make_request("PUT", path, data)
         
         return True
@@ -224,32 +232,94 @@ class FirebaseRTDB:
         path = f"/answer_keys/{assessment_uid}"
         self._make_request("DELETE", path)
         return True
+
+    def validate_assessment_exists_get_data(self, assessment_uid: str, teacher_uid: str) -> bool:
+        """
+        Check if an assessment_uid existence in the database.
+        
+        Args:
+            assessment_uid: Assessment identifier to check
+        
+        Returns:
+            True if exists, False if not found
+        
+        Raises:
+            FirebaseConnectionError: If request fails
+        
+        Example:
+            if firebase.validate_assessment_exists_get_data("MATH-001"):
+                print("Assessment existence confirmed!")
+        """
+        try:
+            path = f"/assessments/{teacher_uid}/{assessment_uid}"
+            data = self._make_request("GET", path)
+            
+            # If data is None, assessment doesn't exist
+            if data is not None:
+                return {
+                    "section_uid" : data.get("section_uid"),
+                    "subject_uid" : data.get("subject_uid")
+                }
+            return False
+            
+        except FirebaseConnectionError:
+            raise
+        except Exception as e:
+            raise FirebaseError(f"Failed to validate assessment: {e}")
+
+    def validate_teacher_exists(self, teacher_uid: str) -> bool:
+        """
+        Check if a teacher_uid exists in the database.
+        
+        Args:
+            teacher_uid: Teacher identifier to check
+        
+        Returns:
+            True if teacher exists, False if not found
+        
+        Raises:
+            FirebaseConnectionError: If request fails
+        
+        Example:
+            if not firebase.validate_teacher_exists("TCHR-001"):
+                raise Exception("Teacher not found in database")
+        """
+        try:
+            # Check if teacher has any answer keys
+            path = f"/users/teachers/{teacher_uid}"
+            teacher_data = self._make_request("GET", path)
+            return teacher_data is not None
+            
+        except FirebaseConnectionError:
+            raise
+        except Exception as e:
+            raise FirebaseError(f"Failed to validate teacher: {e}")
     
     # ===== STUDENT RESULT OPERATIONS =====
     
     def save_student_result(
         self,
-        student_id: str,
-        assessment_uid: str,
-        answer_sheet: Dict[str, str],
-        total_score: int,
-        total_questions: int,
-        image_urls: List[str],
-        teacher_uid: str,
-        is_final_score: bool = True
+        student_id      : str,
+        assessment_uid  : str,
+        answer_sheet    : Dict[str, str],
+        total_score     : int,
+        total_questions : int,
+        image_urls      : List[str],
+        teacher_uid     : str,
+        is_final_score  : bool = True
     ) -> bool:
         """
         Save student result to Firebase RTDB.
         
         Args:
-            student_id: Student identifier
-            assessment_uid: Assessment identifier
-            answer_sheet: Student's answers
-            total_score: Score achieved
-            total_questions: Total possible score
-            image_urls: List of Cloudinary URLs
-            teacher_uid: Teacher who checked
-            is_final_score: Whether this is the final score
+            student_id      : Student identifier
+            assessment_uid  : Assessment identifier
+            answer_sheet    : Student's answers
+            total_score     : Score achieved
+            total_questions : Total possible score
+            image_urls      : List of Cloudinary URLs
+            teacher_uid     : Teacher who checked
+            is_final_score  : Whether this is the final score
         
         Returns:
             True if successful
@@ -269,16 +339,16 @@ class FirebaseRTDB:
         
         # Build data structure
         data = {
-            "student_id": student_id,
-            "assessment_uid": assessment_uid,
-            "answer_sheet": answer_sheet,
-            "total_score": total_score,
-            "total_questions": total_questions,
-            "is_final_score": is_final_score,
-            "image_urls": image_urls or [],
-            "checked_by": teacher_uid,
-            "checked_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "student_id"        : student_id,
+            "assessment_uid"    : assessment_uid,
+            "answer_sheet"      : answer_sheet,
+            "total_score"       : total_score,
+            "total_questions"   : total_questions,
+            "is_final_score"    : is_final_score,
+            "image_urls"        : image_urls or [],
+            "checked_by"        : teacher_uid,
+            "checked_at"        : db.SERVER_TIMESTAMP,
+            "updated_at"        : db.SERVER_TIMESTAMP
         }
         
         # Save to RTDB at /results/{assessment_uid}/{student_id}
@@ -289,15 +359,15 @@ class FirebaseRTDB:
     
     def get_student_result(
         self,
-        assessment_uid: str,
-        student_id: str
+        assessment_uid  : str,
+        student_id      : str
     ) -> Optional[Dict]:
         """
         Get specific student result.
         
         Args:
-            assessment_uid: Assessment identifier
-            student_id: Student identifier
+            assessment_uid  : Assessment identifier
+            student_id      : Student identifier
         
         Returns:
             Student result data or None if not found
@@ -331,17 +401,17 @@ class FirebaseRTDB:
     
     def update_image_urls(
         self,
-        assessment_uid: str,
-        student_id: str,
-        image_urls: List[str]
+        assessment_uid  : str,
+        student_id      : str,
+        image_urls      : List[str]
     ) -> bool:
         """
         Update image URLs for a student result (for background retry).
         
         Args:
-            assessment_uid: Assessment identifier
-            student_id: Student identifier
-            image_urls: Updated list of URLs
+            assessment_uid  : Assessment identifier
+            student_id      : Student identifier
+            image_urls      : Updated list of URLs
         
         Returns:
             True if successful
@@ -415,20 +485,20 @@ if __name__ == "__main__":
     
     try:
         success = db.save_answer_key(
-            assessment_uid="MATH-2025-001",
-            answer_key={
+            assessment_uid  = "MATH-2025-001",
+            answer_key      = {
                 "Q1": "A",
                 "Q2": "TRUE",
                 "Q3": "CPU",
                 "Q4": "FALSE",
                 "Q5": "B"
             },
-            total_questions=5,
-            image_urls=[
+            total_questions = 5,
+            image_urls      = [
                 "https://res.cloudinary.com/.../page1.jpg",
                 "https://res.cloudinary.com/.../page2.jpg"
             ],
-            teacher_uid="TCHR-12345"
+            teacher_uid     = "TCHR-12345"
         )
         print(f"✅ Answer key saved: {success}")
     except Exception as e:
@@ -471,20 +541,20 @@ if __name__ == "__main__":
     
     try:
         success = db.save_student_result(
-            student_id="STUD-001",
-            assessment_uid="MATH-2025-001",
-            answer_sheet={
+            student_id      = "STUD-001",
+            assessment_uid  = "MATH-2025-001",
+            answer_sheet    = {
                 "Q1": "A",
                 "Q2": "FALSE",  # Wrong answer
                 "Q3": "CPU",
                 "Q4": "FALSE",
                 "Q5": "B"
             },
-            total_score=4,
-            total_questions=5,
-            image_urls=["https://res.cloudinary.com/.../student_001.jpg"],
-            teacher_uid="TCHR-12345",
-            is_final_score=True
+            total_score     = 4,
+            total_questions = 5,
+            image_urls      = ["https://res.cloudinary.com/.../student_001.jpg"],
+            teacher_uid     = "TCHR-12345",
+            is_final_score  = True
         )
         print(f"✅ Student result saved: {success}")
     except Exception as e:
@@ -519,9 +589,9 @@ if __name__ == "__main__":
         results = db.get_assessment_results("MATH-2025-001")
         print(f"✅ Found {len(results)} result(s):")
         for result in results:
-            score = result['total_score']
-            total = result['total_questions']
-            percentage = (score / total * 100) if total > 0 else 0
+            score       = result['total_score']
+            total       = result['total_questions']
+            percentage  = (score / total * 100) if total > 0 else 0
             print(f"   - {result['student_id']}: {score}/{total} ({percentage:.1f}%)")
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -533,9 +603,9 @@ if __name__ == "__main__":
     
     try:
         success = db.update_image_urls(
-            assessment_uid="MATH-2025-001",
-            student_id="STUD-001",
-            image_urls=[
+            assessment_uid  = "MATH-2025-001",
+            student_id      = "STUD-001",
+            image_urls      = [
                 "https://res.cloudinary.com/.../student_001_retry.jpg"
             ]
         )
@@ -570,17 +640,17 @@ if __name__ == "__main__":
             database_url="https://project-default-rtdb.asia-southeast1.firebasedatabase.app"
         )
         
-        assessment_uid = "DEMO-WORKFLOW-001"
-        teacher_uid = "TCHR-DEMO"
+        assessment_uid  = "DEMO-WORKFLOW-001"
+        teacher_uid     = "TCHR-DEMO"
         
         print("Step 1: Save answer key")
         try:
             db.save_answer_key(
-                assessment_uid=assessment_uid,
-                answer_key={"Q1": "A", "Q2": "TRUE", "Q3": "C"},
-                total_questions=3,
-                image_urls=["https://cloudinary.com/key.jpg"],
-                teacher_uid=teacher_uid
+                assessment_uid  = assessment_uid,
+                answer_key      = {"Q1": "A", "Q2": "TRUE", "Q3": "C"},
+                total_questions = 3,
+                image_urls      = ["https://cloudinary.com/key.jpg"],
+                teacher_uid     = teacher_uid
             )
             print("✅ Answer key saved")
         except Exception as e:
@@ -609,13 +679,13 @@ if __name__ == "__main__":
         for student_id, answers, score in students:
             try:
                 db.save_student_result(
-                    student_id=student_id,
-                    assessment_uid=assessment_uid,
-                    answer_sheet=answers,
-                    total_score=score,
-                    total_questions=3,
-                    image_urls=[f"https://cloudinary.com/{student_id}.jpg"],
-                    teacher_uid=teacher_uid
+                    student_id      = student_id,
+                    assessment_uid  = assessment_uid,
+                    answer_sheet    = answers,
+                    total_score     = score,
+                    total_questions = 3,
+                    image_urls      = [f"https://cloudinary.com/{student_id}.jpg"],
+                    teacher_uid     = teacher_uid
                 )
                 print(f"✅ Saved result for {student_id}: {score}/3")
             except Exception as e:

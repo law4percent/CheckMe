@@ -14,12 +14,15 @@ import os
 from dotenv import load_dotenv
 load_dotenv(normalize_path("config/.env"))
 
-GEMINI_API_KEY          = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL            = os.getenv("GEMINI_MODEL")
-CLOUDINARY_NAME         = os.getenv("CLOUDINARY_NAME")
-CLOUDINARY_API_KEY      = os.getenv("CLOUDINARY_API_KEY")
-CLOUDINARY_API_SECRET   = os.getenv("CLOUDINARY_API_SECRET")
-FIREBASE_RTDB_REFERENCE = os.getenv("FIREBASE_RTDB_REFERENCE")
+GEMINI_API_KEY                  = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL                    = os.getenv("GEMINI_MODEL")
+
+CLOUDINARY_NAME                 = os.getenv("CLOUDINARY_NAME")
+CLOUDINARY_API_KEY              = os.getenv("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET           = os.getenv("CLOUDINARY_API_SECRET")
+
+FIREBASE_RTDB_BASE_REFERENCE    = os.getenv("FIREBASE_RTDB_BASE_REFERENCE")
+SAVE_ANSWER_KEY_REFERENCE       = f"{FIREBASE_RTDB_BASE_REFERENCE}/answer_keys"
 
 MAX_QUESTION_DIGITS     = 2
 SCAN_DEBOUNCE_SECONDS   = 3
@@ -165,7 +168,7 @@ def _do_upload_and_save(
     """
     from services.cloudinary_client import ImageUploader
     from services.gemini_client import gemini_with_retry
-    from services.firebase_rtdb_client import FirebaseRTDB
+    from services.firebase_rtdb_client import FirebaseRTDB, FirebaseDataError
     from services.smart_collage import SmartCollage
 
     upload_and_save_status  = False
@@ -334,20 +337,52 @@ def _do_upload_and_save(
         lcd.show(["Saving to database..."])
         
         try:
-            firebase = FirebaseRTDB(database_url=FIREBASE_RTDB_REFERENCE)
+            firebase = FirebaseRTDB(database_url=FIREBASE_RTDB_BASE_REFERENCE)
             
+            # Validate teacher exists in system
+            if not firebase.validate_teacher_exists(user.teacher_uid):
+                lcd.show([
+                    "INVALID user UID",
+                    "# to continue"
+                ])
+                raise FirebaseDataError(
+                    f"Teacher {user.teacher_uid} not found in database: /users/teachers/"
+                    "Please contact administrator or Create new account."
+                )
+            
+            # Validate assessment_uid doesn't already exist
+            assessment_data = firebase.validate_assessment_exists_get_data(assessment_uid, user.teacher_uid)
+            if not assessment_data:
+                lcd.show([
+                    "INVALID ass_uid",
+                    "# to continue"
+                ])
+                raise FirebaseDataError(
+                    f"\nAssessment {assessment_uid} doesn't exist in database: /assessments/{{teacher_uid}}/"
+                    "\nPlease use a different assessment UID or generate a assessment via app first."
+                )
+            
+            
+            # Now save the answer key
             firebase.save_answer_key(
                 assessment_uid  = assessment_uid,
                 answer_key      = answer_key,
                 total_questions = total_questions,
                 image_urls      = image_urls,
-                teacher_uid     = user.teacher_uid
+                teacher_uid     = user.teacher_uid,
+                section_uid     = assessment_data.get("section_uid"),
+                subject_uid     = assessment_data.get("subject_uid")
             )
             
             lcd.show(["Saved!", f"ID: {assessment_uid}"], duration=3)
             
             # Cleanup local files
             delete_files(scanned_files)
+            
+        except FirebaseDataError as e:
+            log(f"Validation error: {e}", log_type="error")
+            keypad.wait_for_key(valid_keys=['#'])
+            break
             
         except Exception as e:
             log(f"Firebase error: {e}", log_type="error")
