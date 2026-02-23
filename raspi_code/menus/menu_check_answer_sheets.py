@@ -8,6 +8,7 @@ from services.utils import delete_files, normalize_path, join_and_ensure_path, d
 from services.sanitizer import sanitize_gemini_json
 from services.l3210_scanner_hardware import L3210Scanner
 from services.prompts import answer_sheet_prompt
+from services.scorer import compare_answers
 
 import time
 import os
@@ -24,9 +25,9 @@ CLOUDINARY_API_SECRET           = os.getenv("CLOUDINARY_API_SECRET")
 FIREBASE_RTDB_BASE_REFERENCE    = os.getenv("FIREBASE_RTDB_BASE_REFERENCE")
 FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
-ANSWER_SHEETS_PATH =  os.getenv("ANSWER_SHEETS_PATH")
+ANSWER_SHEETS_PATH              = os.getenv("ANSWER_SHEETS_PATH")
 
-SCAN_DEBOUNCE_SECONDS = 3
+SCAN_DEBOUNCE_SECONDS   = 10
 
 log = get_logger("menu_check_answer_sheets.py")
 
@@ -91,10 +92,8 @@ def run(lcd, keypad, user) -> None:
 
     lcd.show([f"Assessment:", f"{assessment_uid}"], duration=2)
 
-    scanned_files       = []
-    page_number         = 1
-    is_gemini_task_done = False
-    gemini_result       = None
+    scanned_files   = []
+    page_number     = 1
 
     # =========================================================================
     # Step 3: Check Answer Sheets loop
@@ -115,8 +114,7 @@ def run(lcd, keypad, user) -> None:
         # =====================================================================
         if selected == 0:
             _do_scan(lcd, keypad, scanned_files, page_number)
-            page_number         = len(scanned_files) + 1
-            is_gemini_task_done = False
+            page_number = len(scanned_files) + 1
 
         # =====================================================================
         # [1] Done & Save
@@ -126,35 +124,19 @@ def run(lcd, keypad, user) -> None:
                 lcd.show(["No scans yet!", "Scan first."], duration=2)
                 continue
 
-            # Gemini OCR (only if not already done)
-            if not is_gemini_task_done:
-                success, gemini_result = _do_gemini_ocr(
-                    lcd, keypad, scanned_files, answer_key_data
-                )
-
-                if not success:
-                    # User chose to exit or retry from Gemini error screen
-                    continue
-
-                is_gemini_task_done = True
-
-            # Upload and save
             done = _do_upload_and_save(
                 lcd, keypad, user,
                 scanned_files,
                 assessment_uid,
-                gemini_result
+                answer_key_data
             )
 
-            if done == "next":
+            if done:
+                # Reset state for next student sheet
                 scanned_files.clear()
                 page_number = 1
-                is_gemini_task_done = False
-                gemini_result = None
+                # Continue loop for next student
                 continue
-
-            elif done == "exit":
-                break
 
         # =====================================================================
         # [2] Cancel
@@ -163,7 +145,7 @@ def run(lcd, keypad, user) -> None:
             if scanned_files:
                 delete_files(scanned_files)
             lcd.show(["Cancelled."], duration=2)
-            break
+            break  # back to Main Menu
 
 
 # =============================================================================
@@ -173,9 +155,9 @@ def run(lcd, keypad, user) -> None:
 def _do_scan(
     lcd,
     keypad,
-    scanned_files   : list,
-    page_number     : int,
-    debounce        : int = SCAN_DEBOUNCE_SECONDS
+    scanned_files: list,
+    page_number: int,
+    debounce: int = SCAN_DEBOUNCE_SECONDS
 ) -> None:
     """Trigger the scanner and append the result to scanned_files."""
     scanner = L3210Scanner()
@@ -201,27 +183,37 @@ def _do_scan(
         lcd.show(["Scan failed!", "Try again."], duration=2)
 
 
-def _do_gemini_ocr(
+def _do_upload_and_save(
     lcd,
     keypad,
+    user,
     scanned_files: list,
-    answer_key_data: dict
-) -> tuple:
+    assessment_uid: str,
+    answer_key_data: dict,
+    collage_save_to_local: bool = True,
+    keep_local_collage: bool = False,
+    target_path: str = "scans"
+) -> bool:
     """
-    Send scanned images to Gemini, extract student answers, compare, calculate score.
-
-    Returns:
-        (True, result_dict) on success
-        (False, None) on failure
+    Gemini OCR → Score → Upload → Save to RTDB.
+    Returns True if done (next sheet or exit), False means stay in loop.
     """
+    from services.cloudinary_client import ImageUploader
     from services.gemini_client import gemini_with_retry
+    from services.firebase_rtdb_client import FirebaseRTDB
     from services.smart_collage import SmartCollage
+    import multiprocessing
 
+    upload_and_save_status = False
+    image_urls = None
+    image_public_ids = None
     image_to_send_gemini = None
     student_id = None
     student_answers = None
+    score = None
+    total = None
+    breakdown = None
     collage_path = None
-    target_path = "scans/answer_sheets"
 
     while True:
         # =================================================================
@@ -235,11 +227,12 @@ def _do_gemini_ocr(
                     collage_builder = SmartCollage(scanned_files)
                     image_to_send_gemini = collage_builder.create_collage()
 
-                    collage_path = join_and_ensure_path(
-                        target_path,
-                        f"collage_{int(time.time())}.png"
-                    )
-                    collage_builder.save(image_to_send_gemini, collage_path)
+                    if collage_save_to_local:
+                        collage_path = join_and_ensure_path(
+                            target_path,
+                            f"collage_{int(time.time())}.png"
+                        )
+                        collage_builder.save(image_to_send_gemini, collage_path)
                 else:
                     image_to_send_gemini = scanned_files[0]
 
@@ -259,7 +252,8 @@ def _do_gemini_ocr(
                 if choice == 0:
                     continue
                 else:
-                    return (False, None)
+                    delete_files(scanned_files)
+                    break
 
         # =================================================================
         # STEP 2: Gemini OCR Extraction
@@ -285,7 +279,7 @@ def _do_gemini_ocr(
                 student_id = data.get("student_id")
                 student_answers = data.get("answers")
 
-                if not student_id or not student_answers:
+                if student_id is None or student_answers is None:
                     log(
                         f"Student ID or Answers not found.\n"
                         f"student_id: {student_id}\n"
@@ -312,101 +306,28 @@ def _do_gemini_ocr(
                 if choice == 0:
                     continue
                 else:
-                    if collage_path:
-                        delete_file(collage_path)
-                    return (False, None)
+                    delete_files(scanned_files)
+                    break
 
         # =================================================================
         # STEP 3: Compare Answers and Calculate Score
         # =================================================================
-        try:
-            score, total, breakdown = _compare_answers(
-                student_answers,
-                answer_key_data
-            )
+        if score is None:
+            try:
+                score, total, breakdown = compare_answers(
+                    student_answers,
+                    answer_key_data
+                )
+                lcd.show([f"Score: {score}/{total}"], duration=2)
 
-            lcd.show([f"Score: {score}/{total}"], duration=2)
+            except Exception as e:
+                log(f"Scoring error: {e}", log_type="error")
+                lcd.show(["Scoring failed!"], duration=2)
+                delete_files(scanned_files)
+                break
 
-            # Cleanup collage
-            if collage_path:
-                try:
-                    delete_file(collage_path)
-                except Exception as e:
-                    log(f"Delete collage failed: {e}", log_type="error")
-
-            return (True, {
-                "student_id": student_id,
-                "answers": student_answers,
-                "score": score,
-                "total": total,
-                "breakdown": breakdown,
-            })
-
-        except Exception as e:
-            log(f"Scoring error: {e}", log_type="error")
-            lcd.show(["Scoring failed!", "Try again."], duration=2)
-            return (False, None)
-
-
-def _compare_answers(
-    student_answers: dict,
-    answer_key_data: dict
-) -> tuple:
-    """
-    Compare student answers against the answer key.
-
-    Returns:
-        (score, total_questions, breakdown_dict)
-    """
-    answer_key = answer_key_data.get("answer_key", {})
-    total = len(answer_key)
-    score = 0
-    breakdown = {}
-
-    for q_num, correct_answer in answer_key.items():
-        student_answer = student_answers.get(q_num, "missing_answer")
-        is_correct = student_answer == correct_answer
-        
-        breakdown[q_num] = {
-            "student": student_answer,
-            "correct": correct_answer,
-            "is_correct": is_correct,
-        }
-        
-        if is_correct:
-            score += 1
-
-    return score, total, breakdown
-
-
-def _do_upload_and_save(
-    lcd,
-    keypad,
-    user,
-    scanned_files: list,
-    assessment_uid: str,
-    gemini_result: dict
-) -> str:
-    """
-    Upload images to Cloudinary → save student result to RTDB → show score.
-
-    Returns:
-        "next" → user wants to scan next sheet
-        "exit" → user wants to go back to Main Menu
-    """
-    from services.cloudinary_client import ImageUploader
-    from services.firebase_rtdb_client import FirebaseRTDB
-    from services.smart_collage import SmartCollage
-    import multiprocessing
-
-    score = gemini_result["score"]
-    total = gemini_result["total"]
-    image_urls = None
-    image_public_ids = None
-
-    while True:
         # =================================================================
-        # STEP 1: Upload to Cloudinary
+        # STEP 4: Upload to Cloudinary
         # =================================================================
         if image_urls is None:
             lcd.show(["Uploading...", "Please wait."])
@@ -443,7 +364,7 @@ def _do_upload_and_save(
                 if choice == 0:
                     continue
                 elif choice == 1:
-                    # Start background retry process
+                    # Start background retry
                     def background_retry():
                         for attempt in range(1, 4):
                             try:
@@ -453,59 +374,47 @@ def _do_upload_and_save(
                                     api_secret=CLOUDINARY_API_SECRET,
                                     folder="answer-sheets"
                                 )
-                                
+
                                 if len(scanned_files) > 1:
                                     results = uploader.upload_batch(scanned_files)
                                 else:
                                     results = [uploader.upload_single(scanned_files[0])]
-                                
+
                                 urls = [r["url"] for r in results]
-                                
-                                # Update RTDB with URLs
+
                                 firebase = FirebaseRTDB(
                                     database_url=FIREBASE_RTDB_BASE_REFERENCE,
                                     credentials_path=normalize_path(FIREBASE_CREDENTIALS_PATH)
                                 )
-                                firebase.update_image_urls(
-                                    assessment_uid,
-                                    gemini_result["student_id"],
-                                    urls
-                                )
+                                firebase.update_image_urls(assessment_uid, student_id, urls)
                                 log(f"Background upload succeeded on attempt {attempt}", log_type="info")
                                 return
                             except Exception as e:
-                                log(f"Background upload attempt {attempt} failed: {e}", log_type="error")
+                                log(f"Background attempt {attempt} failed: {e}", log_type="error")
                                 if attempt < 3:
                                     time.sleep(5)
-                        
-                        # All attempts failed - save empty URLs
+
+                        # All failed - save empty URLs
                         try:
                             firebase = FirebaseRTDB(
                                 database_url=FIREBASE_RTDB_BASE_REFERENCE,
                                 credentials_path=normalize_path(FIREBASE_CREDENTIALS_PATH)
                             )
-                            firebase.update_image_urls(
-                                assessment_uid,
-                                gemini_result["student_id"],
-                                []
-                            )
-                            log("Background upload failed all attempts, saved empty URLs", log_type="warning")
+                            firebase.update_image_urls(assessment_uid, student_id, [])
                         except:
                             pass
 
-                    # Start background process
                     p = multiprocessing.Process(target=background_retry)
                     p.daemon = True
                     p.start()
 
-                    # Set empty URLs to proceed
-                    image_urls = []
+                    image_urls = []  # Proceed with empty URLs
                 else:
                     delete_files(scanned_files)
-                    return "exit"
+                    break
 
         # =================================================================
-        # STEP 2: Save to RTDB
+        # STEP 5: Save to Firebase RTDB
         # =================================================================
         lcd.show(["Saving to database..."])
 
@@ -516,9 +425,9 @@ def _do_upload_and_save(
             )
 
             firebase.save_student_result(
-                student_id=gemini_result["student_id"],
+                student_id=student_id,
                 assessment_uid=assessment_uid,
-                answer_sheet=gemini_result["answers"],
+                answer_sheet=student_answers,
                 total_score=score,
                 total_questions=total,
                 image_urls=image_urls,
@@ -526,29 +435,13 @@ def _do_upload_and_save(
                 is_final_score=True
             )
 
-            log(f"Saved result for {gemini_result['student_id']}", log_type="info")
+            lcd.show([f"Saved! {score}/{total}", f"ID: {student_id}"], duration=3)
 
             # Cleanup local files
             delete_files(scanned_files)
 
-            # Show score and next action
-            next_choice = lcd.show_scrollable_menu(
-                title=f"Score: {score}/{total}",
-                options=["Next sheet", "Exit"],
-                scroll_up_key="2",
-                scroll_down_key="8",
-                select_key="*",
-                exit_key="#",
-                get_key_func=keypad.read_key
-            )
-
-            if next_choice == 0:
-                return "next"
-            else:
-                return "exit"
-
         except Exception as e:
-            log(f"Firebase save error: {e}", log_type="error")
+            log(f"Firebase error: {e}", log_type="error")
 
             choice = lcd.show_scrollable_menu(
                 title="DATABASE FAILED",
@@ -564,4 +457,16 @@ def _do_upload_and_save(
                 continue
             else:
                 delete_files(scanned_files)
-                return "exit"
+                break
+
+        upload_and_save_status = True
+        break
+
+    # Cleanup collage
+    try:
+        if collage_path and not keep_local_collage:
+            delete_file(collage_path)
+    except Exception as e:
+        log(f"Delete collage failed: {e}", log_type="error")
+
+    return upload_and_save_status
