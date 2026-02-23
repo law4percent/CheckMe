@@ -29,7 +29,7 @@ FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 ANSWER_KEYS_PATH                = os.getenv("ANSWER_KEYS_PATH")
 
 MAX_QUESTION_DIGITS             = os.getenv("MAX_QUESTION_DIGITS")
-SCAN_DEBOUNCE_SECONDS           = os.getenv("SCAN_DEBOUNCE_SECONDS")
+SCAN_DEBOUNCE_SECONDS           = int(os.getenv("SCAN_DEBOUNCE_SECONDS"))
 INPUT_TIMEOUT_SECONDS           = os.getenv("INPUT_TIMEOUT_SECONDS")
 
 log = get_logger("menu_scan_answer_key.py")

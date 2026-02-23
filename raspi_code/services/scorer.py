@@ -22,9 +22,9 @@ def compare_answers(
     found_warning = False
     if total != total_answer_keys:
         log(
-            "\nTotal questions is not same to quantity to total answer_key", 
-            f"\ntotal_questions: {total}",
-            f"\total_answer_keys: {total_answer_keys}",
+            f"\nTotal questions mismatch.\n"
+            f"total_questions: {total}\n"
+            f"total_answer_keys: {total_answer_keys}",
             log_type="warning"
         )
         found_warning = True

@@ -29,7 +29,7 @@ FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
 ANSWER_SHEETS_PATH              = os.getenv("ANSWER_SHEETS_PATH")
 
-SCAN_DEBOUNCE_SECONDS           = os.getenv("SCAN_DEBOUNCE_SECONDS")
+SCAN_DEBOUNCE_SECONDS           = int(os.getenv("SCAN_DEBOUNCE_SECONDS"))
 
 log = get_logger("menu_check_answer_sheets.py")
 
