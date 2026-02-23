@@ -24,6 +24,8 @@ CLOUDINARY_API_SECRET           = os.getenv("CLOUDINARY_API_SECRET")
 FIREBASE_RTDB_BASE_REFERENCE    = os.getenv("FIREBASE_RTDB_BASE_REFERENCE")
 FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
+ANSWER_SHEETS_PATH =  os.getenv("ANSWER_SHEETS_PATH")
+
 SCAN_DEBOUNCE_SECONDS = 3
 
 log = get_logger("menu_check_answer_sheets.py")
@@ -52,9 +54,9 @@ def run(lcd, keypad, user) -> None:
     lcd.show(["Loading answer", "keys..."])
 
     try:
-        firebase = FirebaseRTDB(
-            database_url=FIREBASE_RTDB_BASE_REFERENCE,
-            credentials_path=normalize_path(FIREBASE_CREDENTIALS_PATH)
+        firebase    = FirebaseRTDB(
+            database_url     = FIREBASE_RTDB_BASE_REFERENCE,
+            credentials_path = normalize_path(FIREBASE_CREDENTIALS_PATH)
         )
         answer_keys = firebase.get_answer_keys(teacher_uid=user.teacher_uid)
     except Exception as e:
@@ -72,40 +74,40 @@ def run(lcd, keypad, user) -> None:
     assessment_options = [key["assessment_uid"] for key in answer_keys]
     
     selected_index = lcd.show_scrollable_menu(
-        title="SELECT ASSESSMENT",
-        options=assessment_options,
-        scroll_up_key="2",
-        scroll_down_key="8",
-        select_key="*",
-        exit_key="#",
-        get_key_func=keypad.read_key
+        title           = "SELECT ASSESSMENT",
+        options         = assessment_options,
+        scroll_up_key   = "2",
+        scroll_down_key = "8",
+        select_key      = "*",
+        exit_key        = "#",
+        get_key_func    = keypad.read_key
     )
 
     if selected_index is None:
         return  # User cancelled
 
-    assessment_uid = assessment_options[selected_index]
+    assessment_uid  = assessment_options[selected_index]
     answer_key_data = answer_keys[selected_index]
 
     lcd.show([f"Assessment:", f"{assessment_uid}"], duration=2)
 
-    scanned_files = []
-    page_number = 1
+    scanned_files       = []
+    page_number         = 1
     is_gemini_task_done = False
-    gemini_result = None
+    gemini_result       = None
 
     # =========================================================================
     # Step 3: Check Answer Sheets loop
     # =========================================================================
     while True:
         selected = lcd.show_scrollable_menu(
-            title="CHECK SHEETS",
-            options=check_sheets_menu_options,
-            scroll_up_key="2",
-            scroll_down_key="8",
-            select_key="*",
-            exit_key="#",
-            get_key_func=keypad.read_key
+            title           = "CHECK SHEETS",
+            options         = check_sheets_menu_options,
+            scroll_up_key   = "2",
+            scroll_down_key = "8",
+            select_key      = "*",
+            exit_key        = "#",
+            get_key_func    = keypad.read_key
         )
 
         # =====================================================================
@@ -113,7 +115,7 @@ def run(lcd, keypad, user) -> None:
         # =====================================================================
         if selected == 0:
             _do_scan(lcd, keypad, scanned_files, page_number)
-            page_number = len(scanned_files) + 1
+            page_number         = len(scanned_files) + 1
             is_gemini_task_done = False
 
         # =====================================================================
@@ -171,9 +173,9 @@ def run(lcd, keypad, user) -> None:
 def _do_scan(
     lcd,
     keypad,
-    scanned_files: list,
-    page_number: int,
-    debounce: int = SCAN_DEBOUNCE_SECONDS
+    scanned_files   : list,
+    page_number     : int,
+    debounce        : int = SCAN_DEBOUNCE_SECONDS
 ) -> None:
     """Trigger the scanner and append the result to scanned_files."""
     scanner = L3210Scanner()
@@ -184,7 +186,7 @@ def _do_scan(
     lcd.show(["Scanning page", f"{page_number}..."])
 
     try:
-        filename = scanner.scan(target_directory="scans/answer_sheets")
+        filename = scanner.scan(target_directory=normalize_path(ANSWER_SHEETS_PATH))
         time.sleep(debounce)
 
         scanned_files.append(filename)

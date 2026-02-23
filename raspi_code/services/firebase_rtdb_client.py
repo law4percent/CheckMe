@@ -218,10 +218,9 @@ class FirebaseRTDB:
         Returns:
             List of answer key dictionaries
         """
+        data = None
         if teacher_uid:
             data = self._get(f"/answer_keys/{teacher_uid}")
-        else:
-            data = self._get("/answer_keys")
 
         if data is None:
             return []
@@ -230,10 +229,6 @@ class FirebaseRTDB:
         if teacher_uid:
             for uid, key_data in data.items():
                 answer_keys.append(key_data)
-        else:
-            for t_uid, keys in data.items():
-                for uid, key_data in keys.items():
-                    answer_keys.append(key_data)
 
         return answer_keys
 
