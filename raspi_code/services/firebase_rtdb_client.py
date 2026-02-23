@@ -146,6 +146,7 @@ class FirebaseRTDB:
         answer_key      : Dict[str, str],
         total_questions : int,
         image_urls      : List[str],
+        image_public_ids: List[str],
         teacher_uid     : str,
         section_uid     : str,
         subject_uid     : str
@@ -158,6 +159,7 @@ class FirebaseRTDB:
             answer_key      : Dictionary of answers (e.g., {"Q1": "A", "Q2": "TRUE"})
             total_questions : Total number of questions
             image_urls      : List of Cloudinary URLs
+            image_public_ids: List of Cloudinary public ids
             teacher_uid     : Teacher identifier
             section_uid     : Section identifier
             subject_uid     : Subject identifier
@@ -185,6 +187,7 @@ class FirebaseRTDB:
             "answer_key"        : answer_key,
             "total_questions"   : total_questions,
             "image_urls"        : image_urls or [],
+            "image_public_ids"  : image_public_ids or [],
             "created_by"        : teacher_uid,
             "created_at"        : now,
             "updated_at"        : now,
@@ -313,8 +316,12 @@ class FirebaseRTDB:
         total_score     : int,
         total_questions : int,
         image_urls      : List[str],
+        image_public_ids: List[str],
         teacher_uid     : str,
-        is_final_score  : bool = True
+        is_final_score  : bool,
+        section_uid     : str,
+        subject_uid     : str,
+        breakdown       : dict
     ) -> bool:
         """
         Save student result to Firebase RTDB.
@@ -326,8 +333,10 @@ class FirebaseRTDB:
             total_score     : Score achieved
             total_questions : Total possible score
             image_urls      : List of Cloudinary URLs
+            image_public_ids: Loist of Cloudinary public ids
             teacher_uid     : Teacher who checked
             is_final_score  : Whether this is the final score
+            breakdown       : A detailed checking
 
         Returns:
             True if successful
@@ -354,16 +363,21 @@ class FirebaseRTDB:
             "total_questions"   : total_questions,
             "is_final_score"    : is_final_score,
             "image_urls"        : image_urls or [],
+            "image_public_ids"  : image_public_ids or [],
             "checked_by"        : teacher_uid,
             "checked_at"        : now,
             "updated_at"        : now,
+            "section_uid"       : section_uid,
+            "subject_uid"       : subject_uid,
+            "breakdown"         : breakdown
         }
 
-        self._set(f"/results/{assessment_uid}/{student_id}", data)
+        self._set(f"/answer_sheets/{teacher_uid}/{assessment_uid}/{student_id}", data)
         return True
 
     def get_student_result(
         self,
+        teacher_uid     : str,
         assessment_uid  : str,
         student_id      : str
     ) -> Optional[Dict]:
@@ -377,9 +391,9 @@ class FirebaseRTDB:
         Returns:
             Student result data or None if not found
         """
-        return self._get(f"/results/{assessment_uid}/{student_id}")
+        return self._get(f"/answer_sheets/{teacher_uid}/{assessment_uid}/{student_id}")
 
-    def get_assessment_results(self, assessment_uid: str) -> List[Dict]:
+    def get_assessment_results(self, assessment_uid: str, teacher_uid: str) -> List[Dict]:
         """
         Get all results for a specific assessment.
 
@@ -389,7 +403,7 @@ class FirebaseRTDB:
         Returns:
             List of student results
         """
-        data = self._get(f"/results/{assessment_uid}")
+        data = self._get(f"/answer_sheets/{teacher_uid}/{assessment_uid}")
 
         if data is None:
             return []
@@ -398,6 +412,7 @@ class FirebaseRTDB:
 
     def update_image_urls(
         self,
+        teacher_uid     : str,
         assessment_uid  : str,
         student_id      : str,
         image_urls      : List[str]
@@ -413,7 +428,7 @@ class FirebaseRTDB:
         Returns:
             True if successful
         """
-        self._update(f"/results/{assessment_uid}/{student_id}", {
+        self._update(f"/answer_sheets/{teacher_uid}/{assessment_uid}/{student_id}", {
             "image_urls": image_urls,
             "updated_at": db.SERVER_TIMESTAMP
         })
