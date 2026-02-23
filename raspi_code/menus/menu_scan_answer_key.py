@@ -376,6 +376,7 @@ def _do_upload_and_save(
                 answer_key      = answer_key,
                 total_questions = total_questions,
                 image_urls      = image_urls,
+                image_public_ids= image_public_ids,
                 teacher_uid     = user.teacher_uid,
                 section_uid     = assessment_data.get("section_uid"),
                 subject_uid     = assessment_data.get("subject_uid")
