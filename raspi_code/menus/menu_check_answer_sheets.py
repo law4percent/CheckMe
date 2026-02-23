@@ -328,13 +328,7 @@ def _do_upload_and_save(
                 )
                 if found_warning:
                     answer_sheets_len = len(answer_key_data.get("answer_key", {}))
-                    lcd.show("WARNING", duration=2)
-                    lcd.show([
-                        f"{total} != {answer_sheets_len}",
-                        "Not same quantity"
-                        ], 
-                        duration=2
-                    )
+                    lcd.show([f"WARN: {total}!={answer_sheets_len}", "qty mismatch"], duration=3)
                 lcd.show(f"Score: {score}/{total}", duration=2)
 
             except Exception as e:
