@@ -4,8 +4,7 @@ log = get_logger("scorer.py")
 
 def compare_answers(
     student_answers: dict,
-    answer_key_data: dict,
-    lcd: any
+    answer_key_data: dict
 ) -> tuple:
     """
     Compare student answers against the answer key.
@@ -20,7 +19,7 @@ def compare_answers(
     is_final_score  = True
 
     total_answer_keys = len(answer_key)
-
+    found_warning = False
     if total != total_answer_keys:
         log(
             "\nTotal questions is not same to quantity to total answer_key", 
@@ -28,10 +27,7 @@ def compare_answers(
             f"\total_answer_keys: {total_answer_keys}",
             log_type="warning"
         )
-        lcd.show([
-            f"{total} != {total_answer_keys}",
-            "Not same quantity"
-            ], duration=2)
+        found_warning = True
 
     for q_num, correct_answer in answer_key.items():
         student_answer  = student_answers.get(q_num, "missing_answer")
@@ -55,4 +51,4 @@ def compare_answers(
             if checking_result:
                 score += 1
 
-    return score, total, breakdown, is_final_score
+    return score, total, breakdown, is_final_score, found_warning

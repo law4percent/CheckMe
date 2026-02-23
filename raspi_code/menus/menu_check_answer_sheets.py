@@ -29,7 +29,7 @@ FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
 ANSWER_SHEETS_PATH              = os.getenv("ANSWER_SHEETS_PATH")
 
-SCAN_DEBOUNCE_SECONDS   = 10
+SCAN_DEBOUNCE_SECONDS   = 3
 
 log = get_logger("menu_check_answer_sheets.py")
 
@@ -96,6 +96,7 @@ def run(lcd, keypad, user) -> None:
 
     scanned_files   = []
     page_number     = 1
+    all_scanned_files = []
 
     assessment_data = firebase.validate_assessment_exists_get_data(assessment_uid, user.teacher_uid)
     if not assessment_data:
@@ -145,6 +146,7 @@ def run(lcd, keypad, user) -> None:
 
             if done:
                 # Reset state for next student sheet
+                all_scanned_files = all_scanned_files + scanned_files
                 scanned_files.clear()
                 page_number = 1
                 # Continue loop for next student
@@ -154,8 +156,8 @@ def run(lcd, keypad, user) -> None:
         # [2] Cancel
         # =====================================================================
         elif selected == 2:
-            if scanned_files:
-                delete_files(scanned_files)
+            if all_scanned_files:
+                delete_files(all_scanned_files) # might be better to use mulprocessing in future to avoid loading interuption
             lcd.show("Cancelled.", duration=2)
             break  # back to Main Menu
 
@@ -322,11 +324,19 @@ def _do_upload_and_save(
         # =================================================================
         if score is None:
             try:
-                score, total, breakdown, is_final_score = compare_answers(
+                score, total, breakdown, is_final_score, found_warning = compare_answers(
                     student_answers,
-                    answer_key_data,
-                    lcd
+                    answer_key_data
                 )
+                if found_warning:
+                    answer_sheets_len = len(answer_key_data.get("answer_key", {}))
+                    lcd.show("WARNING", duration=2)
+                    lcd.show([
+                        f"{total} != {answer_sheets_len}",
+                        "Not same quantity"
+                        ], 
+                        duration=2
+                    )
                 lcd.show(f"Score: {score}/{total}", duration=2)
 
             except Exception as e:
