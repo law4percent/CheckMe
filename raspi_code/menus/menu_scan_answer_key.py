@@ -195,7 +195,7 @@ def _do_upload_and_save(
                     cloud_name  = CLOUDINARY_NAME,
                     api_key     = CLOUDINARY_API_KEY,
                     api_secret  = CLOUDINARY_API_SECRET,
-                    folder      = "answer-keys"
+                    folder      = CLOUDINARY_ANSWER_KEYS_PATH
                 )
                 
                 if len(scanned_files) > 1:
