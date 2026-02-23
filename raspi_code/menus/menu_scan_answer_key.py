@@ -16,6 +16,7 @@ load_dotenv(normalize_path("config/.env"))
 
 GEMINI_API_KEY                  = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL                    = os.getenv("GEMINI_MODEL")
+GEMINI_PREFERRED_METHOD         = os.getenv("GEMINI_PREFERRED_METHOD")
 
 CLOUDINARY_NAME                 = os.getenv("CLOUDINARY_NAME")
 CLOUDINARY_API_KEY              = os.getenv("CLOUDINARY_API_KEY")
@@ -275,7 +276,7 @@ def _do_upload_and_save(
                     image_path      = image_to_send_gemini,
                     prompt          = answer_key_prompt(total_number_of_questions=total_questions),
                     model           = GEMINI_MODEL,
-                    prefer_method   = "sdk"
+                    prefer_method   = GEMINI_PREFERRED_METHOD
                 )
                 
                 if raw_result is None:
