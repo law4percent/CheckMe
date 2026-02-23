@@ -10,6 +10,7 @@ from services.l3210_scanner_hardware import L3210Scanner
 from services.prompts import answer_sheet_prompt
 from services.scorer import compare_answers
 
+from datetime import datetime
 import time
 import os
 from dotenv import load_dotenv
@@ -241,9 +242,10 @@ def _do_upload_and_save(
                     image_to_send_gemini = collage_builder.create_collage()
 
                     if collage_save_to_local:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         collage_path = join_and_ensure_path(
                             target_path,
-                            f"collage_{int(time.time())}.png"
+                            f"collage_{timestamp}.png"
                         )
                         collage_builder.save(image_to_send_gemini, collage_path)
                 else:

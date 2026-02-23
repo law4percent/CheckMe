@@ -9,6 +9,7 @@ from services.sanitizer import sanitize_gemini_json
 from services.l3210_scanner_hardware import L3210Scanner
 from services.prompts import answer_key_prompt
 
+from datetime import datetime
 import time
 import os
 from dotenv import load_dotenv
@@ -238,9 +239,10 @@ def _do_upload_and_save(
                     
                     # Optionally save collage
                     if collage_save_to_local:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         collage_path = join_and_ensure_path(
                             target_path,
-                            f"collage_{int(time.time())}.png"
+                            f"collage_{timestamp}.png"
                         )
                         collage_builder.save(image_to_send_gemini, collage_path)
                 else:
