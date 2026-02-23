@@ -17,10 +17,12 @@ load_dotenv(normalize_path("config/.env"))
 
 GEMINI_API_KEY                  = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL                    = os.getenv("GEMINI_MODEL")
+GEMINI_PREFERRED_METHOD         = os.getenv("GEMINI_PREFERRED_METHOD")
 
 CLOUDINARY_NAME                 = os.getenv("CLOUDINARY_NAME")
 CLOUDINARY_API_KEY              = os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET           = os.getenv("CLOUDINARY_API_SECRET")
+CLOUDINARY_ANSWER_SHEETS_PATH   = os.getenv("CLOUDINARY_ANSWER_SHEETS_PATH")
 
 FIREBASE_RTDB_BASE_REFERENCE    = os.getenv("FIREBASE_RTDB_BASE_REFERENCE")
 FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
@@ -95,6 +97,15 @@ def run(lcd, keypad, user) -> None:
     scanned_files   = []
     page_number     = 1
 
+    assessment_data = firebase.validate_assessment_exists_get_data(assessment_uid, user.teacher_uid)
+    if not assessment_data:
+        lcd.show([
+            "INVALID assesUid",
+            "# to continue"
+        ])
+        keypad.wait_for_key(valid_keys=['#'])
+        return # Back to main menu
+
     # =========================================================================
     # Step 3: Check Answer Sheets loop
     # =========================================================================
@@ -128,7 +139,8 @@ def run(lcd, keypad, user) -> None:
                 lcd, keypad, user,
                 scanned_files,
                 assessment_uid,
-                answer_key_data
+                answer_key_data,
+                assessment_data
             )
 
             if done:
@@ -144,7 +156,7 @@ def run(lcd, keypad, user) -> None:
         elif selected == 2:
             if scanned_files:
                 delete_files(scanned_files)
-            lcd.show(["Cancelled."], duration=2)
+            lcd.show("Cancelled.", duration=2)
             break  # back to Main Menu
 
 
@@ -187,12 +199,13 @@ def _do_upload_and_save(
     lcd,
     keypad,
     user,
-    scanned_files: list,
-    assessment_uid: str,
-    answer_key_data: dict,
-    collage_save_to_local: bool = True,
-    keep_local_collage: bool = False,
-    target_path: str = "scans"
+    scanned_files           : list,
+    assessment_uid          : str,
+    answer_key_data         : dict,
+    assessment_data         : dict,
+    collage_save_to_local   : bool  = True,
+    keep_local_collage      : bool  = False,
+    target_path             : str   = "scans"
 ) -> bool:
     """
     Gemini OCR → Score → Upload → Save to RTDB.
@@ -202,25 +215,24 @@ def _do_upload_and_save(
     from services.gemini_client import gemini_with_retry
     from services.firebase_rtdb_client import FirebaseRTDB
     from services.smart_collage import SmartCollage
-    import multiprocessing
 
-    upload_and_save_status = False
-    image_urls = None
-    image_public_ids = None
-    image_to_send_gemini = None
-    student_id = None
-    student_answers = None
-    score = None
-    total = None
-    breakdown = None
-    collage_path = None
+    upload_and_save_status  = False
+    image_urls              = None
+    image_public_ids        = None
+    image_to_send_gemini    = None
+    student_id              = None
+    student_answers         = None
+    score                   = None
+    total                   = None
+    breakdown               = None
+    collage_path            = None
 
     while True:
         # =================================================================
         # STEP 1: Create Collage (if needed)
         # =================================================================
         if image_to_send_gemini is None:
-            lcd.show(["Processing images..."])
+            lcd.show("Processing images...")
 
             try:
                 if len(scanned_files) > 1:
@@ -240,13 +252,13 @@ def _do_upload_and_save(
                 log(f"Collage error: {e}", log_type="error")
 
                 choice = lcd.show_scrollable_menu(
-                    title="COLLAGE FAILED",
-                    options=["Retry", "Exit"],
-                    scroll_up_key="2",
-                    scroll_down_key="8",
-                    select_key="*",
-                    exit_key="#",
-                    get_key_func=keypad.read_key
+                    title           = "COLLAGE FAILED",
+                    options         = ["Retry", "Exit"],
+                    scroll_up_key   = "2",
+                    scroll_down_key = "8",
+                    select_key      = "*",
+                    exit_key        = "#",
+                    get_key_func    = keypad.read_key
                 )
 
                 if choice == 0:
@@ -262,28 +274,24 @@ def _do_upload_and_save(
             lcd.show(["Processing with", "Gemini OCR..."])
 
             try:
-                total_questions = answer_key_data.get("total_questions", 0)
-
+                total_questions = int(answer_key_data.get("total_questions", 0))
                 raw_result = gemini_with_retry(
-                    api_key=GEMINI_API_KEY,
-                    image_path=image_to_send_gemini,
-                    prompt=answer_sheet_prompt(total_number_of_questions=total_questions),
-                    model=GEMINI_MODEL,
-                    prefer_method="sdk"
+                    api_key         = GEMINI_API_KEY,
+                    image_path      = image_to_send_gemini,
+                    prompt          = answer_sheet_prompt(total_number_of_questions=total_questions),
+                    model           = GEMINI_MODEL,
+                    prefer_method   = GEMINI_PREFERRED_METHOD
                 )
 
-                if raw_result is None:
-                    raise Exception("Gemini returned None")
-
-                data = sanitize_gemini_json(raw_result)
-                student_id = data.get("student_id")
+                data            = sanitize_gemini_json(raw_result)
+                student_id      = data.get("student_id")
                 student_answers = data.get("answers")
 
                 if student_id is None or student_answers is None:
                     log(
-                        f"Student ID or Answers not found.\n"
+                        f"\nStudent ID or Answers not found.\n"
                         f"student_id: {student_id}\n"
-                        f"answers: {student_answers}",
+                        f"answers   : {student_answers}",
                         log_type="error"
                     )
                     raise Exception("Missing student_id or answers")
@@ -294,13 +302,13 @@ def _do_upload_and_save(
                 log(f"Gemini error: {e}", log_type="error")
 
                 choice = lcd.show_scrollable_menu(
-                    title="EXTRACTION FAILED",
-                    options=["Retry", "Exit"],
-                    scroll_up_key="2",
-                    scroll_down_key="8",
-                    select_key="*",
-                    exit_key="#",
-                    get_key_func=keypad.read_key
+                    title           = "EXTRACTION FAILED",
+                    options         = ["Retry", "Exit"],
+                    scroll_up_key   = "2",
+                    scroll_down_key = "8",
+                    select_key      = "*",
+                    exit_key        = "#",
+                    get_key_func    = keypad.read_key
                 )
 
                 if choice == 0:
@@ -314,15 +322,16 @@ def _do_upload_and_save(
         # =================================================================
         if score is None:
             try:
-                score, total, breakdown = compare_answers(
+                score, total, breakdown, is_final_score = compare_answers(
                     student_answers,
-                    answer_key_data
+                    answer_key_data,
+                    lcd
                 )
-                lcd.show([f"Score: {score}/{total}"], duration=2)
+                lcd.show(f"Score: {score}/{total}", duration=2)
 
             except Exception as e:
                 log(f"Scoring error: {e}", log_type="error")
-                lcd.show(["Scoring failed!"], duration=2)
+                lcd.show("Scoring failed!", duration=2)
                 delete_files(scanned_files)
                 break
 
@@ -334,10 +343,10 @@ def _do_upload_and_save(
 
             try:
                 uploader = ImageUploader(
-                    cloud_name=CLOUDINARY_NAME,
-                    api_key=CLOUDINARY_API_KEY,
-                    api_secret=CLOUDINARY_API_SECRET,
-                    folder="answer-sheets"
+                    cloud_name  = CLOUDINARY_NAME,
+                    api_key     = CLOUDINARY_API_KEY,
+                    api_secret  = CLOUDINARY_API_SECRET,
+                    folder      = CLOUDINARY_ANSWER_SHEETS_PATH
                 )
 
                 if len(scanned_files) > 1:
@@ -345,70 +354,24 @@ def _do_upload_and_save(
                 else:
                     results = [uploader.upload_single(scanned_files[0])]
 
-                image_urls = [r["url"] for r in results]
-                image_public_ids = [r["public_id"] for r in results]
+                image_urls          = [r["url"] for r in results]
+                image_public_ids    = [r["public_id"] for r in results]
 
             except Exception as e:
                 log(f"Upload error: {e}", log_type="error")
 
                 choice = lcd.show_scrollable_menu(
-                    title="UPLOAD FAILED",
-                    options=["Re-upload", "Proceed anyway", "Exit"],
-                    scroll_up_key="2",
-                    scroll_down_key="8",
-                    select_key="*",
-                    exit_key="#",
-                    get_key_func=keypad.read_key
+                    title           = "UPLOAD FAILED",
+                    options         = ["Re-upload", "Exit"],
+                    scroll_up_key   = "2",
+                    scroll_down_key = "8",
+                    select_key      = "*",
+                    exit_key        = "#",
+                    get_key_func    = keypad.read_key
                 )
 
                 if choice == 0:
                     continue
-                elif choice == 1:
-                    # Start background retry
-                    def background_retry():
-                        for attempt in range(1, 4):
-                            try:
-                                uploader = ImageUploader(
-                                    cloud_name=CLOUDINARY_NAME,
-                                    api_key=CLOUDINARY_API_KEY,
-                                    api_secret=CLOUDINARY_API_SECRET,
-                                    folder="answer-sheets"
-                                )
-
-                                if len(scanned_files) > 1:
-                                    results = uploader.upload_batch(scanned_files)
-                                else:
-                                    results = [uploader.upload_single(scanned_files[0])]
-
-                                urls = [r["url"] for r in results]
-
-                                firebase = FirebaseRTDB(
-                                    database_url=FIREBASE_RTDB_BASE_REFERENCE,
-                                    credentials_path=normalize_path(FIREBASE_CREDENTIALS_PATH)
-                                )
-                                firebase.update_image_urls(assessment_uid, student_id, urls)
-                                log(f"Background upload succeeded on attempt {attempt}", log_type="info")
-                                return
-                            except Exception as e:
-                                log(f"Background attempt {attempt} failed: {e}", log_type="error")
-                                if attempt < 3:
-                                    time.sleep(5)
-
-                        # All failed - save empty URLs
-                        try:
-                            firebase = FirebaseRTDB(
-                                database_url=FIREBASE_RTDB_BASE_REFERENCE,
-                                credentials_path=normalize_path(FIREBASE_CREDENTIALS_PATH)
-                            )
-                            firebase.update_image_urls(assessment_uid, student_id, [])
-                        except:
-                            pass
-
-                    p = multiprocessing.Process(target=background_retry)
-                    p.daemon = True
-                    p.start()
-
-                    image_urls = []  # Proceed with empty URLs
                 else:
                     delete_files(scanned_files)
                     break
@@ -416,23 +379,27 @@ def _do_upload_and_save(
         # =================================================================
         # STEP 5: Save to Firebase RTDB
         # =================================================================
-        lcd.show(["Saving to database..."])
+        lcd.show("Saving to database...")
 
         try:
             firebase = FirebaseRTDB(
-                database_url=FIREBASE_RTDB_BASE_REFERENCE,
-                credentials_path=normalize_path(FIREBASE_CREDENTIALS_PATH)
+                database_url        = FIREBASE_RTDB_BASE_REFERENCE,
+                credentials_path    = normalize_path(FIREBASE_CREDENTIALS_PATH)
             )
 
             firebase.save_student_result(
-                student_id=student_id,
-                assessment_uid=assessment_uid,
-                answer_sheet=student_answers,
-                total_score=score,
-                total_questions=total,
-                image_urls=image_urls,
-                teacher_uid=user.teacher_uid,
-                is_final_score=True
+                student_id          = student_id,
+                assessment_uid      = assessment_uid,
+                answer_sheet        = student_answers,
+                total_score         = score,
+                total_questions     = total,
+                image_urls          = image_urls,
+                image_public_ids    = image_public_ids,
+                teacher_uid         = user.teacher_uid,
+                is_final_score      = is_final_score,
+                section_uid         = assessment_data["section_uid"],
+                subject_uid         = assessment_data["subject_uid"],
+                breakdown           = breakdown
             )
 
             lcd.show([f"Saved! {score}/{total}", f"ID: {student_id}"], duration=3)
@@ -444,13 +411,13 @@ def _do_upload_and_save(
             log(f"Firebase error: {e}", log_type="error")
 
             choice = lcd.show_scrollable_menu(
-                title="DATABASE FAILED",
-                options=["Retry", "Exit"],
-                scroll_up_key="2",
-                scroll_down_key="8",
-                select_key="*",
-                exit_key="#",
-                get_key_func=keypad.read_key
+                title           = "DATABASE FAILED",
+                options         = ["Retry", "Exit"],
+                scroll_up_key   = "2",
+                scroll_down_key = "8",
+                select_key      = "*",
+                exit_key        = "#",
+                get_key_func    = keypad.read_key
             )
 
             if choice == 0:
