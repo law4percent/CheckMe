@@ -96,7 +96,6 @@ def run(lcd, keypad, user) -> None:
 
     scanned_files   = []
     page_number     = 1
-    all_scanned_files = []
 
     assessment_data = firebase.validate_assessment_exists_get_data(assessment_uid, user.teacher_uid)
     if not assessment_data:
@@ -146,7 +145,6 @@ def run(lcd, keypad, user) -> None:
 
             if done:
                 # Reset state for next student sheet
-                all_scanned_files = all_scanned_files + scanned_files
                 scanned_files.clear()
                 page_number = 1
                 # Continue loop for next student
@@ -156,8 +154,8 @@ def run(lcd, keypad, user) -> None:
         # [2] Cancel
         # =====================================================================
         elif selected == 2:
-            if all_scanned_files:
-                delete_files(all_scanned_files) # might be better to use mulprocessing in future to avoid loading interuption
+            if scanned_files:
+                delete_files(scanned_files) # might be better to use mulprocessing in future to avoid loading interuption
             lcd.show("Cancelled.", duration=2)
             break  # back to Main Menu
 
