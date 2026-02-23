@@ -117,7 +117,7 @@ def run(lcd, keypad, user) -> None:
         elif selected == 2:
             if scanned_files:
                 delete_files(scanned_files)
-            lcd.show(["Cancelled."], duration=2)
+            lcd.show("Cancelled.", duration=2)
             break  # back to Main Menu
 
 
@@ -229,7 +229,7 @@ def _do_upload_and_save(
         # STEP 2: Create Collage (if needed)
         # =================================================================
         if image_to_send_gemini is None:  # Only collage if not done yet
-            lcd.show(["Processing images..."])
+            lcd.show("Processing images...")
             
             try:
                 if len(scanned_files) > 1:
