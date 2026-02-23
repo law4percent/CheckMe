@@ -1,5 +1,3 @@
-import time
-
 from services.keypad_hardware import Keypad3x4
 from services.auth import TeacherAuth
 from services.lcd_hardware import detect_i2c_address, LCD_I2C, LCDSize
