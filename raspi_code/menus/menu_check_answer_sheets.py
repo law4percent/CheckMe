@@ -29,7 +29,7 @@ FIREBASE_CREDENTIALS_PATH       = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
 ANSWER_SHEETS_PATH              = os.getenv("ANSWER_SHEETS_PATH")
 
-SCAN_DEBOUNCE_SECONDS   = 3
+SCAN_DEBOUNCE_SECONDS           = os.getenv("SCAN_DEBOUNCE_SECONDS")
 
 log = get_logger("menu_check_answer_sheets.py")
 
@@ -226,6 +226,7 @@ def _do_upload_and_save(
     total                   = None
     breakdown               = None
     collage_path            = None
+    is_final_score          = False
 
     while True:
         # =================================================================
