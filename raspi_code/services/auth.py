@@ -39,7 +39,7 @@ class CodeValidationStatus(Enum):
 class Credentials:
     teacher_uid : Optional[str] = None
     username    : Optional[str] = None
-    logged_in_at: Optional[str] = None
+    modified_at   : Optional[str] = None
 
     def is_valid(self) -> bool:
         return self.teacher_uid is not None and self.username is not None
@@ -48,15 +48,15 @@ class Credentials:
         return {
             "teacher_uid"   : self.teacher_uid,
             "username"      : self.username,
-            "logged_in_at"  : self.logged_in_at
+            "modified_at"   : self.modified_at
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Credentials':
         return cls(
-            teacher_uid     = data.get("teacher_uid"),
-            username        = data.get("username"),
-            logged_in_at    = data.get("logged_in_at")
+            teacher_uid = data.get("teacher_uid"),
+            username    = data.get("username"),
+            modified_at = data.get("modified_at")
         )
 
 
@@ -200,9 +200,9 @@ class TeacherAuth:
             return (CodeValidationStatus.EXPIRED, None)
 
         return (CodeValidationStatus.VALID, Credentials(
-            teacher_uid     = data["uid"],
-            username        = data["username"],
-            logged_in_at    = datetime.now().isoformat()
+            teacher_uid = data["uid"],
+            username    = data["username"],
+            modified_at = datetime.now().isoformat()
         ))
     
     def check_authentication(self) -> Tuple[AuthStatus, Optional[Credentials]]:
