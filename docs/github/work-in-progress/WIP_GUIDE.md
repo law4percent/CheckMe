@@ -1,6 +1,6 @@
 # 🔄 Cross-Platform Work-In-Progress (WIP) Workflow
 
-## Scenario: Unfinished Work Between Windows (Home) and MacBook (Office)
+## Scenario: Unfinished Work Between Windows and MacBook
 
 ### 📋 The Question
 

@@ -14,12 +14,12 @@ Using SSH authentication is **highly recommended** over HTTPS for the following 
 ## 📋 Prerequisites
 
 - Git installed on your machine
-- GitHub account (law4percent)
+- GitHub account (example: law4percent)
 - Terminal access (Terminal on Mac, Git Bash or PowerShell on Windows)
 
 ---
 
-## 🍎 MacBook Setup (Office)
+## 🍎 MacBook Setup
 
 ### **Step 1: Generate SSH Key**
 
@@ -118,7 +118,7 @@ git push origin main
 
 ---
 
-## 🪟 Windows Setup (Home)
+## 🪟 Windows Setup
 
 ### **Option A: Using Git Bash (Recommended)**
 
@@ -458,5 +458,3 @@ After completing this setup on both MacBook and Windows PC:
 ✅ Faster git operations
 ✅ More secure authentication
 ✅ Seamless cross-platform workflow
-
-**You're now ready for professional-grade Git workflow! 🚀**
