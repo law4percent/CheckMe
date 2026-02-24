@@ -44,7 +44,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [currentAssessment, setCurrentAssessment] = useState<Assessment | null>(null);
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
 
   // Modal states
   const [createAssessmentModalVisible, setCreateAssessmentModalVisible] = useState(false);
@@ -65,24 +65,17 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   // ── Load existing assessment for this subject ──
   const loadExistingAssessment = async () => {
     if (!user?.uid) {
-      setCurrentAssessment(null);
+      setAssessments([]);
       return;
     }
 
     try {
-      // Fetch all assessments for this teacher filtered by subjectUid
-      const assessments = await getAssessments(user.uid, subject.id);
-
-      if (assessments.length > 0) {
-        // Use the most recent one if multiple exist
-        const sorted = assessments.sort((a, b) => b.createdAt - a.createdAt);
-        setCurrentAssessment(sorted[0]);
-      } else {
-        setCurrentAssessment(null);
-      }
+      const result = await getAssessments(user.uid, subject.id);
+      const sorted = result.sort((a, b) => b.createdAt - a.createdAt);
+      setAssessments(sorted);
     } catch (error: any) {
-      console.error('❌ [SubjectDashboard] Error loading assessment:', error);
-      setCurrentAssessment(null);
+      console.error('❌ [SubjectDashboard] Error loading assessments:', error);
+      setAssessments([]);
     }
   };
 
@@ -149,7 +142,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         subject.id    // subjectUid
       );
 
-      setCurrentAssessment(assessment);
+      setAssessments(prev => [assessment, ...prev]);
       setCreateAssessmentModalVisible(false);
 
       Alert.alert(
@@ -168,12 +161,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   // ── Delete Assessment ─────────────────────────
-  const handleDeleteAssessment = () => {
-    if (!currentAssessment) return;
-
+  const handleDeleteAssessment = (assessment: Assessment) => {
     Alert.alert(
       'Delete Assessment',
-      `Are you sure you want to delete "${currentAssessment.assessmentName}"?\n\nAssessment UID: ${currentAssessment.assessmentUid}\n\nThis will remove the assessment record.`,
+      `Are you sure you want to delete "${assessment.assessmentName}"?\n\nAssessment UID: ${assessment.assessmentUid}\n\nThis will remove the assessment record.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -183,9 +174,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             if (!user?.uid) return;
             try {
               setActionLoading(true);
-              // NEW: deleteAssessment(teacherId, assessmentUid)
-              await deleteAssessment(user.uid, currentAssessment.assessmentUid);
-              setCurrentAssessment(null);
+              await deleteAssessment(user.uid, assessment.assessmentUid);
+              setAssessments(prev => prev.filter(a => a.assessmentUid !== assessment.assessmentUid));
               Alert.alert('Success', 'Assessment deleted successfully');
             } catch (error: any) {
               Alert.alert('Error', error.message);
@@ -199,14 +189,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   // ── View Scores ───────────────────────────────
-  const handleViewScores = () => {
-    if (!currentAssessment) {
-      Alert.alert('Error', 'No assessment found');
-      return;
-    }
+  const handleViewScores = (assessment: Assessment) => {
     navigation.navigate('ViewScores', {
-      assessmentUid: currentAssessment.assessmentUid,
-      assessmentName: currentAssessment.assessmentName
+      assessmentUid: assessment.assessmentUid,
+      assessmentName: assessment.assessmentName
     });
   };
 
@@ -345,17 +331,15 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           <TouchableOpacity
             style={styles.actionButton}
             onPress={handleCreateAssessment}
-            disabled={actionLoading || currentAssessment !== null}
+            disabled={actionLoading}
           >
             <LinearGradient
-              colors={currentAssessment ? ['#94a3b8', '#cbd5e1'] : ['#6366f1', '#8b5cf6']}
+              colors={['#6366f1', '#8b5cf6']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.gradientButton}
             >
-              <Text style={styles.actionButtonText}>
-                {currentAssessment ? '✓ Assessment Created' : '📝 Create Assessment'}
-              </Text>
+              <Text style={styles.actionButtonText}>📝 Create Assessment</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -380,41 +364,43 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           </View>
 
-          {currentAssessment ? (
-            <View style={styles.assessmentCard}>
-              <View style={styles.assessmentHeader}>
-                <Text style={styles.assessmentIcon}>
-                  {currentAssessment.assessmentType === 'quiz' ? '📝' : '📄'}
-                </Text>
-                <View style={styles.assessmentInfo}>
-                  <Text style={styles.assessmentName}>{currentAssessment.assessmentName}</Text>
-                  <Text style={styles.assessmentType}>
-                    {currentAssessment.assessmentType.charAt(0).toUpperCase() +
-                      currentAssessment.assessmentType.slice(1)}
+          {assessments.length > 0 ? (
+            assessments.map(assessment => (
+              <View key={assessment.assessmentUid} style={styles.assessmentCard}>
+                <View style={styles.assessmentHeader}>
+                  <Text style={styles.assessmentIcon}>
+                    {assessment.assessmentType === 'quiz' ? '📝' : '📄'}
                   </Text>
-                  <Text style={styles.assessmentUid}>UID: {currentAssessment.assessmentUid}</Text>
+                  <View style={styles.assessmentInfo}>
+                    <Text style={styles.assessmentName}>{assessment.assessmentName}</Text>
+                    <Text style={styles.assessmentType}>
+                      {assessment.assessmentType.charAt(0).toUpperCase() +
+                        assessment.assessmentType.slice(1)}
+                    </Text>
+                    <Text style={styles.assessmentUid}>UID: {assessment.assessmentUid}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.assessmentMeta}>
+                  <Text style={styles.assessmentDate}>
+                    Created: {new Date(assessment.createdAt).toLocaleDateString()}
+                  </Text>
+                  <View style={styles.assessmentStatus}>
+                    <View style={[styles.statusDot, { backgroundColor: '#22c55e' }]} />
+                    <Text style={styles.statusText}>Active</Text>
+                  </View>
+                </View>
+
+                <View style={styles.assessmentActions}>
+                  <TouchableOpacity style={styles.viewScoresButton} onPress={() => handleViewScores(assessment)}>
+                    <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.deleteAssessmentButton} onPress={() => handleDeleteAssessment(assessment)}>
+                    <Text style={styles.deleteAssessmentButtonText}>🗑️ Delete</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-
-              <View style={styles.assessmentMeta}>
-                <Text style={styles.assessmentDate}>
-                  Created: {new Date(currentAssessment.createdAt).toLocaleDateString()}
-                </Text>
-                <View style={styles.assessmentStatus}>
-                  <View style={[styles.statusDot, { backgroundColor: '#22c55e' }]} />
-                  <Text style={styles.statusText}>Active</Text>
-                </View>
-              </View>
-
-              <View style={styles.assessmentActions}>
-                <TouchableOpacity style={styles.viewScoresButton} onPress={handleViewScores}>
-                  <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.deleteAssessmentButton} onPress={handleDeleteAssessment}>
-                  <Text style={styles.deleteAssessmentButtonText}>🗑️ Delete</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            ))
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateIcon}>📝</Text>
