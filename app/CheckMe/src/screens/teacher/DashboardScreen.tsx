@@ -1,5 +1,5 @@
 // src/screens/teacher/DashboardScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
-  Clipboard
+  Clipboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
@@ -23,63 +23,74 @@ import {
   deleteSection,
   Section
 } from '../../services/sectionService';
-import { updateTeacherProfile } from '../../services/authService';
+import { updateTeacherProfile, generateTempCode } from '../../services/authService';
 import { RootStackParamList } from '../../types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherDashboard'>;
 
+const TEMP_CODE_DURATION = 30; // seconds
+
 const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   const { user, signOut } = useAuth();
-  
-  // State for Profile Modal
+
+  // ── Sections ────────────────────────────────
+  const [sections, setSections] = useState<Section[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // ── Profile Modal ────────────────────────────
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  
-  // State for Create Section Modal
-  const [createSectionModalVisible, setCreateSectionModalVisible] = useState(false);
-  const [newSectionYear, setNewSectionYear] = useState('');
-  const [newSectionName, setNewSectionName] = useState('');
-  
-  // State for Edit Section Modal
-  const [editSectionModalVisible, setEditSectionModalVisible] = useState(false);
-  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
-  const [editSectionYear, setEditSectionYear] = useState('');
-  const [editSectionName, setEditSectionName] = useState('');
-  
-  // State for Edit Profile
   const [editFullName, setEditFullName] = useState(user?.fullName || '');
   const [editUsername, setEditUsername] = useState(user?.username || '');
   const [editEmployeeId, setEditEmployeeId] = useState(
     user?.role === 'teacher' ? user.employeeId : ''
   );
-  
-  // State for Sections
-  const [sections, setSections] = useState<Section[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-  
-  // State for Section Details Modal
+
+  // ── Create Section Modal ─────────────────────
+  const [createSectionModalVisible, setCreateSectionModalVisible] = useState(false);
+  const [newSectionYear, setNewSectionYear] = useState('');
+  const [newSectionName, setNewSectionName] = useState('');
+
+  // ── Edit Section Modal ───────────────────────
+  const [editSectionModalVisible, setEditSectionModalVisible] = useState(false);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editSectionYear, setEditSectionYear] = useState('');
+  const [editSectionName, setEditSectionName] = useState('');
+
+  // ── Section Details Modal ────────────────────
   const [sectionDetailsModalVisible, setSectionDetailsModalVisible] = useState(false);
   const [selectedSectionForDetails, setSelectedSectionForDetails] = useState<Section | null>(null);
-  
+
+  // ── Generate Code ────────────────────────────
+  const [codeModalVisible, setCodeModalVisible] = useState(false);
+  const [tempCode, setTempCode] = useState<string | null>(null);
+  const [codeSecondsLeft, setCodeSecondsLeft] = useState(TEMP_CODE_DURATION);
+  const [codeGenerating, setCodeGenerating] = useState(false);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const totalSections = sections.length;
 
-  // Load sections on mount
+  // ── Load sections ────────────────────────────
   useEffect(() => {
-    if (user?.uid) {
-      loadSections();
-    }
+    if (user?.uid) loadSections();
   }, [user?.uid]);
+
+  // ── Cleanup countdown on unmount ─────────────
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
 
   const loadSections = async () => {
     if (!user?.uid) return;
-    
     try {
       setLoading(true);
-      const fetchedSections = await getTeacherSections(user.uid);
-      setSections(fetchedSections);
+      const fetched = await getTeacherSections(user.uid);
+      setSections(fetched);
     } catch (error: any) {
       Alert.alert('Error', error.message);
     } finally {
@@ -93,30 +104,25 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     setRefreshing(false);
   };
 
+  // ── Sign Out ─────────────────────────────────
   const handleSignOut = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            }
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await signOut();
+          } catch (error: any) {
+            Alert.alert('Error', error.message);
           }
         }
-      ]
-    );
+      }
+    ]);
   };
 
+  // ── Profile ──────────────────────────────────
   const handleOpenProfile = () => {
     setEditFullName(user?.fullName || '');
     setEditUsername(user?.username || '');
@@ -125,28 +131,18 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     setProfileModalVisible(true);
   };
 
-  const handleCloseProfile = () => {
-    setProfileModalVisible(false);
-    setIsEditing(false);
-  };
-
   const handleSaveProfile = async () => {
     if (!user?.uid) return;
-
     try {
       setActionLoading(true);
-      
       await updateTeacherProfile(user.uid, {
         fullName: editFullName,
         username: editUsername,
         employeeId: editEmployeeId
       });
-
       Alert.alert('Success', 'Profile updated successfully!');
       setIsEditing(false);
       setProfileModalVisible(false);
-      
-      // Note: Changes will show after app restart or you can reload user context
     } catch (error: any) {
       Alert.alert('Error', error.message);
     } finally {
@@ -154,6 +150,65 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  // ── Generate Code ─────────────────────────────
+  const startCountdown = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+
+    setCodeSecondsLeft(TEMP_CODE_DURATION);
+
+    countdownRef.current = setInterval(() => {
+      setCodeSecondsLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current!);
+          countdownRef.current = null;
+          setTempCode(null); // code expired — clear display
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleOpenCodeModal = () => {
+    setTempCode(null);
+    setCodeSecondsLeft(TEMP_CODE_DURATION);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setCodeModalVisible(true);
+  };
+
+  const handleCloseCodeModal = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setTempCode(null);
+    setCodeSecondsLeft(TEMP_CODE_DURATION);
+    setCodeModalVisible(false);
+  };
+
+  const handleGenerateCode = async () => {
+    if (!user?.uid || !user?.username) return;
+
+    try {
+      setCodeGenerating(true);
+
+      // Stop any existing countdown before generating new code
+      if (countdownRef.current) clearInterval(countdownRef.current);
+
+      const code = await generateTempCode(user.uid, user.username);
+      setTempCode(code);
+      startCountdown();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to generate code');
+    } finally {
+      setCodeGenerating(false);
+    }
+  };
+
+  const handleCopyCode = () => {
+    if (!tempCode) return;
+    Clipboard.setString(tempCode);
+    Alert.alert('Copied!', 'Login code copied to clipboard');
+  };
+
+  // ── Sections CRUD ─────────────────────────────
   const handleCreateSection = () => {
     setNewSectionYear('');
     setNewSectionName('');
@@ -162,21 +217,17 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleConfirmCreateSection = async () => {
     if (!user?.uid) return;
-    
     if (!newSectionYear.trim() || !newSectionName.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     try {
       setActionLoading(true);
-      
       const newSection = await createSection({
         year: newSectionYear,
         sectionName: newSectionName,
         teacherId: user.uid
       });
-
       setSections([newSection, ...sections]);
       setCreateSectionModalVisible(false);
       Alert.alert('Success', `Section ${newSectionYear}-${newSectionName} created!`);
@@ -185,12 +236,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     } finally {
       setActionLoading(false);
     }
-  };
-
-  const handleCancelCreateSection = () => {
-    setNewSectionYear('');
-    setNewSectionName('');
-    setCreateSectionModalVisible(false);
   };
 
   const handleEditSection = (section: Section) => {
@@ -202,32 +247,21 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleConfirmEditSection = async () => {
     if (!user?.uid || !editingSectionId) return;
-    
     if (!editSectionYear.trim() || !editSectionName.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     try {
       setActionLoading(true);
-      
       await updateSection(user.uid, editingSectionId, {
         year: editSectionYear,
         sectionName: editSectionName
       });
-
-      // Update local state
-      setSections(sections.map(section => 
-        section.id === editingSectionId
-          ? { 
-              ...section, 
-              year: editSectionYear.trim(), 
-              sectionName: editSectionName.trim(),
-              updatedAt: Date.now()
-            }
-          : section
+      setSections(sections.map(s =>
+        s.id === editingSectionId
+          ? { ...s, year: editSectionYear.trim(), sectionName: editSectionName.trim(), updatedAt: Date.now() }
+          : s
       ));
-
       setEditSectionModalVisible(false);
       Alert.alert('Success', 'Section updated successfully!');
     } catch (error: any) {
@@ -237,36 +271,21 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const handleCancelEditSection = () => {
-    setEditingSectionId(null);
-    setEditSectionYear('');
-    setEditSectionName('');
-    setEditSectionModalVisible(false);
-  };
-
   const handleDeleteSection = (section: Section) => {
     Alert.alert(
       'Delete Section',
       `Are you sure you want to delete ${section.year}-${section.sectionName}?\n\nThis action cannot be undone.`,
       [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             if (!user?.uid) return;
-            
             try {
               setActionLoading(true);
-              
               await deleteSection(user.uid, section.id);
-              
-              // Update local state
               setSections(sections.filter(s => s.id !== section.id));
-              
               Alert.alert('Success', 'Section deleted successfully!');
             } catch (error: any) {
               Alert.alert('Error', error.message);
@@ -283,25 +302,10 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     navigation.navigate('TeacherSectionDashboard', { section });
   };
 
-  const handleShowSectionDetails = (section: Section, event: any) => {
-    event.stopPropagation();
-    setSelectedSectionForDetails(section);
-    setSectionDetailsModalVisible(true);
-  };
-
-  const handleCloseSectionDetails = () => {
-    setSectionDetailsModalVisible(false);
-    setSelectedSectionForDetails(null);
-  };
-
   const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return new Date(timestamp).toLocaleString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
     });
   };
 
@@ -310,6 +314,12 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     Alert.alert('Copied!', `${label} copied to clipboard`);
   };
 
+  // ── Countdown color ───────────────────────────
+  const countdownColor =
+    codeSecondsLeft > 15 ? '#22c55e' :
+    codeSecondsLeft > 5  ? '#f59e0b' : '#ef4444';
+
+  // ── Loading screen ────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -321,17 +331,16 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     );
   }
 
+  // ── Render ────────────────────────────────────
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Header */}
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerLeft}>
             <Text style={styles.greeting}>Welcome back,</Text>
             <TouchableOpacity onPress={handleOpenProfile} activeOpacity={0.7}>
               <Text style={styles.userName}>{user?.fullName}</Text>
@@ -340,18 +349,27 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
               {totalSections} {totalSections === 1 ? 'section' : 'sections'}
             </Text>
           </View>
-          <TouchableOpacity 
-            style={styles.signOutButton}
-            onPress={handleSignOut}
-          >
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
+
+          <View style={styles.headerRight}>
+            {/* Generate Code Button */}
+            <TouchableOpacity
+              style={styles.generateCodeButton}
+              onPress={handleOpenCodeModal}
+            >
+              <Text style={styles.generateCodeButtonText}>🔑 Raspi Login</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        {/* Manage Sections */}
+
+        {/* Sections */}
         <View style={styles.manageSections}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Your Sections</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.createButton}
               onPress={handleCreateSection}
               disabled={actionLoading}
@@ -367,9 +385,9 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
               <Text style={styles.emptyStateSubtext}>Create your first section to get started</Text>
             </View>
           ) : (
-            sections.map((section) => (
+            sections.map(section => (
               <View key={section.id} style={styles.sectionCard}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.sectionCardContent}
                   onPress={() => handleSectionPress(section)}
                   activeOpacity={0.7}
@@ -386,24 +404,26 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                     </View>
                     <TouchableOpacity
                       style={styles.detailIconButton}
-                      onPress={(e) => handleShowSectionDetails(section, e)}
+                      onPress={() => {
+                        setSelectedSectionForDetails(section);
+                        setSectionDetailsModalVisible(true);
+                      }}
                       disabled={actionLoading}
                     >
                       <Text style={styles.detailIconText}>ℹ️</Text>
                     </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
-                
-                {/* Action Buttons */}
+
                 <View style={styles.sectionCardActions}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.editButton}
                     onPress={() => handleEditSection(section)}
                     disabled={actionLoading}
                   >
                     <Text style={styles.editButtonText}>✏️ Edit</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.deleteButton}
                     onPress={() => handleDeleteSection(section)}
                     disabled={actionLoading}
@@ -424,12 +444,103 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       )}
 
-      {/* Profile Modal */}
+      {/* ── Generate Code Modal ─────────────────── */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={codeModalVisible}
+        onRequestClose={handleCloseCodeModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Raspi Login Code</Text>
+              <TouchableOpacity style={styles.iconButton} onPress={handleCloseCodeModal}>
+                <Text style={styles.iconButtonText}>✕ Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.modalBody, styles.codeModalBody]}>
+              <Text style={styles.codeInstructions}>
+                Generate a one-time 8-digit code to log in to the Raspberry Pi device.
+                The code expires in <Text style={{ fontWeight: 'bold' }}>30 seconds</Text>.
+              </Text>
+
+              {tempCode ? (
+                <>
+                  {/* Code display */}
+                  <View style={styles.codeDisplayContainer}>
+                    <Text style={styles.codeDisplayText}>{tempCode}</Text>
+                  </View>
+
+                  {/* Countdown ring */}
+                  <View style={styles.countdownContainer}>
+                    <Text style={[styles.countdownText, { color: countdownColor }]}>
+                      {codeSecondsLeft}s
+                    </Text>
+                    <Text style={styles.countdownLabel}>remaining</Text>
+                  </View>
+
+                  {/* Expired message */}
+                  {codeSecondsLeft === 0 && (
+                    <Text style={styles.expiredText}>Code expired. Generate a new one.</Text>
+                  )}
+
+                  {/* Action buttons */}
+                  <View style={styles.codeActions}>
+                    <TouchableOpacity
+                      style={[styles.copyCodeButton, codeSecondsLeft === 0 && styles.disabledButton]}
+                      onPress={handleCopyCode}
+                      disabled={codeSecondsLeft === 0}
+                    >
+                      <Text style={styles.copyCodeButtonText}>📋 Copy Code</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.regenerateButton}
+                      onPress={handleGenerateCode}
+                      disabled={codeGenerating}
+                    >
+                      {codeGenerating ? (
+                        <ActivityIndicator color="#ffffff" size="small" />
+                      ) : (
+                        <Text style={styles.regenerateButtonText}>🔄 New Code</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                /* No code yet — show generate button */
+                <TouchableOpacity
+                  style={styles.generateButton}
+                  onPress={handleGenerateCode}
+                  disabled={codeGenerating}
+                >
+                  <LinearGradient
+                    colors={['#6366f1', '#8b5cf6']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.gradientButton}
+                  >
+                    {codeGenerating ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <Text style={styles.generateButtonText}>🔑 Generate Code</Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Profile Modal ────────────────────────── */}
       <Modal
         animationType="slide"
         transparent={true}
         visible={profileModalVisible}
-        onRequestClose={handleCloseProfile}
+        onRequestClose={() => setProfileModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -438,41 +549,22 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
               <View style={styles.modalActions}>
                 {!isEditing ? (
                   <>
-                    <TouchableOpacity 
-                      style={styles.iconButton}
-                      onPress={() => setIsEditing(true)}
-                      disabled={actionLoading}
-                    >
+                    <TouchableOpacity style={styles.iconButton} onPress={() => setIsEditing(true)} disabled={actionLoading}>
                       <Text style={styles.iconButtonText}>✏️ Edit</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.iconButton}
-                      onPress={handleCloseProfile}
-                      disabled={actionLoading}
-                    >
+                    <TouchableOpacity style={styles.iconButton} onPress={() => setProfileModalVisible(false)} disabled={actionLoading}>
                       <Text style={styles.iconButtonText}>✕ Close</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
                   <>
-                    <TouchableOpacity 
-                      style={[styles.iconButton, styles.saveButton]}
-                      onPress={handleSaveProfile}
-                      disabled={actionLoading}
-                    >
-                      {actionLoading ? (
-                        <ActivityIndicator size="small" color="#ffffff" />
-                      ) : (
-                        <Text style={[styles.iconButtonText, styles.saveButtonText]}>
-                          ✓ Save
-                        </Text>
-                      )}
+                    <TouchableOpacity style={[styles.iconButton, styles.saveButton]} onPress={handleSaveProfile} disabled={actionLoading}>
+                      {actionLoading
+                        ? <ActivityIndicator size="small" color="#ffffff" />
+                        : <Text style={[styles.iconButtonText, styles.saveButtonText]}>✓ Save</Text>
+                      }
                     </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.iconButton}
-                      onPress={() => setIsEditing(false)}
-                      disabled={actionLoading}
-                    >
+                    <TouchableOpacity style={styles.iconButton} onPress={() => setIsEditing(false)} disabled={actionLoading}>
                       <Text style={styles.iconButtonText}>✕ Cancel</Text>
                     </TouchableOpacity>
                   </>
@@ -483,86 +575,55 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
             <ScrollView style={styles.modalBody}>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Full Name</Text>
-                {isEditing ? (
-                  <TextInput
-                    style={styles.modalInput}
-                    value={editFullName}
-                    onChangeText={setEditFullName}
-                    placeholder="Enter full name"
-                    editable={!actionLoading}
-                  />
-                ) : (
-                  <Text style={styles.modalValue}>{user?.fullName}</Text>
-                )}
+                {isEditing
+                  ? <TextInput style={styles.modalInput} value={editFullName} onChangeText={setEditFullName} placeholder="Enter full name" editable={!actionLoading} />
+                  : <Text style={styles.modalValue}>{user?.fullName}</Text>
+                }
               </View>
 
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Email</Text>
-                <Text style={[styles.modalValue, styles.readOnlyValue]}>
-                  {user?.email}
-                </Text>
-                {isEditing && (
-                  <Text style={styles.helpText}>Email cannot be changed</Text>
-                )}
+                <Text style={[styles.modalValue, styles.readOnlyValue]}>{user?.email}</Text>
+                {isEditing && <Text style={styles.helpText}>Email cannot be changed</Text>}
               </View>
 
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Username</Text>
-                {isEditing ? (
-                  <TextInput
-                    style={styles.modalInput}
-                    value={editUsername}
-                    onChangeText={setEditUsername}
-                    placeholder="Enter username"
-                    autoCapitalize="none"
-                    editable={!actionLoading}
-                  />
-                ) : (
-                  <Text style={styles.modalValue}>{user?.username}</Text>
-                )}
+                {isEditing
+                  ? <TextInput style={styles.modalInput} value={editUsername} onChangeText={setEditUsername} placeholder="Enter username" autoCapitalize="none" editable={!actionLoading} />
+                  : <Text style={styles.modalValue}>{user?.username}</Text>
+                }
               </View>
 
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Employee ID</Text>
-                {isEditing ? (
-                  <TextInput
-                    style={styles.modalInput}
-                    value={editEmployeeId}
-                    onChangeText={setEditEmployeeId}
-                    placeholder="Enter employee ID"
-                    editable={!actionLoading}
-                  />
-                ) : (
-                  <Text style={styles.modalValue}>
-                    {user?.role === 'teacher' ? user.employeeId : 'N/A'}
-                  </Text>
-                )}
+                {isEditing
+                  ? <TextInput style={styles.modalInput} value={editEmployeeId} onChangeText={setEditEmployeeId} placeholder="Enter employee ID" editable={!actionLoading} />
+                  : <Text style={styles.modalValue}>{user?.role === 'teacher' ? user.employeeId : 'N/A'}</Text>
+                }
               </View>
 
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Role</Text>
-                <Text style={[styles.modalValue, styles.readOnlyValue]}>
-                  {user?.role}
-                </Text>
+                <Text style={[styles.modalValue, styles.readOnlyValue]}>{user?.role}</Text>
               </View>
             </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* Create Section Modal */}
+      {/* ── Create Section Modal ─────────────────── */}
       <Modal
         animationType="slide"
         transparent={true}
         visible={createSectionModalVisible}
-        onRequestClose={handleCancelCreateSection}
+        onRequestClose={() => setCreateSectionModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create New Section</Text>
             </View>
-
             <View style={styles.modalBody}>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Year Level</Text>
@@ -576,7 +637,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   editable={!actionLoading}
                 />
               </View>
-
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Section Name</Text>
                 <TextInput
@@ -588,32 +648,13 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   editable={!actionLoading}
                 />
               </View>
-
               <View style={styles.createSectionActions}>
-                <TouchableOpacity 
-                  style={styles.cancelButton}
-                  onPress={handleCancelCreateSection}
-                  disabled={actionLoading}
-                >
+                <TouchableOpacity style={styles.cancelButton} onPress={() => setCreateSectionModalVisible(false)} disabled={actionLoading}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.confirmButton}
-                  onPress={handleConfirmCreateSection}
-                  disabled={actionLoading}
-                >
-                  <LinearGradient
-                    colors={['#84cc16', '#22c55e']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.gradientButton}
-                  >
-                    {actionLoading ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <Text style={styles.confirmButtonText}>Create</Text>
-                    )}
+                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmCreateSection} disabled={actionLoading}>
+                  <LinearGradient colors={['#84cc16', '#22c55e']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.gradientButton}>
+                    {actionLoading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.confirmButtonText}>Create</Text>}
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -622,19 +663,18 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* Edit Section Modal */}
+      {/* ── Edit Section Modal ───────────────────── */}
       <Modal
         animationType="slide"
         transparent={true}
         visible={editSectionModalVisible}
-        onRequestClose={handleCancelEditSection}
+        onRequestClose={() => setEditSectionModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Section</Text>
             </View>
-
             <View style={styles.modalBody}>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Year Level</Text>
@@ -648,7 +688,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   editable={!actionLoading}
                 />
               </View>
-
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Section Name</Text>
                 <TextInput
@@ -660,32 +699,13 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   editable={!actionLoading}
                 />
               </View>
-
               <View style={styles.createSectionActions}>
-                <TouchableOpacity 
-                  style={styles.cancelButton}
-                  onPress={handleCancelEditSection}
-                  disabled={actionLoading}
-                >
+                <TouchableOpacity style={styles.cancelButton} onPress={() => setEditSectionModalVisible(false)} disabled={actionLoading}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.confirmButton}
-                  onPress={handleConfirmEditSection}
-                  disabled={actionLoading}
-                >
-                  <LinearGradient
-                    colors={['#84cc16', '#22c55e']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.gradientButton}
-                  >
-                    {actionLoading ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <Text style={styles.confirmButtonText}>Save Changes</Text>
-                    )}
+                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmEditSection} disabled={actionLoading}>
+                  <LinearGradient colors={['#84cc16', '#22c55e']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.gradientButton}>
+                    {actionLoading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.confirmButtonText}>Save Changes</Text>}
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -694,25 +714,21 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* Section Details Modal */}
+      {/* ── Section Details Modal ────────────────── */}
       <Modal
         animationType="fade"
         transparent={true}
         visible={sectionDetailsModalVisible}
-        onRequestClose={handleCloseSectionDetails}
+        onRequestClose={() => setSectionDetailsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Section Details</Text>
-              <TouchableOpacity
-                style={styles.iconButton}
-                onPress={handleCloseSectionDetails}
-              >
+              <TouchableOpacity style={styles.iconButton} onPress={() => setSectionDetailsModalVisible(false)}>
                 <Text style={styles.iconButtonText}>✕ Close</Text>
               </TouchableOpacity>
             </View>
-
             <ScrollView style={styles.modalBody}>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Section Name</Text>
@@ -720,14 +736,12 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   {selectedSectionForDetails?.year}-{selectedSectionForDetails?.sectionName}
                 </Text>
               </View>
-
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Created At</Text>
                 <Text style={styles.modalValue}>
                   {selectedSectionForDetails?.createdAt ? formatDate(selectedSectionForDetails.createdAt) : 'N/A'}
                 </Text>
               </View>
-
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Section ID (UID)</Text>
                 <View style={styles.uidContainer}>
@@ -742,7 +756,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   </TouchableOpacity>
                 </View>
               </View>
-
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Teacher ID (UID)</Text>
                 <View style={styles.uidContainer}>
@@ -766,32 +779,13 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5'
-  },
-  scrollView: {
-    flex: 1
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#64748b'
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  scrollView: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 16, color: '#64748b' },
   loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center'
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center'
   },
   header: {
     flexDirection: 'row',
@@ -804,304 +798,128 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#2a2060'
   },
-  greeting: {
-    fontSize: 16,
-    color: '#cdd5df'
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginTop: 4,
-    textDecorationLine: 'underline'
-  },
-  sectionDetails: {
-    fontSize: 14,
-    color: '#cdd5df',
-    marginTop: 2
-  },
-  signOutButton: {
-    backgroundColor: '#fee2e2',
-    paddingHorizontal: 16,
+  headerLeft: { flex: 1 },
+  headerRight: { alignItems: 'flex-end', gap: 8 },
+  greeting: { fontSize: 16, color: '#cdd5df' },
+  userName: { fontSize: 24, fontWeight: 'bold', color: '#ffffff', marginTop: 4, textDecorationLine: 'underline' },
+  sectionDetails: { fontSize: 14, color: '#cdd5df', marginTop: 2 },
+  generateCodeButton: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8
   },
-  signOutText: {
-    color: '#dc2626',
-    fontWeight: '600',
-    fontSize: 14
-  },
-  manageSections: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 24
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1e293b'
-  },
-  createButton: {
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8
-  },
-  createButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 14
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40
-  },
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 16
-  },
-  emptyStateText: {
-    fontSize: 18,
-    color: '#64748b',
-    fontWeight: '600',
-    marginBottom: 8
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#94a3b8'
-  },
+  generateCodeButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 13 },
+  signOutButton: { backgroundColor: '#fee2e2', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  signOutText: { color: '#dc2626', fontWeight: '600', fontSize: 14 },
+  manageSections: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 24 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitle: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
+  createButton: { backgroundColor: '#22c55e', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  createButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  emptyStateIcon: { fontSize: 48, marginBottom: 16 },
+  emptyStateText: { fontSize: 18, color: '#64748b', fontWeight: '600', marginBottom: 8 },
+  emptyStateSubtext: { fontSize: 14, color: '#94a3b8' },
   sectionCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden'
+    backgroundColor: '#ffffff', borderRadius: 12, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, overflow: 'hidden'
   },
-  sectionCardContent: {
-    padding: 20
+  sectionCardContent: { padding: 20 },
+  sectionCardContentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionCardInfo: { flex: 1 },
+  detailIconButton: { padding: 8, marginLeft: 8 },
+  detailIconText: { fontSize: 20 },
+  sectionCardTitle: { fontSize: 18, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  sectionCardDetails: { fontSize: 14, color: '#64748b' },
+  sectionCardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  editButton: { flex: 1, paddingVertical: 12, alignItems: 'center', backgroundColor: '#eff6ff', borderRightWidth: 1, borderRightColor: '#f1f5f9' },
+  editButtonText: { fontSize: 14, fontWeight: '600', color: '#3b82f6' },
+  deleteButton: { flex: 1, paddingVertical: 12, alignItems: 'center', backgroundColor: '#fef2f2' },
+  deleteButtonText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
+
+  // ── Code Modal ───────────────────────────────
+  codeModalBody: { alignItems: 'center', paddingVertical: 24 },
+  codeInstructions: { fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  codeDisplayContainer: {
+    backgroundColor: '#171443',
+    paddingHorizontal: 32,
+    paddingVertical: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#6366f1'
   },
-  sectionCardContentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center'
+  codeDisplayText: {
+    fontSize: 40,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 8,
+    fontFamily: 'monospace'
   },
-  sectionCardInfo: {
-    flex: 1
+  countdownContainer: { alignItems: 'center', marginBottom: 16 },
+  countdownText: { fontSize: 36, fontWeight: 'bold' },
+  countdownLabel: { fontSize: 14, color: '#64748b', marginTop: 2 },
+  expiredText: { fontSize: 14, color: '#ef4444', fontWeight: '600', marginBottom: 16 },
+  codeActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  copyCodeButton: {
+    flex: 1, backgroundColor: '#dbeafe', paddingVertical: 14,
+    borderRadius: 10, alignItems: 'center'
   },
-  detailIconButton: {
-    padding: 8,
-    marginLeft: 8
+  copyCodeButtonText: { fontSize: 15, fontWeight: '600', color: '#2563eb' },
+  disabledButton: { opacity: 0.4 },
+  regenerateButton: {
+    flex: 1, backgroundColor: '#6366f1', paddingVertical: 14,
+    borderRadius: 10, alignItems: 'center'
   },
-  detailIconText: {
-    fontSize: 20
-  },
-  sectionCardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4
-  },
-  sectionCardDetails: {
-    fontSize: 14,
-    color: '#64748b'
-  },
-  sectionCardActions: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9'
-  },
-  editButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#eff6ff',
-    borderRightWidth: 1,
-    borderRightColor: '#f1f5f9'
-  },
-  editButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3b82f6'
-  },
-  deleteButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#fef2f2'
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ef4444'
-  },
-  // Modal Styles
+  regenerateButtonText: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
+  generateButton: { width: '100%', borderRadius: 12, overflow: 'hidden', marginTop: 8 },
+  generateButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
+
+  // ── Modal shared ─────────────────────────────
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 20
   },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    width: '100%',
-    maxWidth: 500,
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10
+    backgroundColor: '#ffffff', borderRadius: 20,
+    width: '100%', maxWidth: 500, maxHeight: '80%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 10, elevation: 10
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0'
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 15,
+    borderBottomWidth: 1, borderBottomColor: '#e2e8f0'
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1e293b'
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 8
-  },
-  iconButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#f1f5f9'
-  },
-  iconButtonText: {
-    fontSize: 14,
-    color: '#475569',
-    fontWeight: '600'
-  },
-  saveButton: {
-    backgroundColor: '#22c55e'
-  },
-  saveButtonText: {
-    color: '#ffffff'
-  },
-  modalBody: {
-    padding: 20
-  },
-  modalField: {
-    marginBottom: 20
-  },
-  modalLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 8
-  },
-  modalValue: {
-    fontSize: 16,
-    color: '#1e293b',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8fafc',
-    borderRadius: 8
-  },
-  readOnlyValue: {
-    color: '#64748b',
-    fontStyle: 'italic'
-  },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
+  modalActions: { flexDirection: 'row', gap: 8 },
+  iconButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#f1f5f9' },
+  iconButtonText: { fontSize: 14, color: '#475569', fontWeight: '600' },
+  saveButton: { backgroundColor: '#22c55e' },
+  saveButtonText: { color: '#ffffff' },
+  modalBody: { padding: 20 },
+  modalField: { marginBottom: 20 },
+  modalLabel: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 8 },
+  modalValue: { fontSize: 16, color: '#1e293b', paddingVertical: 12, paddingHorizontal: 16, backgroundColor: '#f8fafc', borderRadius: 8 },
+  readOnlyValue: { color: '#64748b', fontStyle: 'italic' },
   modalInput: {
-    fontSize: 16,
-    color: '#1e293b',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0'
+    fontSize: 16, color: '#1e293b', paddingVertical: 12, paddingHorizontal: 16,
+    backgroundColor: '#ffffff', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0'
   },
-  helpText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 4,
-    fontStyle: 'italic'
-  },
-  monoValue: {
-    fontFamily: 'monospace',
-    fontSize: 12
-  },
-  uidContainer: {
-    flexDirection: 'column',
-    gap: 8
-  },
-  uidText: {
-    flex: 1
-  },
-  copyButton: {
-    backgroundColor: '#22c55e',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    alignItems: 'center'
-  },
-  copyButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 14
-  },
-  createSectionActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center'
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569'
-  },
-  confirmButton: {
-    flex: 1,
-    borderRadius: 10,
-    overflow: 'hidden'
-  },
-  gradientButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  confirmButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff'
-  }
+  helpText: { fontSize: 12, color: '#94a3b8', marginTop: 4, fontStyle: 'italic' },
+  monoValue: { fontFamily: 'monospace', fontSize: 12 },
+  uidContainer: { flexDirection: 'column', gap: 8 },
+  uidText: { flex: 1 },
+  copyButton: { backgroundColor: '#22c55e', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, alignItems: 'center' },
+  copyButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
+  createSectionActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  cancelButton: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#475569' },
+  confirmButton: { flex: 1, borderRadius: 10, overflow: 'hidden' },
+  gradientButton: { paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  confirmButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
 });
 
 export default DashboardScreen;

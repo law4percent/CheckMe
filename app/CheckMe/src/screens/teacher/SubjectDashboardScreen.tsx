@@ -1,3 +1,4 @@
+// src/screens/teacher/SubjectDashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../types';
+import { RootStackParamList, Assessment } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -25,7 +26,11 @@ import {
   Enrollment
 } from '../../services/enrollmentService';
 import { getSubjectInviteCode } from '../../services/inviteCodeService';
-import { createAssessment, getAssessment, deleteAssessment, Assessment } from '../../services/assessmentService';
+import {
+  createAssessment,
+  getAssessments,
+  deleteAssessment,
+} from '../../services/assessmentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDashboard'>;
 
@@ -50,7 +55,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [pendingEnrollmentsModalVisible, setPendingEnrollmentsModalVisible] = useState(false);
 
   useEffect(() => {
-    console.log('🔄 [SubjectDashboard] useEffect triggered');
     if (subject.id && user?.uid) {
       loadEnrollments();
       loadInviteCode();
@@ -58,27 +62,22 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   }, [subject.id, user?.uid]);
 
+  // ── Load existing assessment for this subject ──
   const loadExistingAssessment = async () => {
     if (!user?.uid) {
-      console.log('⚠️ [SubjectDashboard] No user UID, skipping assessment load');
       setCurrentAssessment(null);
       return;
     }
-    
+
     try {
-      console.log('📋 [SubjectDashboard] Loading assessment...');
-      console.log('  - teacherId:', user.uid);
-      console.log('  - sectionId:', section.id);
-      console.log('  - subjectId:', subject.id);
-      
-      // FIXED: Pass teacherId, sectionId, and subjectId
-      const assessment = await getAssessment(user.uid, section.id, subject.id);
-      
-      if (assessment && assessment.assessmentUid) {
-        console.log('✅ [SubjectDashboard] Loaded assessment:', assessment.assessmentUid);
-        setCurrentAssessment(assessment);
+      // Fetch all assessments for this teacher filtered by subjectUid
+      const assessments = await getAssessments(user.uid, subject.id);
+
+      if (assessments.length > 0) {
+        // Use the most recent one if multiple exist
+        const sorted = assessments.sort((a, b) => b.createdAt - a.createdAt);
+        setCurrentAssessment(sorted[0]);
       } else {
-        console.log('📋 [SubjectDashboard] No assessment found');
         setCurrentAssessment(null);
       }
     } catch (error: any) {
@@ -89,13 +88,11 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const loadEnrollments = async () => {
     if (!user?.uid) return;
-    
     try {
       setLoading(true);
-      const fetchedEnrollments = await getSubjectEnrollments(user.uid, subject.id);
-      setEnrollments(fetchedEnrollments);
+      const fetched = await getSubjectEnrollments(user.uid, subject.id);
+      setEnrollments(fetched);
     } catch (error: any) {
-      console.error('❌ [SubjectDashboard] Error loading enrollments:', error);
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);
@@ -104,25 +101,21 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const loadInviteCode = async () => {
     if (!user?.uid) return;
-    
     try {
       const code = await getSubjectInviteCode(user.uid, subject.id);
       setInviteCode(code);
     } catch (error: any) {
-      console.error('❌ [SubjectDashboard] Error loading invite code:', error);
+      console.error('❌ Error loading invite code:', error);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      loadEnrollments(),
-      loadInviteCode(),
-      loadExistingAssessment()
-    ]);
+    await Promise.all([loadEnrollments(), loadInviteCode(), loadExistingAssessment()]);
     setRefreshing(false);
   };
 
+  // ── Create Assessment ─────────────────────────
   const handleCreateAssessment = () => {
     setSelectedAssessmentType(null);
     setAssessmentName('');
@@ -134,12 +127,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       Alert.alert('Error', 'Please select assessment type');
       return;
     }
-
     if (!assessmentName.trim()) {
       Alert.alert('Error', 'Please enter assessment name');
       return;
     }
-
     if (!user?.uid) {
       Alert.alert('Error', 'User not authenticated');
       return;
@@ -147,43 +138,42 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
     try {
       setActionLoading(true);
-      
+
+      // NEW: createAssessment now takes (teacherId, name, type, sectionUid, subjectUid)
+      // Path written: /assessments/{teacherId}/{assessmentUid}/
       const assessment = await createAssessment(
         user.uid,
         assessmentName.trim(),
         selectedAssessmentType,
-        subject.id,
-        subject.subjectName,
-        section.id,
-        section.sectionName,
-        section.year
+        section.id,   // sectionUid
+        subject.id    // subjectUid
       );
 
       setCurrentAssessment(assessment);
       setCreateAssessmentModalVisible(false);
-      
+
       Alert.alert(
         'Success! 🎉',
-        `Assessment "${assessmentName}" created successfully!\n\nAssessment UID: QWER1234\n\nThis UID will be used by the Raspberry Pi system to match answer sheets.`,
+        `Assessment "${assessment.assessmentName}" created!\n\nAssessment UID: ${assessment.assessmentUid}\n\nWrite this UID at the top of your answer key paper before scanning.`,
         [{ text: 'OK' }]
       );
 
-      // Reset form
       setSelectedAssessmentType(null);
       setAssessmentName('');
-
     } catch (error: any) {
-      console.error('❌ [SubjectDashboard] Error creating assessment:', error);
       Alert.alert('Error', error.message || 'Failed to create assessment');
     } finally {
       setActionLoading(false);
     }
   };
 
+  // ── Delete Assessment ─────────────────────────
   const handleDeleteAssessment = () => {
+    if (!currentAssessment) return;
+
     Alert.alert(
       'Delete Assessment',
-      'Are you sure you want to delete this assessment? This will remove all student scores.',
+      `Are you sure you want to delete "${currentAssessment.assessmentName}"?\n\nAssessment UID: ${currentAssessment.assessmentUid}\n\nThis will remove the assessment record.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -191,11 +181,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           style: 'destructive',
           onPress: async () => {
             if (!user?.uid) return;
-            
             try {
               setActionLoading(true);
-              // FIXED: Pass teacherId, sectionId, and subjectId
-              await deleteAssessment(user.uid, section.id, subject.id);
+              // NEW: deleteAssessment(teacherId, assessmentUid)
+              await deleteAssessment(user.uid, currentAssessment.assessmentUid);
               setCurrentAssessment(null);
               Alert.alert('Success', 'Assessment deleted successfully');
             } catch (error: any) {
@@ -209,23 +198,19 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   };
 
+  // ── View Scores ───────────────────────────────
   const handleViewScores = () => {
     if (!currentAssessment) {
       Alert.alert('Error', 'No assessment found');
       return;
     }
-
-    if (!currentAssessment.assessmentUid) {
-      Alert.alert('Error', 'Assessment UID is missing');
-      return;
-    }
-
     navigation.navigate('ViewScores', {
       assessmentUid: currentAssessment.assessmentUid,
-      assessmentName: currentAssessment.assessmentName || 'Assessment'
+      assessmentName: currentAssessment.assessmentName
     });
   };
 
+  // ── Enrollment handlers ───────────────────────
   const handleViewEnrolledStudents = () => {
     setIsEditingEnrollments(false);
     setEnrolledStudentsModalVisible(true);
@@ -238,7 +223,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const handleUnenrollStudent = async (studentId: string, studentName: string) => {
     Alert.alert(
       'Unenroll Student',
-      `Are you sure you want to unenroll ${studentName}? This will also remove all their scores.`,
+      `Are you sure you want to unenroll ${studentName}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -246,13 +231,11 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           style: 'destructive',
           onPress: async () => {
             if (!user?.uid) return;
-            
             try {
               setActionLoading(true);
               await removeEnrollment(user.uid, subject.id, studentId);
-              setEnrollments(enrollments.filter(e => e.studentId !== studentId));
               await loadEnrollments();
-              Alert.alert('Success', `${studentName} has been unenrolled successfully!`);
+              Alert.alert('Success', `${studentName} has been unenrolled`);
             } catch (error: any) {
               Alert.alert('Error', error.message);
             } finally {
@@ -269,27 +252,22 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       Alert.alert('Error', 'No invite code available.');
       return;
     }
-    
     Clipboard.setString(inviteCode);
     Alert.alert('Copied!', 'Invite code copied to clipboard');
   };
 
   const handleApproveEnrollment = async (enrollment: Enrollment) => {
     if (!user?.uid) return;
-    
     try {
       setActionLoading(true);
       await approveEnrollment(user.uid, subject.id, enrollment.studentId);
-      
       setEnrollments(enrollments.map(e =>
         e.studentId === enrollment.studentId
           ? { ...e, status: 'approved', approvedAt: Date.now() }
           : e
       ));
-
       Alert.alert('Success', `${enrollment.studentName} has been approved!`);
     } catch (error: any) {
-      console.error('❌ [SubjectDashboard] Error approving enrollment:', error);
       Alert.alert('Error', error.message);
     } finally {
       setActionLoading(false);
@@ -298,7 +276,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const handleRejectEnrollment = async (enrollment: Enrollment) => {
     if (!user?.uid) return;
-    
     Alert.alert(
       'Reject Enrollment',
       `Are you sure you want to reject ${enrollment.studentName}?`,
@@ -311,16 +288,13 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             try {
               setActionLoading(true);
               await rejectEnrollment(user.uid, subject.id, enrollment.studentId);
-              
               setEnrollments(enrollments.map(e =>
                 e.studentId === enrollment.studentId
-                  ? { ...e, status: 'rejected', rejectedAt: Date.now() }
+                  ? { ...e, status: 'rejected' }
                   : e
               ));
-
               Alert.alert('Success', 'Enrollment rejected');
             } catch (error: any) {
-              console.error('❌ [SubjectDashboard] Error rejecting enrollment:', error);
               Alert.alert('Error', error.message);
             } finally {
               setActionLoading(false);
@@ -349,9 +323,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
         style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Subject Info Header */}
         <View style={styles.subjectInfoHeader}>
@@ -359,12 +331,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           <Text style={styles.subjectInfoSubtitle}>
             {section.year}-{section.sectionName}
           </Text>
-          
           {inviteCode && (
-            <TouchableOpacity
-              style={styles.inviteCodeContainer}
-              onPress={handleCopyInviteCode}
-            >
+            <TouchableOpacity style={styles.inviteCodeContainer} onPress={handleCopyInviteCode}>
               <Text style={styles.inviteCodeLabel}>Invite Code:</Text>
               <Text style={styles.inviteCodeText}>{inviteCode}</Text>
               <Text style={styles.copyIcon}>📋</Text>
@@ -372,7 +340,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           )}
         </View>
 
-        {/* Action Buttons */}
+        {/* Create Assessment Button */}
         <View style={styles.actionSection}>
           <TouchableOpacity
             style={styles.actionButton}
@@ -411,7 +379,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
-          
+
           {currentAssessment ? (
             <View style={styles.assessmentCard}>
               <View style={styles.assessmentHeader}>
@@ -419,19 +387,15 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   {currentAssessment.assessmentType === 'quiz' ? '📝' : '📄'}
                 </Text>
                 <View style={styles.assessmentInfo}>
-                  <Text style={styles.assessmentName}>
-                    {currentAssessment.assessmentName}
-                  </Text>
+                  <Text style={styles.assessmentName}>{currentAssessment.assessmentName}</Text>
                   <Text style={styles.assessmentType}>
-                    {currentAssessment.assessmentType.charAt(0).toUpperCase() + 
-                    currentAssessment.assessmentType.slice(1)}
+                    {currentAssessment.assessmentType.charAt(0).toUpperCase() +
+                      currentAssessment.assessmentType.slice(1)}
                   </Text>
-                  <Text style={styles.assessmentUid}>
-                    UID: {currentAssessment.assessmentUid}
-                  </Text>
+                  <Text style={styles.assessmentUid}>UID: {currentAssessment.assessmentUid}</Text>
                 </View>
               </View>
-              
+
               <View style={styles.assessmentMeta}>
                 <Text style={styles.assessmentDate}>
                   Created: {new Date(currentAssessment.createdAt).toLocaleDateString()}
@@ -443,17 +407,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
               </View>
 
               <View style={styles.assessmentActions}>
-                <TouchableOpacity
-                  style={styles.viewScoresButton}
-                  onPress={handleViewScores}
-                >
+                <TouchableOpacity style={styles.viewScoresButton} onPress={handleViewScores}>
                   <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.deleteAssessmentButton}
-                  onPress={handleDeleteAssessment}
-                >
+                <TouchableOpacity style={styles.deleteAssessmentButton} onPress={handleDeleteAssessment}>
                   <Text style={styles.deleteAssessmentButtonText}>🗑️ Delete</Text>
                 </TouchableOpacity>
               </View>
@@ -463,10 +420,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
               <Text style={styles.emptyStateIcon}>📝</Text>
               <Text style={styles.emptyStateText}>No assessments yet</Text>
               <Text style={styles.emptyStateSubtext}>
-                Create your first assessment to get started
-              </Text>
-              <Text style={styles.emptyStateNote}>
-                Note: Only one test assessment (UID: QWER1234) can be created
+                Create an assessment to get started
               </Text>
             </View>
           )}
@@ -480,7 +434,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       )}
 
-      {/* Create Assessment Modal */}
+      {/* ── Create Assessment Modal ───────────────── */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -492,9 +446,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Assessment</Text>
             </View>
-
             <View style={styles.modalBody}>
-              <Text style={styles.modalLabel}>Assessment Name:</Text>
+              <Text style={styles.modalLabel}>Assessment Name</Text>
               <TextInput
                 style={styles.textInput}
                 placeholder="Enter assessment name"
@@ -504,8 +457,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 autoCapitalize="words"
               />
 
-              <Text style={[styles.modalLabel, { marginTop: 20 }]}>Select Assessment Type:</Text>
-              
+              <Text style={[styles.modalLabel, { marginTop: 20 }]}>Assessment Type</Text>
+
               <TouchableOpacity
                 style={[
                   styles.assessmentTypeButton,
@@ -517,9 +470,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 <Text style={[
                   styles.assessmentTypeText,
                   selectedAssessmentType === 'quiz' && styles.assessmentTypeTextSelected
-                ]}>
-                  Quiz
-                </Text>
+                ]}>Quiz</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -533,9 +484,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 <Text style={[
                   styles.assessmentTypeText,
                   selectedAssessmentType === 'exam' && styles.assessmentTypeTextSelected
-                ]}>
-                  Exam
-                </Text>
+                ]}>Exam</Text>
               </TouchableOpacity>
 
               <View style={styles.modalActions}>
@@ -545,18 +494,17 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.confirmButton}
-                  onPress={handleConfirmCreateAssessment}
-                >
+                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmCreateAssessment}>
                   <LinearGradient
                     colors={['#84cc16', '#22c55e']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.gradientButton}
                   >
-                    <Text style={styles.confirmButtonText}>Create</Text>
+                    {actionLoading
+                      ? <ActivityIndicator color="#ffffff" />
+                      : <Text style={styles.confirmButtonText}>Create</Text>
+                    }
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -565,7 +513,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Enrolled Students Modal */}
+      {/* ── Enrolled Students Modal ───────────────── */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -577,7 +525,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Enrolled Students ({approvedEnrollments.length})</Text>
             </View>
-
             <ScrollView style={styles.modalScrollView}>
               <View style={styles.modalBody}>
                 {approvedEnrollments.length === 0 ? (
@@ -586,7 +533,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                     <Text style={styles.emptyStateText}>No enrolled students</Text>
                   </View>
                 ) : (
-                  approvedEnrollments.map((enrollment) => (
+                  approvedEnrollments.map(enrollment => (
                     <View key={enrollment.studentId} style={styles.enrolledStudentItem}>
                       <View style={styles.enrolledStudentInfo}>
                         <Text style={styles.studentName}>{enrollment.studentName}</Text>
@@ -603,7 +550,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                     </View>
                   ))
                 )}
-
                 <View style={styles.modalActions}>
                   {approvedEnrollments.length > 0 && (
                     <TouchableOpacity
@@ -615,7 +561,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                       </Text>
                     </TouchableOpacity>
                   )}
-
                   <TouchableOpacity
                     style={styles.closeButton}
                     onPress={() => {
@@ -632,7 +577,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Pending Enrollments Modal */}
+      {/* ── Pending Enrollments Modal ─────────────── */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -644,7 +589,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Pending Enrollments ({pendingEnrollments.length})</Text>
             </View>
-
             <ScrollView style={styles.modalScrollView}>
               <View style={styles.modalBody}>
                 {pendingEnrollments.length === 0 ? (
@@ -653,7 +597,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                     <Text style={styles.emptyStateText}>No pending requests</Text>
                   </View>
                 ) : (
-                  pendingEnrollments.map((enrollment) => (
+                  pendingEnrollments.map(enrollment => (
                     <View key={enrollment.studentId} style={styles.enrollmentCard}>
                       <View style={styles.enrollmentInfo}>
                         <Text style={styles.studentName}>{enrollment.studentName}</Text>
@@ -681,7 +625,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                     </View>
                   ))
                 )}
-
                 <View style={styles.modalActions}>
                   <TouchableOpacity
                     style={styles.closeButton}
@@ -700,461 +643,132 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5'
-  },
-  scrollView: {
-    flex: 1
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#64748b'
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  scrollView: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 16, color: '#64748b' },
   loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center'
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center'
   },
   subjectInfoHeader: {
-    backgroundColor: '#171443',
-    paddingHorizontal: 24,
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2060'
+    backgroundColor: '#171443', paddingHorizontal: 24, paddingVertical: 20,
+    borderBottomWidth: 1, borderBottomColor: '#2a2060'
   },
-  subjectInfoTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4
+  subjectInfoTitle: { fontSize: 24, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
+  subjectInfoSubtitle: { fontSize: 14, color: '#cdd5df', marginBottom: 12 },
+  copyIcon: { fontSize: 16 },
+  headerButtonsContainer: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  pendingBadge: { color: '#f59e0b', marginRight: 8 },
+  actionSection: { paddingHorizontal: 24, paddingVertical: 20 },
+  actionButton: { borderRadius: 12, overflow: 'hidden' },
+  gradientButton: { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
+  actionButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
+  section: { paddingHorizontal: 24, paddingBottom: 24 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },
+  clickableTitle: { color: '#6366f1', textDecorationLine: 'underline' },
+  inviteCodeContainer: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#22c55e',
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8,
+    marginTop: 8, alignSelf: 'flex-start'
   },
-  subjectInfoSubtitle: {
-    fontSize: 14,
-    color: '#cdd5df',
-    marginBottom: 12
+  inviteCodeLabel: { fontSize: 12, color: '#ffffff', marginRight: 8, fontWeight: '600' },
+  inviteCodeText: {
+    fontSize: 16, fontWeight: 'bold', color: '#ffffff',
+    fontFamily: 'monospace', marginRight: 8, letterSpacing: 2
   },
-  copyIcon: {
-    fontSize: 16
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  emptyStateIcon: { fontSize: 48, marginBottom: 16 },
+  emptyStateText: { fontSize: 18, color: '#64748b', fontWeight: '600', marginBottom: 8 },
+  emptyStateSubtext: { fontSize: 14, color: '#94a3b8', textAlign: 'center' },
+  assessmentCard: {
+    backgroundColor: '#ffffff', borderRadius: 12, padding: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
+    borderLeftWidth: 4, borderLeftColor: '#6366f1'
   },
-  headerButtonsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center'
+  assessmentHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  assessmentIcon: { fontSize: 40, marginRight: 12 },
+  assessmentInfo: { flex: 1 },
+  assessmentName: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 4 },
+  assessmentType: { fontSize: 14, color: '#6366f1', fontWeight: '600', marginBottom: 2 },
+  assessmentUid: { fontSize: 12, color: '#94a3b8', fontFamily: 'monospace' },
+  assessmentMeta: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9', marginBottom: 12
   },
-  pendingBadge: {
-    color: '#f59e0b',
-    marginRight: 8
-  },
-  actionSection: {
-    paddingHorizontal: 24,
-    paddingVertical: 20,
-    gap: 12
-  },
-  actionButton: {
-    borderRadius: 12,
-    overflow: 'hidden'
-  },
-  gradientButton: {
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  actionButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff'
-  },
-  section: {
-    paddingHorizontal: 24,
-    paddingBottom: 24
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b'
-  },
-  clickableTitle: {
-    color: '#6366f1',
-    textDecorationLine: 'underline'
-  },
+  assessmentDate: { fontSize: 12, color: '#64748b' },
+  assessmentStatus: { flexDirection: 'row', alignItems: 'center' },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  statusText: { fontSize: 12, color: '#22c55e', fontWeight: '600' },
+  assessmentActions: { flexDirection: 'row', gap: 8 },
+  viewScoresButton: { flex: 1, backgroundColor: '#dbeafe', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  viewScoresButtonText: { fontSize: 14, fontWeight: '600', color: '#2563eb' },
+  deleteAssessmentButton: { backgroundColor: '#fee2e2', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center' },
+  deleteAssessmentButtonText: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
   enrollmentCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2
+    backgroundColor: '#ffffff', borderRadius: 12, padding: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2
   },
-  enrollmentInfo: {
-    marginBottom: 12
+  enrollmentInfo: { marginBottom: 12 },
+  studentName: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  studentEmail: { fontSize: 14, color: '#64748b', marginBottom: 4 },
+  enrollmentDate: { fontSize: 12, color: '#94a3b8' },
+  enrollmentActions: { flexDirection: 'row', gap: 8 },
+  approveButton: { flex: 1, backgroundColor: '#dcfce7', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  approveButtonText: { fontSize: 14, fontWeight: '600', color: '#16a34a' },
+  rejectButton: { flex: 1, backgroundColor: '#fee2e2', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  rejectButtonText: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
+  enrolledStudentItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0'
   },
-  studentName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4
-  },
-  studentEmail: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 4
-  },
-  enrollmentDate: {
-    fontSize: 12,
-    color: '#94a3b8'
-  },
-  enrollmentActions: {
-    flexDirection: 'row',
-    gap: 8
-  },
-  approveButton: {
-    flex: 1,
-    backgroundColor: '#dcfce7',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  approveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#16a34a'
-  },
-  rejectButton: {
-    flex: 1,
-    backgroundColor: '#fee2e2',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  rejectButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#dc2626'
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40
-  },
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 16
-  },
-  emptyStateText: {
-    fontSize: 18,
-    color: '#64748b',
-    fontWeight: '600',
-    marginBottom: 8
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center'
-  },
-  emptyStateNote: {
-    fontSize: 12,
-    color: '#f59e0b',
-    marginTop: 8,
-    textAlign: 'center',
-    fontStyle: 'italic'
-  },
+  enrolledStudentInfo: { flex: 1 },
+  unenrollButton: { backgroundColor: '#fee2e2', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  unenrollButtonText: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 20
   },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    width: '100%',
-    maxWidth: 500,
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10
+    backgroundColor: '#ffffff', borderRadius: 20,
+    width: '100%', maxWidth: 500, maxHeight: '80%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 10, elevation: 10
   },
   modalHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0'
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 15,
+    borderBottomWidth: 1, borderBottomColor: '#e2e8f0'
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1e293b'
-  },
-  modalBody: {
-    padding: 20
-  },
-  modalLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 12
-  },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
+  modalBody: { padding: 20 },
+  modalLabel: { fontSize: 16, fontWeight: '600', color: '#475569', marginBottom: 12 },
   textInput: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#1e293b',
-    marginBottom: 8
+    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+    borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12,
+    fontSize: 16, color: '#1e293b', marginBottom: 8
   },
-  inviteCodeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 8,
-    alignSelf: 'flex-start'
-  },
-  inviteCodeLabel: {
-    fontSize: 12,
-    color: '#ffffff',
-    marginRight: 8,
-    fontWeight: '600'
-  },
-  inviteCodeText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    fontFamily: 'monospace',
-    marginRight: 8,
-    letterSpacing: 2
-  },
-  modalScrollView: {
-    maxHeight: '70%'
-  },
-  enrolledStudentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0'
-  },
-  enrolledStudentInfo: {
-    flex: 1
-  },
-  unenrollButton: {
-    backgroundColor: '#fee2e2',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8
-  },
-  unenrollButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#dc2626'
-  },
-  editButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#dbeafe',
-    alignItems: 'center',
-    marginRight: 8
-  },
-  editButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2563eb'
-  },
-  closeButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center'
-  },
-  closeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569'
-  },
+  modalScrollView: { maxHeight: '70%' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  cancelButton: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#475569' },
+  confirmButton: { flex: 1, borderRadius: 10, overflow: 'hidden' },
+  confirmButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
+  editButton: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#dbeafe', alignItems: 'center', marginRight: 8 },
+  editButtonText: { fontSize: 16, fontWeight: '600', color: '#2563eb' },
+  closeButton: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  closeButtonText: { fontSize: 16, fontWeight: '600', color: '#475569' },
   assessmentTypeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    marginBottom: 12,
-    backgroundColor: '#ffffff'
+    flexDirection: 'row', alignItems: 'center', padding: 16,
+    borderRadius: 12, borderWidth: 2, borderColor: '#e2e8f0',
+    marginBottom: 12, backgroundColor: '#ffffff'
   },
-  assessmentTypeButtonSelected: {
-    borderColor: '#22c55e',
-    backgroundColor: '#f0fdf4'
-  },
-  assessmentTypeIcon: {
-    fontSize: 24,
-    marginRight: 12
-  },
-  assessmentTypeText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569'
-  },
-  assessmentTypeTextSelected: {
-    color: '#16a34a'
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center'
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569'
-  },
-  confirmButton: {
-    flex: 1,
-    borderRadius: 10,
-    overflow: 'hidden'
-  },
-  confirmButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff'
-  },
-  assessmentCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: '#6366f1'
-  },
-  assessmentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12
-  },
-  assessmentIcon: {
-    fontSize: 40,
-    marginRight: 12
-  },
-  assessmentInfo: {
-    flex: 1
-  },
-  assessmentName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 4
-  },
-  assessmentType: {
-    fontSize: 14,
-    color: '#6366f1',
-    fontWeight: '600',
-    marginBottom: 2
-  },
-  assessmentUid: {
-    fontSize: 12,
-    color: '#94a3b8',
-    fontFamily: 'monospace'
-  },
-  assessmentMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    marginBottom: 12
-  },
-  assessmentDate: {
-    fontSize: 12,
-    color: '#64748b'
-  },
-  assessmentStatus: {
-    flexDirection: 'row',
-    alignItems: 'center'
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#22c55e',
-    fontWeight: '600'
-  },
-  assessmentActions: {
-    flexDirection: 'row',
-    gap: 8
-  },
-  viewScoresButton: {
-    flex: 1,
-    backgroundColor: '#dbeafe',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  viewScoresButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2563eb'
-  },
-  deleteAssessmentButton: {
-    backgroundColor: '#fee2e2',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  deleteAssessmentButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#dc2626'
-  }
+  assessmentTypeButtonSelected: { borderColor: '#22c55e', backgroundColor: '#f0fdf4' },
+  assessmentTypeIcon: { fontSize: 24, marginRight: 12 },
+  assessmentTypeText: { fontSize: 16, fontWeight: '600', color: '#475569' },
+  assessmentTypeTextSelected: { color: '#16a34a' },
 });
 
 export default SubjectDashboardScreen;

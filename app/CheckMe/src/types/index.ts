@@ -101,15 +101,24 @@ export interface Subject {
   updatedAt: number;
 }
 
-// Assessment interface
+/**
+ * Assessment interface — matches /assessments/{teacherId}/{assessmentUid}/
+ *
+ * RTDB schema:
+ *   assessmentName : string
+ *   assessmentType : 'quiz' | 'exam'
+ *   created_at     : number
+ *   section_uid    : string
+ *   subject_uid    : string
+ */
 export interface Assessment {
-  id: string;
-  name: string;
-  type: 'quiz' | 'exam';
-  subjectId: string;
+  assessmentUid: string;       // the RTDB key e.g. "QWER1234"
+  assessmentName: string;
+  assessmentType: 'quiz' | 'exam';
+  sectionUid: string;          // maps to section_uid in RTDB
+  subjectUid: string;          // maps to subject_uid in RTDB
   teacherId: string;
-  createdAt: number;
-  updatedAt: number;
+  createdAt: number;           // maps to created_at in RTDB
 }
 
 // Navigation types
@@ -118,7 +127,6 @@ export type RootStackParamList = {
     assessmentUid: string;
     assessmentName?: string;
   };
-
   ChoosePortal: undefined;
   TeacherLogin: undefined;
   TeacherRegister: undefined;
