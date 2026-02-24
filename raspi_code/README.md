@@ -1,159 +1,343 @@
-## Directory Structure
+# CheckMe: Grading System
+> Raspberry Pi Hardware Interface — Developer Documentation
 
-**ENV**
+---
 
-Get the .env here in this [link](https://drive.google.com/drive/folders/1fnYoMi5BEu9EHZJuhX6MIntBcn0Fwjr8?usp=sharing).
+## Table of Contents
 
-**Note:** You should rename the api.txt into .env
+- [Overview](#overview)
+- [Hardware Requirements](#hardware-requirements)
+- [GPIO Pin Configuration](#gpio-pin-configuration)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the System](#running-the-system)
+- [System Flow](#system-flow)
+- [Menu Modules](#menu-modules)
+- [Services](#services)
+- [Scanner Setup](#scanner-setup)
+- [Troubleshooting](#troubleshooting)
 
+---
 
-**Recommend Directory Structure**
+## Overview
+
+CheckMe is an automated grading system that runs on a Raspberry Pi. It uses a flatbed scanner to capture answer sheets and answer keys, sends images to **Gemini OCR** for extraction, scores student answers automatically, uploads images to **Cloudinary**, and saves results to **Firebase RTDB**.
+
+**Core capabilities:**
+- Teacher authentication via 8-digit temporary code from the mobile app
+- Scan and process answer keys (multi-page supported)
+- Scan and grade student answer sheets (multi-page supported)
+- Automatic answer comparison and scoring
+- Essay answer detection (flagged as pending, not auto-scored)
+- Firebase RTDB persistence
+- Cloudinary image storage
+
+---
+
+## Hardware Requirements
+
+| Component | Model / Spec |
+|---|---|
+| Raspberry Pi | Raspberry Pi 4B |
+| LCD Display | I2C LCD — 16x2 or 20x4 |
+| Keypad | 4x3 Matrix Keypad |
+| Scanner | Epson L3210 |
+
+---
+
+## GPIO Pin Configuration
+
+### Keypad (4x3 Matrix)
+
+> Replace the images below with your actual wiring diagrams.
+
+**Row Pins (BCM):** `19, 21, 20, 16`  
+**Column Pins (BCM):** `12, 13, 6`
+
+```
+Default Key Layout:
+[1] [2] [3]
+[4] [5] [6]
+[7] [8] [9]
+[*] [0] [#]
+```
+
+📷 **Keypad Wiring Diagram:**
+```
+[ Insert keypad_wiring.png here ]
+```
+
+---
+
+### LCD I2C
+
+**I2C Address:** `0x27` or `0x3F` (detected automatically at startup)  
+**Bus:** I2C Bus 1 (default on Raspberry Pi 4B)
+
+📷 **LCD Wiring Diagram:**
+```
+[ Insert lcd_wiring.png here ]
+```
+
+---
+
+## Project Structure
 
 ```
 raspi_code/
-├─ logs/
-├─ README.md
-├─ GOAL.md
-├─ .env
-├─ test/
-├─ main.py                     
-└─ lib/
-   ├─ services/
-   |  ├─ firebase_rtdb.py
-   |  ├─ handle_pairing.py
-   |  └─ handle_hardware.py
-   └─ processes/
-      ├─ process_a.py
-      ├─ process_b.py
-      └─ process_c.py
+├── main.py                         # Entry point
+├── requirements.txt                # Python dependencies
+├── config/
+│   ├── .env                        # Environment variables (not committed)
+│   ├── .env.example                # Environment variable template
+│   └── firebase-credentials.json  # Firebase service account (not committed)
+├── menus/
+│   ├── menu_scan_answer_key.py     # Option 1: Scan Answer Key flow
+│   └── menu_check_answer_sheets.py # Option 2: Check Answer Sheets flow
+├── services/
+│   ├── auth.py                     # Teacher authentication
+│   ├── lcd_hardware.py             # LCD I2C driver
+│   ├── keypad_hardware.py          # 4x3 Keypad driver
+│   ├── l3210_scanner_hardware.py   # Epson L3210 scanner interface
+│   ├── firebase_rtdb_client.py     # Firebase RTDB (Admin SDK)
+│   ├── cloudinary_client.py        # Cloudinary image uploader
+│   ├── gemini_client.py            # Gemini OCR client
+│   ├── smart_collage.py            # Multi-page image collage builder
+│   ├── scorer.py                   # Answer comparison and scoring logic
+│   ├── sanitizer.py                # Gemini JSON response sanitizer
+│   ├── prompts.py                  # Gemini prompt templates
+│   ├── logger.py                   # Logging utility
+│   └── utils.py                    # File and path utilities
+├── credentials/
+│   └── cred.txt                    # Local session cache (auto-generated)
+├── scans/
+│   ├── answer_keys/                # Scanned answer key images
+│   └── answer_sheets/              # Scanned student sheet images
+└── docs/
+    └── raspi/
+        └── RASPI_L3210_SETUP.md    # Scanner setup guide
 ```
 
-## Guidelines handling image for Gemini API 
+---
 
-**Image Size Guidelines for Gemini API**
+## Prerequisites
 
-When combining multiple pages into a single grid for Gemini OCR:
+- **Python:** 3.12 or above
+- **OS:** Raspberry Pi OS Desktop (Bookworm recommended)
+- **System packages:** See `requirements.txt` and `docs/raspi/RASPI_L3210_SETUP.md`
 
-| Parameter	| Recommendation	| Notes |
-| --- | --- | --- |
-| Minimum per-page width	| 300 px	| Any smaller → OCR accuracy may drop; letters may be misread |
-| Optimal per-page width	| 400–600 px	| Safe range for text clarity and high accuracy |
-| Maximum per-page width	| 1200 px	| Larger → may hit API request size limits, slower processing |
-| Tile height	| 1.4 × width	| Maintains typical page aspect ratio (e.g., 400×560 px) |
-| Final combined image size	| ≤ 1.5 MB	| Helps avoid hitting Gemini API request size limits |
-
-**Notes:**
-
-- Per-page width refers to each individual page inside the combined grid.
-
-- Tile height is automatically calculated based on width to maintain readable aspect ratio.
-
-- If combining many pages, reduce tile width or compress image to fit API limits.
-
-- Keep in mind: lower resolution → smaller file but lower OCR accuracy.
-
-
-
-**Grid Layout & Pixel Size Guide**
-
-```
-Number of pages → Grid layout → Per-page width × height (px)
--------------------------------------------------------------
-1 page   → 1×1   → 400 × 560
-2 pages  → 2×2   → 400 × 560 each (2 blanks)
-3 pages  → 2×2   → 400 × 560 each (1 blank)
-4 pages  → 2×2   → 400 × 560 each
-5 pages  → 3×3   → 400 × 560 each (4 blanks)
-6 pages  → 3×3   → 400 × 560 each (3 blanks)
-7 pages  → 3×3   → 400 × 560 each (2 blanks)
-8 pages  → 3×3   → 400 × 560 each (1 blank)
-9 pages  → 3×3   → 400 × 560 each
+Enable I2C on your Raspberry Pi:
+```bash
+sudo raspi-config
+# Interface Options → I2C → Enable
 ```
 
-**Notes:**
+---
 
-- Per-page width: 300–600 px is safe for OCR.
+## Installation
 
-- Per-page height: 1.4 × width keeps normal page ratio.
-
-- Tile width 400 px is default for balance between clarity and file size.
-
-- Blanks are added automatically to fill empty slots.
-
-- Final combined image: try to stay ≤ 1.5 MB to avoid Gemini API limits.
-
-
-**A visual diagram with rectangles representing each page in the grid for 1–9 pages.**
-
-```mermaid
-%% Visual Grid Layout for 1–9 Pages
-flowchart TB
-    style Page1 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page2 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page3 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page4 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page5 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page6 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page7 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page8 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Page9 fill:#a2d2ff,stroke:#000,stroke-width:1px
-    style Blank fill:#ffffff,stroke:#000,stroke-width:1px
-
-%% 1 Page
-subgraph "1 page (1x1)"
-    Page1["Page 1"]
-end
-
-%% 2 Pages
-subgraph "2 pages (2x2)"
-    Page1_2["Page 1"] --> Page2_2["Page 2"]
-    Blank1_2["Blank"] --> Blank2_2["Blank"]
-end
-
-%% 3 Pages
-subgraph "3 pages (2x2)"
-    Page1_3["Page 1"] --> Page2_3["Page 2"]
-    Page3_3["Page 3"] --> Blank1_3["Blank"]
-end
-
-%% 4 Pages
-subgraph "4 pages (2x2)"
-    Page1_4["Page 1"] --> Page2_4["Page 2"]
-    Page3_4["Page 3"] --> Page4_4["Page 4"]
-end
-
-%% 5 Pages
-subgraph "5 pages (3x3)"
-    Page1_5["Page 1"] --> Page2_5["Page 2"] --> Page3_5["Page 3"]
-    Page4_5["Page 4"] --> Page5_5["Page 5"] --> Blank1_5["Blank"]
-    Blank2_5["Blank"] --> Blank3_5["Blank"] --> Blank4_5["Blank"]
-end
-
-%% 6 Pages
-subgraph "6 pages (3x3)"
-    Page1_6["Page 1"] --> Page2_6["Page 2"] --> Page3_6["Page 3"]
-    Page4_6["Page 4"] --> Page5_6["Page 5"] --> Page6_6["Page 6"]
-    Blank1_6["Blank"] --> Blank2_6["Blank"] --> Blank3_6["Blank"]
-end
-
-%% 7 Pages
-subgraph "7 pages (3x3)"
-    Page1_7["Page 1"] --> Page2_7["Page 2"] --> Page3_7["Page 3"]
-    Page4_7["Page 4"] --> Page5_7["Page 5"] --> Page6_7["Page 6"]
-    Page7_7["Page 7"] --> Blank1_7["Blank"] --> Blank2_7["Blank"]
-end
-
-%% 8 Pages
-subgraph "8 pages (3x3)"
-    Page1_8["Page 1"] --> Page2_8["Page 2"] --> Page3_8["Page 3"]
-    Page4_8["Page 4"] --> Page5_8["Page 5"] --> Page6_8["Page 6"]
-    Page7_8["Page 7"] --> Page8_8["Page 8"] --> Blank1_8["Blank"]
-end
-
-%% 9 Pages
-subgraph "9 pages (3x3)"
-    Page1_9["Page 1"] --> Page2_9["Page 2"] --> Page3_9["Page 3"]
-    Page4_9["Page 4"] --> Page5_9["Page 5"] --> Page6_9["Page 6"]
-    Page7_9["Page 7"] --> Page8_9["Page 8"] --> Page9_9["Page 9"]
-end
+**1. Clone the repository**
+```bash
+git clone <your-repo-url>
+cd raspi_code
 ```
+
+**2. Create and activate a virtual environment**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+**3. Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+**4. Set up scanner**
+
+Follow the full scanner setup guide:
+```
+docs/raspi/RASPI_L3210_SETUP.md
+```
+
+**5. Set up Firebase credentials**
+
+Place your Firebase service account JSON file at:
+```
+config/firebase-credentials.json
+```
+
+**6. Configure environment variables**
+```bash
+cp config/.env.example config/.env
+# Edit config/.env with your values
+```
+
+---
+
+## Configuration
+
+All configuration lives in `config/.env`. See `config/.env.example` for the full list of required variables:
+
+```
+raspi_code/config/.env.example
+```
+
+Key variables include:
+
+| Variable | Description |
+|---|---|
+| `GEMINI_API_KEY` | Gemini API key |
+| `GEMINI_MODEL` | Gemini model name |
+| `GEMINI_PREFERRED_METHOD` | `sdk` or `rest` |
+| `CLOUDINARY_NAME` | Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret |
+| `CLOUDINARY_ANSWER_SHEETS_PATH` | Cloudinary folder for answer sheets |
+| `FIREBASE_RTDB_BASE_REFERENCE` | Firebase RTDB URL |
+| `FIREBASE_CREDENTIALS_PATH` | Path to Firebase service account JSON |
+| `USER_CREDENTIALS_FILE` | Path to local session cache file |
+| `ANSWER_KEYS_PATH` | Local directory for scanned answer key images |
+| `ANSWER_SHEETS_PATH` | Local directory for scanned student sheet images |
+| `SCAN_DEBOUNCE_SECONDS` | Scanner debounce delay in seconds |
+
+---
+
+## Running the System
+
+```bash
+cd raspi_code
+source venv/bin/activate
+python main.py
+```
+
+To run on boot (systemd):
+
+```bash
+# Create a service file at /etc/systemd/system/checkme.service
+# Then:
+sudo systemctl enable checkme
+sudo systemctl start checkme
+```
+
+---
+
+## System Flow
+
+```
+System Start
+    │
+    ├─ Setup (LCD, Keypad, Auth)
+    │
+    ├─ Authentication
+    │   ├─ Check cred.txt → AUTHENTICATED → Main Menu
+    │   └─ NOT AUTHENTICATED → Enter 8-digit code from mobile app
+    │           └─ Validate via Firebase RTDB → Save credentials → Main Menu
+    │
+    └─ Main Menu
+        ├─ [0] Scan Answer Key  → menu_scan_answer_key.run()
+        ├─ [1] Check Sheets     → menu_check_answer_sheets.run()
+        └─ [2] Settings
+                ├─ Logout   → Clear cred.txt → Restart process
+                ├─ Shutdown → Confirm → sudo shutdown -h now
+                └─ Back     → Main Menu
+```
+
+---
+
+## Menu Modules
+
+### `menus/menu_scan_answer_key.py`
+
+Handles the full answer key ingestion flow:
+
+1. Ask teacher for total number of questions (1–99)
+2. Show **SCAN ANSWER KEY** menu loop:
+   - **[0] Scan** — Trigger scanner, append file to list, loop back
+   - **[1] Done & Save** — Collage (if multi-page) → Gemini OCR → Extract `assessment_uid` + `answer_key` → Validate in RTDB → Save → Prompt to scan another or exit
+   - **[2] Cancel** — Delete local scans, return to Main Menu
+
+Error handling at each step: Cloudinary upload failure, collage failure, Gemini extraction failure, Firebase save failure — each shows a **Retry / Exit** menu.
+
+---
+
+### `menus/menu_check_answer_sheets.py`
+
+Handles the full student sheet grading flow:
+
+1. Load answer keys from Firebase RTDB
+2. Teacher selects which assessment to grade against
+3. Validate assessment exists in RTDB
+4. Show **CHECK SHEETS** menu loop:
+   - **[0] Scan** — Trigger scanner, append file to list, loop back
+   - **[1] Done & Save** — Collage (if multi-page) → Gemini OCR → Extract `student_id` + `answers` → Score vs answer key → Upload to Cloudinary → Save to RTDB → Reset for next student
+   - **[2] Cancel** — Delete local scans, return to Main Menu
+
+Scoring features:
+- Automatic answer comparison per question
+- Essay answers detected and flagged as `pending` (not auto-scored, `is_final_score = False`)
+- Warning shown if scanned answer count doesn't match answer key count
+
+---
+
+## Services
+
+| Service | Description |
+|---|---|
+| `auth.py` | Manages `cred.txt` session, validates 8-digit temp codes via Firebase |
+| `lcd_hardware.py` | I2C LCD driver with scrollable menus, multi-line display |
+| `keypad_hardware.py` | 4x3 matrix keypad GPIO driver with debounce |
+| `l3210_scanner_hardware.py` | Epson L3210 scanner interface via SANE |
+| `firebase_rtdb_client.py` | Firebase Admin SDK RTDB client (answer keys, student results, temp codes) |
+| `cloudinary_client.py` | Single and batch image upload, delete |
+| `gemini_client.py` | Gemini OCR with retry logic |
+| `smart_collage.py` | Stitches multiple scanned pages into one image for Gemini |
+| `scorer.py` | Compares student answers to answer key, calculates score and breakdown |
+| `sanitizer.py` | Cleans and parses raw Gemini JSON responses |
+| `prompts.py` | Gemini prompt templates for answer key and answer sheet extraction |
+| `logger.py` | Timestamped logger with log levels |
+| `utils.py` | `normalize_path`, `delete_files`, `delete_file`, `join_and_ensure_path` |
+
+---
+
+## Scanner Setup
+
+Full Epson L3210 setup instructions (SANE driver, permissions, testing):
+
+```
+docs/raspi/RASPI_L3210_SETUP.md
+```
+
+---
+
+## Troubleshooting
+
+**LCD not detected**
+```bash
+i2cdetect -y 1
+# Should show 0x27 or 0x3F
+```
+
+**Scanner not found**
+```bash
+scanimage -L
+# Should list the Epson L3210
+```
+
+**Firebase initialization error**
+- Confirm `config/firebase-credentials.json` exists and is valid
+- Confirm `FIREBASE_RTDB_BASE_REFERENCE` in `.env` matches your project URL
+
+**`SCAN_DEBOUNCE_SECONDS` crash on startup**
+- Ensure this variable is set in `config/.env` as an integer string e.g. `SCAN_DEBOUNCE_SECONDS=3`
+
+**Keypad not responding**
+- Check BCM pin assignments in `services/keypad_hardware.py`
+- Confirm I2C and GPIO are enabled via `raspi-config`
+
+**Gemini returns None or bad JSON**
+- Check `GEMINI_API_KEY` is valid
+- Check quota limits on your Gemini project
+- Review raw responses in logs (debug level)
