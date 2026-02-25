@@ -23,7 +23,7 @@ import {
   deleteSection,
   Section
 } from '../../services/sectionService';
-import { updateTeacherProfile, generateTempCode } from '../../services/authService';
+import { updateTeacherProfile, generateTempCode, isEmployeeIdTaken } from '../../services/authService';
 import { RootStackParamList } from '../../types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -133,12 +133,34 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleSaveProfile = async () => {
     if (!user?.uid) return;
+
+    const currentEmployeeId = user.role === 'teacher' ? user.employeeId : '';
+    const newEmployeeId = editEmployeeId.trim();
+
+    // Only check for duplicates if the employee ID actually changed
+    if (newEmployeeId.toUpperCase() !== currentEmployeeId.trim().toUpperCase()) {
+      try {
+        setActionLoading(true);
+        const taken = await isEmployeeIdTaken(newEmployeeId);
+        if (taken) {
+          Alert.alert(
+            'Employee ID Already in Use',
+            `The Employee ID "${newEmployeeId}" is already registered to another account.\n\nPlease use a different Employee ID or contact your school administrator.`
+          );
+          setActionLoading(false);
+          return;
+        }
+      } catch {
+        // Non-critical — proceed if check fails
+      }
+    }
+
     try {
       setActionLoading(true);
       await updateTeacherProfile(user.uid, {
         fullName: editFullName,
         username: editUsername,
-        employeeId: editEmployeeId
+        employeeId: newEmployeeId,
       });
       Alert.alert('Success', 'Profile updated successfully!');
       setIsEditing(false);

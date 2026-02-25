@@ -22,6 +22,26 @@ import { isGmailAddress } from '../utils/validation';
 // Auth: Teacher
 // ─────────────────────────────────────────────
 
+
+/**
+ * Scans /users/teachers/ and checks if any existing teacher
+ * already has the given employee ID.
+ */
+export const isEmployeeIdTaken = async (employeeId: string): Promise<boolean> => {
+  try {
+    const snapshot = await get(ref(database, 'users/teachers'));
+    if (!snapshot.exists()) return false;
+
+    const teachers = snapshot.val() as Record<string, any>;
+    return Object.values(teachers).some(
+      t => t?.employeeId != null &&
+           String(t.employeeId).trim().toUpperCase() === String(employeeId).trim().toUpperCase()
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const createTeacherAccount = async (data: TeacherSignUpData): Promise<User> => {
   if (!isGmailAddress(data.email)) {
     throw new Error('Only Gmail addresses are allowed for registration');
