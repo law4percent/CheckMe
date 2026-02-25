@@ -5,7 +5,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { RootStackParamList } from '../types';
 
-// Screens
 import ChoosePortalScreen from '../screens/ChoosePortalScreen';
 import TeacherLoginScreen from '../screens/teacher/LoginScreen';
 import TeacherRegisterScreen from '../screens/teacher/RegisterScreen';
@@ -20,152 +19,75 @@ import ViewScoresScreen from '../screens/teacher/ViewScoresScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+const headerStyle = {
+  backgroundColor: '#171443',
+};
+const headerCommon = {
+  headerShown: true,
+  headerBackTitle: 'Back',
+  headerStyle,
+  headerTintColor: '#fff',
+  headerTitleStyle: { fontWeight: 'bold' as const },
+};
+
 const AppNavigator: React.FC = () => {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    // You can return a loading screen component here
-    return null;
-  }
+  if (loading) return null;
 
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          animation: 'slide_from_right'
-        }}
-      >
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
         {user ? (
-          // User is authenticated - show dashboard based on role
-          <>
-            {user.role === 'teacher' ? (
-              <>
-                {/* FIXED: Main dashboard should be first */}
-                <Stack.Screen
-                  name="TeacherDashboard"
-                  component={TeacherDashboardScreen}
-                  options={{ headerShown: false }}
-                />
-                <Stack.Screen
-                  name="TeacherSectionDashboard"
-                  component={SectionDashboardScreen}
-                  options={{
-                    headerShown: true,
-                    title: 'Section Dashboard',
-                    headerBackTitle: 'Back',
-                    headerStyle: {
-                      backgroundColor: '#171443',
-                    },
-                    headerTintColor: '#fff',
-                    headerTitleStyle: {
-                      fontWeight: 'bold',
-                    },
-                  }}
-                />
-                <Stack.Screen
-                  name="TeacherSubjectDashboard"
-                  component={SubjectDashboardScreen}
-                  options={{
-                    headerShown: true,
-                    title: 'Subject Dashboard',
-                    headerBackTitle: 'Back',
-                    headerStyle: {
-                      backgroundColor: '#171443',
-                    },
-                    headerTintColor: '#fff',
-                    headerTitleStyle: {
-                      fontWeight: 'bold',
-                    },
-                  }}
-                />
-                {/* FIXED: ViewScores should come after the screens that navigate to it */}
-                <Stack.Screen
-                  name="ViewScores"
-                  component={ViewScoresScreen}
-                  options={{
-                    headerShown: true,
-                    title: 'Assessment Results',
-                    headerBackTitle: 'Back',
-                    headerStyle: {
-                      backgroundColor: '#171443',
-                    },
-                    headerTintColor: '#fff',
-                    headerTitleStyle: {
-                      fontWeight: 'bold',
-                    },
-                  }}
-                />
-                <Stack.Screen
-                  name="TeacherAssessmentScoreTable"
-                  component={AssessmentScoreTableScreen}
-                  options={{
-                    headerShown: true,
-                    title: 'Assessment Scores',
-                    headerBackTitle: 'Back',
-                    headerStyle: {
-                      backgroundColor: '#171443',
-                    },
-                    headerTintColor: '#fff',
-                    headerTitleStyle: {
-                      fontWeight: 'bold',
-                    },
-                  }}
-                />
-              </>
-            ) : (
-              <>
-                <Stack.Screen
-                  name="StudentDashboard"
-                  component={StudentDashboardScreen}
-                  options={{ headerShown: false }}
-                />
-              </>
-            )}
-          </>
+          user.role === 'teacher' ? (
+            <>
+              <Stack.Screen name="TeacherDashboard" component={TeacherDashboardScreen} />
+              <Stack.Screen
+                name="TeacherSectionDashboard"
+                component={SectionDashboardScreen}
+                options={{ ...headerCommon, title: 'Section Dashboard' }}
+              />
+              <Stack.Screen
+                name="TeacherSubjectDashboard"
+                component={SubjectDashboardScreen}
+                options={{ ...headerCommon, title: 'Subject Dashboard' }}
+              />
+              <Stack.Screen
+                name="ViewScores"
+                component={ViewScoresScreen}
+                options={{ ...headerCommon, title: 'Assessment Results' }}
+              />
+              <Stack.Screen
+                name="TeacherAssessmentScoreTable"
+                component={AssessmentScoreTableScreen}
+                options={{ ...headerCommon, title: 'Student Breakdown' }}
+              />
+            </>
+          ) : (
+            <Stack.Screen name="StudentDashboard" component={StudentDashboardScreen} />
+          )
         ) : (
-          // User is not authenticated - show auth flow
           <>
-            <Stack.Screen 
-              name="ChoosePortal" 
-              component={ChoosePortalScreen}
-              options={{ headerShown: false }}
-            />
+            <Stack.Screen name="ChoosePortal" component={ChoosePortalScreen} />
             <Stack.Screen
               name="TeacherLogin"
               component={TeacherLoginScreen}
-              options={{
-                headerShown: true,
-                title: 'Teacher Login',
-                headerBackTitle: 'Back'
-              }}
+              options={{ headerShown: true, title: 'Teacher Login', headerBackTitle: 'Back' }}
             />
             <Stack.Screen
               name="TeacherRegister"
               component={TeacherRegisterScreen}
-              options={{
-                headerShown: true,
-                title: 'Teacher Registration',
-                headerBackTitle: 'Back'
-              }}
+              options={{ headerShown: true, title: 'Teacher Registration', headerBackTitle: 'Back' }}
             />
             <Stack.Screen
               name="StudentLogin"
               component={StudentLoginScreen}
-              options={{
-                headerShown: true,
-                title: 'Student Login',
-                headerBackTitle: 'Back'
-              }}
+              options={{ headerShown: true, title: 'Student Login', headerBackTitle: 'Back' }}
             />
             <Stack.Screen
               name="StudentRegister"
               component={StudentRegisterScreen}
-              options={{
-                headerShown: true,
-                title: 'Student Registration',
-                headerBackTitle: 'Back'
-              }}
+              options={{ headerShown: true, title: 'Student Registration', headerBackTitle: 'Back' }}
             />
           </>
         )}

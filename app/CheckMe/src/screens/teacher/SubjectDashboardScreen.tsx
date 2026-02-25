@@ -190,9 +190,12 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   // ── View Scores ───────────────────────────────
   const handleViewScores = (assessment: Assessment) => {
+    if (!user?.uid) return;
     navigation.navigate('ViewScores', {
       assessmentUid: assessment.assessmentUid,
-      assessmentName: assessment.assessmentName
+      assessmentName: assessment.assessmentName,
+      teacherUid: user.uid,
+      subjectUid: assessment.subjectUid,
     });
   };
 

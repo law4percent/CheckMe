@@ -88,7 +88,6 @@ export interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-// Subject interface
 export interface Subject {
   id: string;
   year: string;
@@ -102,31 +101,55 @@ export interface Subject {
 }
 
 /**
- * Assessment interface — matches /assessments/{teacherId}/{assessmentUid}/
- *
- * RTDB schema:
- *   assessmentName : string
- *   assessmentType : 'quiz' | 'exam'
- *   created_at     : number
- *   section_uid    : string
- *   subject_uid    : string
+ * Assessment — matches /assessments/{teacherId}/{assessmentUid}/
  */
 export interface Assessment {
-  assessmentUid: string;       // the RTDB key e.g. "QWER1234"
+  assessmentUid: string;
   assessmentName: string;
   assessmentType: 'quiz' | 'exam';
-  sectionUid: string;          // maps to section_uid in RTDB
-  subjectUid: string;          // maps to subject_uid in RTDB
+  sectionUid: string;
+  subjectUid: string;
   teacherId: string;
-  createdAt: number;           // maps to created_at in RTDB
+  createdAt: number;
 }
 
-// Navigation types
+/**
+ * Per-question breakdown entry from /answer_sheets/.../breakdown/Q{n}/
+ */
+export interface QuestionBreakdown {
+  student_answer: string;
+  correct_answer: string;
+  /** true = correct, false = wrong, "pending" = essay not yet scored */
+  checking_result: boolean | 'pending';
+}
+
+/**
+ * A single student result from
+ * /answer_sheets/{teacher_uid}/{assessment_uid}/{student_id}/
+ *
+ * student_id key = school ID written on the paper (e.g. "3222550")
+ * matchedStudentName = resolved from /enrollments/ if school ID field exists,
+ *                      null until that field is added to enrollments.
+ */
+export interface AnswerSheetResult {
+  studentId: string;              // RTDB key = school ID from paper
+  assessment_uid: string;
+  total_score: number;
+  total_questions: number;
+  is_final_score: boolean;
+  breakdown: Record<string, QuestionBreakdown>;
+  image_urls: string[];
+  image_public_ids: string[];
+  checked_by: string;
+  checked_at: number;
+  updated_at: number;
+  section_uid: string;
+  subject_uid: string;
+  /** Resolved display name — null means school ID not matched in enrollments */
+  matchedStudentName: string | null;
+}
+
 export type RootStackParamList = {
-  ViewScores: {
-    assessmentUid: string;
-    assessmentName?: string;
-  };
   ChoosePortal: undefined;
   TeacherLogin: undefined;
   TeacherRegister: undefined;
@@ -138,10 +161,15 @@ export type RootStackParamList = {
     subject: Subject;
     section: Section;
   };
+  ViewScores: {
+    assessmentUid: string;
+    assessmentName?: string;
+    teacherUid: string;
+    subjectUid: string;
+  };
   TeacherAssessmentScoreTable: {
-    assessment: Assessment;
-    subject: Subject;
-    section: Section;
+    result: AnswerSheetResult;
+    assessmentName: string;
   };
   StudentLogin: undefined;
   StudentRegister: undefined;
