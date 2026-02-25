@@ -58,6 +58,27 @@ export const createTeacherAccount = async (data: TeacherSignUpData): Promise<Use
 // Auth: Student
 // ─────────────────────────────────────────────
 
+
+/**
+ * Scans /users/students/ and checks if any existing student
+ * already has the given school ID (stored as studentId field).
+ * Comparison is string-normalized since studentId may be stored
+ * as number (4201400) or string ("4201400").
+ */
+export const isStudentIdTaken = async (schoolId: string): Promise<boolean> => {
+  try {
+    const snapshot = await get(ref(database, 'users/students'));
+    if (!snapshot.exists()) return false;
+
+    const students = snapshot.val() as Record<string, any>;
+    return Object.values(students).some(
+      s => s?.studentId != null && String(s.studentId) === String(schoolId).trim()
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const createStudentAccount = async (data: StudentSignUpData): Promise<User> => {
   if (!isGmailAddress(data.email)) {
     throw new Error('Only Gmail addresses are allowed for registration');
