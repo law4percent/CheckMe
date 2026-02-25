@@ -1,9 +1,10 @@
 // src/services/enrollmentService.ts
-import { ref, set, get, update, remove, query, orderByChild, equalTo } from 'firebase/database';
+import { ref, set, get, update, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 
 export interface Enrollment {
-  studentId: string;
+  studentId: string;   // Firebase UID (RTDB key under subject)
+  schoolId?: string;   // School-provided ID e.g. "4201400" — matches answer sheet key
   subjectId: string;
   status: 'pending' | 'approved' | 'rejected';
   joinedAt: number;
@@ -14,26 +15,97 @@ export interface Enrollment {
 }
 
 export interface CreateEnrollmentData {
-  studentId: string;
+  studentId: string;   // Firebase UID
+  schoolId?: string;   // School ID — fetched from /users/students/{uid}/studentId
   subjectId: string;
   studentName: string;
   studentEmail: string;
 }
 
+// ─────────────────────────────────────────────
+// Helper: fetch school ID from student profile
+// ─────────────────────────────────────────────
+
 /**
- * Create a new enrollment request
+ * Reads /users/students/{uid}/studentId which stores the school-provided
+ * numeric ID (e.g. 4201400). This is the same ID written on answer sheets.
+ * Returns null if not found or not set.
  */
-export const createEnrollment = async (data: CreateEnrollmentData & { teacherId: string }): Promise<Enrollment> => {
+const fetchSchoolId = async (firebaseUid: string): Promise<string | null> => {
   try {
-    const enrollmentRef = ref(database, `enrollments/${data.teacherId}/${data.subjectId}/${data.studentId}`);
-    
+    const snap = await get(ref(database, `users/students/${firebaseUid}/studentId`));
+    if (!snap.exists()) return null;
+    const val = snap.val();
+    // studentId may be stored as number or string
+    return val != null ? String(val) : null;
+  } catch {
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────
+// Helper: update subject studentCount
+// ─────────────────────────────────────────────
+
+const updateSubjectStudentCount = async (teacherId: string, subjectId: string): Promise<void> => {
+  try {
+    const subjectsSnap = await get(ref(database, `subjects/${teacherId}`));
+    if (!subjectsSnap.exists()) return;
+
+    const sections = subjectsSnap.val();
+    let foundSectionId: string | null = null;
+
+    for (const sectionId in sections) {
+      if (sections[sectionId][subjectId]) {
+        foundSectionId = sectionId;
+        break;
+      }
+    }
+
+    if (!foundSectionId) return;
+
+    const enrollmentsSnap = await get(ref(database, `enrollments/${teacherId}/${subjectId}`));
+    let approvedCount = 0;
+    if (enrollmentsSnap.exists()) {
+      approvedCount = Object.values(enrollmentsSnap.val()).filter(
+        (e: any) => e.status === 'approved'
+      ).length;
+    }
+
+    await update(ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`), {
+      studentCount: approvedCount,
+      updatedAt: Date.now(),
+    });
+  } catch {
+    // Non-critical — don't throw
+  }
+};
+
+// ─────────────────────────────────────────────
+// Service Functions
+// ─────────────────────────────────────────────
+
+/**
+ * Create a new enrollment request.
+ * Writes schoolId if provided so answer sheets can be matched later.
+ */
+export const createEnrollment = async (
+  data: CreateEnrollmentData & { teacherId: string }
+): Promise<Enrollment> => {
+  try {
+    const enrollmentRef = ref(
+      database,
+      `enrollments/${data.teacherId}/${data.subjectId}/${data.studentId}`
+    );
+
     const enrollment: Enrollment = {
       studentId: data.studentId,
       subjectId: data.subjectId,
       status: 'pending',
       joinedAt: Date.now(),
       studentName: data.studentName,
-      studentEmail: data.studentEmail
+      studentEmail: data.studentEmail,
+      ...(data.schoolId ? { schoolId: data.schoolId } : {}),
     };
 
     await set(enrollmentRef, enrollment);
@@ -44,55 +116,36 @@ export const createEnrollment = async (data: CreateEnrollmentData & { teacherId:
 };
 
 /**
- * Get all enrollments for a subject
+ * Get all enrollments for a subject.
  */
-export const getSubjectEnrollments = async (teacherId: string, subjectId: string): Promise<Enrollment[]> => {
+export const getSubjectEnrollments = async (
+  teacherId: string,
+  subjectId: string
+): Promise<Enrollment[]> => {
   try {
-    const path = `enrollments/${teacherId}/${subjectId}`;
-    console.log('📚 [getSubjectEnrollments] Fetching enrollments');
-    console.log('  - Path:', path);
-    console.log('  - TeacherId:', teacherId);
-    console.log('  - SubjectId:', subjectId);
-    
-    const enrollmentsRef = ref(database, path);
-    const snapshot = await get(enrollmentsRef);
-    
-    console.log('  - Snapshot exists:', snapshot.exists());
-    
-    if (!snapshot.exists()) {
-      console.log('  - No enrollments found');
-      return [];
-    }
+    const snap = await get(ref(database, `enrollments/${teacherId}/${subjectId}`));
+    if (!snap.exists()) return [];
 
-    const enrollmentsData = snapshot.val();
-    const enrollments: Enrollment[] = Object.values(enrollmentsData);
-    
-    console.log('  - Enrollments count:', enrollments.length);
-    
-    // Sort by joinedAt (newest first)
+    const enrollments: Enrollment[] = Object.values(snap.val());
     return enrollments.sort((a, b) => b.joinedAt - a.joinedAt);
   } catch (error: any) {
-    console.error('❌ [getSubjectEnrollments] Error:', error);
-    console.error('  - Error code:', error.code);
-    console.error('  - Error message:', error.message);
     throw new Error(error.message || 'Failed to fetch enrollments');
   }
 };
 
 /**
- * Get pending enrollments for a subject
+ * Get pending enrollments for a subject.
  */
-export const getPendingEnrollments = async (teacherId: string, subjectId: string): Promise<Enrollment[]> => {
-  try {
-    const enrollments = await getSubjectEnrollments(teacherId, subjectId);
-    return enrollments.filter(e => e.status === 'pending');
-  } catch (error: any) {
-    throw new Error(error.message || 'Failed to fetch pending enrollments');
-  }
+export const getPendingEnrollments = async (
+  teacherId: string,
+  subjectId: string
+): Promise<Enrollment[]> => {
+  const enrollments = await getSubjectEnrollments(teacherId, subjectId);
+  return enrollments.filter(e => e.status === 'pending');
 };
 
 /**
- * Approve an enrollment
+ * Approve an enrollment.
  */
 export const approveEnrollment = async (
   teacherId: string,
@@ -100,71 +153,18 @@ export const approveEnrollment = async (
   studentId: string
 ): Promise<void> => {
   try {
-    const path = `enrollments/${teacherId}/${subjectId}/${studentId}`;
-    console.log('✅ [approveEnrollment] Approving enrollment');
-    console.log('  - Path:', path);
-    console.log('  - TeacherId:', teacherId);
-    console.log('  - SubjectId:', subjectId);
-    console.log('  - StudentId:', studentId);
-    
-    const enrollmentRef = ref(database, path);
-    await update(enrollmentRef, {
+    await update(ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`), {
       status: 'approved',
-      approvedAt: Date.now()
+      approvedAt: Date.now(),
     });
-    
-    console.log('  - Approval successful');
-    
-    // Update the subject's student count
-    // First, find the subject to get its sectionId
-    const subjectsRef = ref(database, `subjects/${teacherId}`);
-    const subjectsSnapshot = await get(subjectsRef);
-    
-    if (subjectsSnapshot.exists()) {
-      const sections = subjectsSnapshot.val();
-      let foundSectionId: string | null = null;
-      
-      // Find which section contains this subject
-      for (const sectionId in sections) {
-        if (sections[sectionId][subjectId]) {
-          foundSectionId = sectionId;
-          break;
-        }
-      }
-      
-      if (foundSectionId) {
-        // Count approved enrollments
-        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
-        const enrollmentsSnapshot = await get(enrollmentsRef);
-        
-        let approvedCount = 0;
-        if (enrollmentsSnapshot.exists()) {
-          const enrollments = enrollmentsSnapshot.val();
-          approvedCount = Object.values(enrollments).filter(
-            (e: any) => e.status === 'approved'
-          ).length;
-        }
-        
-        // Update subject's studentCount
-        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
-        await update(subjectRef, {
-          studentCount: approvedCount,
-          updatedAt: Date.now()
-        });
-        
-        console.log('  - Updated subject studentCount:', approvedCount);
-      }
-    }
+    await updateSubjectStudentCount(teacherId, subjectId);
   } catch (error: any) {
-    console.error('❌ [approveEnrollment] Error:', error);
-    console.error('  - Error code:', error.code);
-    console.error('  - Error message:', error.message);
     throw new Error(error.message || 'Failed to approve enrollment');
   }
 };
 
 /**
- * Reject an enrollment
+ * Reject an enrollment.
  */
 export const rejectEnrollment = async (
   teacherId: string,
@@ -172,68 +172,18 @@ export const rejectEnrollment = async (
   studentId: string
 ): Promise<void> => {
   try {
-    const path = `enrollments/${teacherId}/${subjectId}/${studentId}`;
-    console.log('❌ [rejectEnrollment] Rejecting enrollment');
-    console.log('  - Path:', path);
-    console.log('  - TeacherId:', teacherId);
-    console.log('  - SubjectId:', subjectId);
-    console.log('  - StudentId:', studentId);
-    
-    const enrollmentRef = ref(database, path);
-    await update(enrollmentRef, {
+    await update(ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`), {
       status: 'rejected',
-      rejectedAt: Date.now()
+      rejectedAt: Date.now(),
     });
-    
-    console.log('  - Rejection successful');
-    
-    // Update the subject's student count (in case previously approved student is rejected)
-    // This ensures the count stays accurate
-    const subjectsRef = ref(database, `subjects/${teacherId}`);
-    const subjectsSnapshot = await get(subjectsRef);
-    
-    if (subjectsSnapshot.exists()) {
-      const sections = subjectsSnapshot.val();
-      let foundSectionId: string | null = null;
-      
-      for (const sectionId in sections) {
-        if (sections[sectionId][subjectId]) {
-          foundSectionId = sectionId;
-          break;
-        }
-      }
-      
-      if (foundSectionId) {
-        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
-        const enrollmentsSnapshot = await get(enrollmentsRef);
-        
-        let approvedCount = 0;
-        if (enrollmentsSnapshot.exists()) {
-          const enrollments = enrollmentsSnapshot.val();
-          approvedCount = Object.values(enrollments).filter(
-            (e: any) => e.status === 'approved'
-          ).length;
-        }
-        
-        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
-        await update(subjectRef, {
-          studentCount: approvedCount,
-          updatedAt: Date.now()
-        });
-        
-        console.log('  - Updated subject studentCount:', approvedCount);
-      }
-    }
+    await updateSubjectStudentCount(teacherId, subjectId);
   } catch (error: any) {
-    console.error('❌ [rejectEnrollment] Error:', error);
-    console.error('  - Error code:', error.code);
-    console.error('  - Error message:', error.message);
     throw new Error(error.message || 'Failed to reject enrollment');
   }
 };
 
 /**
- * Remove an enrollment
+ * Remove an enrollment.
  */
 export const removeEnrollment = async (
   teacherId: string,
@@ -241,53 +191,15 @@ export const removeEnrollment = async (
   studentId: string
 ): Promise<void> => {
   try {
-    const enrollmentRef = ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`);
-    await remove(enrollmentRef);
-    
-    // Update the subject's student count after removal
-    const subjectsRef = ref(database, `subjects/${teacherId}`);
-    const subjectsSnapshot = await get(subjectsRef);
-    
-    if (subjectsSnapshot.exists()) {
-      const sections = subjectsSnapshot.val();
-      let foundSectionId: string | null = null;
-      
-      for (const sectionId in sections) {
-        if (sections[sectionId][subjectId]) {
-          foundSectionId = sectionId;
-          break;
-        }
-      }
-      
-      if (foundSectionId) {
-        const enrollmentsRef = ref(database, `enrollments/${teacherId}/${subjectId}`);
-        const enrollmentsSnapshot = await get(enrollmentsRef);
-        
-        let approvedCount = 0;
-        if (enrollmentsSnapshot.exists()) {
-          const enrollments = enrollmentsSnapshot.val();
-          approvedCount = Object.values(enrollments).filter(
-            (e: any) => e.status === 'approved'
-          ).length;
-        }
-        
-        const subjectRef = ref(database, `subjects/${teacherId}/${foundSectionId}/${subjectId}`);
-        await update(subjectRef, {
-          studentCount: approvedCount,
-          updatedAt: Date.now()
-        });
-        
-        console.log('✅ [removeEnrollment] Updated subject studentCount:', approvedCount);
-      }
-    }
+    await remove(ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`));
+    await updateSubjectStudentCount(teacherId, subjectId);
   } catch (error: any) {
-    console.error('❌ [removeEnrollment] Error:', error);
     throw new Error(error.message || 'Failed to remove enrollment');
   }
 };
 
 /**
- * Check if student is enrolled in subject
+ * Check if a student (by Firebase UID) is approved in a subject.
  */
 export const isStudentEnrolled = async (
   teacherId: string,
@@ -295,97 +207,68 @@ export const isStudentEnrolled = async (
   studentId: string
 ): Promise<boolean> => {
   try {
-    const enrollmentRef = ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`);
-    const snapshot = await get(enrollmentRef);
-    
-    if (!snapshot.exists()) {
-      return false;
-    }
-
-    const enrollment = snapshot.val() as Enrollment;
-    return enrollment.status === 'approved';
+    const snap = await get(
+      ref(database, `enrollments/${teacherId}/${subjectId}/${studentId}`)
+    );
+    if (!snap.exists()) return false;
+    return (snap.val() as Enrollment).status === 'approved';
   } catch (error: any) {
     throw new Error(error.message || 'Failed to check enrollment status');
   }
 };
 
 /**
- * Join a subject using an invite code
+ * Join a subject using an invite code.
+ *
+ * Key addition: reads schoolId from /users/students/{uid}/studentId
+ * and writes it to the enrollment record so answer sheets can be matched.
  */
 export const joinSubjectWithCode = async (
   code: string,
-  studentId: string,
+  studentUid: string,
   studentName: string,
   studentEmail: string
 ): Promise<{ success: boolean; message: string }> => {
   try {
-    // Validate the invite code
     const { validateInviteCode } = require('./inviteCodeService');
     const validation = await validateInviteCode(code);
-    
+
     if (!validation.valid || !validation.inviteCode) {
-      return {
-        success: false,
-        message: validation.error || 'Invalid invite code'
-      };
+      return { success: false, message: validation.error || 'Invalid invite code' };
     }
-    
+
     const inviteCode = validation.inviteCode;
-    
-    // Check if student is already enrolled
-    const alreadyEnrolled = await isStudentEnrolled(
-      inviteCode.teacherId,
-      inviteCode.subjectId,
-      studentId
+
+    // Fetch school ID from student profile BEFORE writing enrollment
+    const schoolId = await fetchSchoolId(studentUid);
+
+    // Check existing enrollment
+    const existingSnap = await get(
+      ref(database, `enrollments/${inviteCode.teacherId}/${inviteCode.subjectId}/${studentUid}`)
     );
-    
-    if (alreadyEnrolled) {
-      return {
-        success: false,
-        message: 'You are already enrolled in this subject'
-      };
-    }
-    
-    // Check if there's a pending enrollment
-    const enrollmentRef = ref(database, `enrollments/${inviteCode.teacherId}/${inviteCode.subjectId}/${studentId}`);
-    const snapshot = await get(enrollmentRef);
-    
-    if (snapshot.exists()) {
-      const enrollment = snapshot.val() as Enrollment;
-      if (enrollment.status === 'pending') {
-        return {
-          success: false,
-          message: 'Your enrollment request is pending approval'
-        };
-      } else if (enrollment.status === 'rejected') {
-        // Allow re-enrollment if previously rejected
-        await createEnrollment({
-          studentId,
-          subjectId: inviteCode.subjectId,
-          studentName,
-          studentEmail,
-          teacherId: inviteCode.teacherId
-        });
-        return {
-          success: true,
-          message: 'Enrollment request submitted successfully!'
-        };
+
+    if (existingSnap.exists()) {
+      const existing = existingSnap.val() as Enrollment;
+
+      if (existing.status === 'approved') {
+        return { success: false, message: 'You are already enrolled in this subject' };
       }
+      if (existing.status === 'pending') {
+        return { success: false, message: 'Your enrollment request is pending approval' };
+      }
+      // Previously rejected — allow re-enrollment, also update schoolId in case it changed
     }
-    
-    // Create enrollment
+
     await createEnrollment({
-      studentId,
+      studentId: studentUid,
+      schoolId: schoolId ?? undefined,
       subjectId: inviteCode.subjectId,
       studentName,
       studentEmail,
-      teacherId: inviteCode.teacherId
+      teacherId: inviteCode.teacherId,
     });
-    
-    return {
-      success: true,
-      message: 'Enrollment request submitted successfully!'
-    };
+
+    return { success: true, message: 'Enrollment request submitted successfully!' };
   } catch (error: any) {
     console.error('❌ [joinSubjectWithCode] Error:', error);
     throw new Error(error.message || 'Failed to join subject');
@@ -393,9 +276,11 @@ export const joinSubjectWithCode = async (
 };
 
 /**
- * Get student enrollments across all subjects with full details
+ * Get student enrollments across all subjects with full details.
  */
-export const getStudentEnrollments = async (studentId: string): Promise<Array<Enrollment & {
+export const getStudentEnrollments = async (
+  studentId: string
+): Promise<Array<Enrollment & {
   teacherName: string;
   sectionName: string;
   year: string;
@@ -403,80 +288,46 @@ export const getStudentEnrollments = async (studentId: string): Promise<Array<En
   subjectCode: string;
 }>> => {
   try {
-    const enrollmentsRef = ref(database, 'enrollments');
-    const snapshot = await get(enrollmentsRef);
-    
-    if (!snapshot.exists()) {
-      return [];
-    }
-    
-    const allEnrollments: Array<Enrollment & {
-      teacherName: string;
-      sectionName: string;
-      year: string;
-      subjectName: string;
-      subjectCode: string;
-    }> = [];
-    
-    const enrollmentsData = snapshot.val();
-    
-    // Get all invite codes to find subject details
-    const inviteCodesRef = ref(database, 'inviteCodes');
-    const inviteCodesSnapshot = await get(inviteCodesRef);
-    const inviteCodes = inviteCodesSnapshot.exists() ? inviteCodesSnapshot.val() : {};
-    
-    // Create a map of subjectId to subject details
-    const subjectDetailsMap: { [key: string]: any } = {};
-    Object.values(inviteCodes).forEach((inviteCode: any) => {
-      if (!subjectDetailsMap[inviteCode.subjectId]) {
-        subjectDetailsMap[inviteCode.subjectId] = {
-          subjectName: inviteCode.subjectName,
-          teacherName: inviteCode.teacherName,
-          sectionName: inviteCode.sectionName,
-          year: inviteCode.year,
-          subjectCode: inviteCode.code
+    const snap = await get(ref(database, 'enrollments'));
+    if (!snap.exists()) return [];
+
+    const inviteCodesSnap = await get(ref(database, 'inviteCodes'));
+    const inviteCodes = inviteCodesSnap.exists() ? inviteCodesSnap.val() : {};
+
+    const subjectDetailsMap: Record<string, any> = {};
+    Object.values(inviteCodes).forEach((ic: any) => {
+      if (ic?.subjectId && !subjectDetailsMap[ic.subjectId]) {
+        subjectDetailsMap[ic.subjectId] = {
+          subjectName: ic.subjectName,
+          teacherName: ic.teacherName,
+          sectionName: ic.sectionName,
+          year: ic.year,
+          subjectCode: ic.code,
         };
       }
     });
-    
-    // Iterate through all teachers
-    Object.keys(enrollmentsData).forEach((teacherId) => {
-      const teacherEnrollments = enrollmentsData[teacherId];
-      
-      // Iterate through all subjects
-      Object.keys(teacherEnrollments).forEach((subjectId) => {
-        const subjectEnrollments = teacherEnrollments[subjectId];
-        
-        // Check if student is enrolled in this subject
-        if (subjectEnrollments[studentId]) {
-          const enrollment = subjectEnrollments[studentId] as Enrollment;
-          
-          // Only include approved enrollments
-          if (enrollment.status === 'approved') {
-            const subjectDetails = subjectDetailsMap[subjectId] || {
-              subjectName: 'Unknown Subject',
-              teacherName: 'Unknown Teacher',
-              sectionName: 'Unknown Section',
-              year: '',
-              subjectCode: ''
-            };
-            
-            allEnrollments.push({
-              ...enrollment,
-              teacherName: subjectDetails.teacherName,
-              sectionName: subjectDetails.sectionName,
-              year: subjectDetails.year,
-              subjectName: subjectDetails.subjectName,
-              subjectCode: subjectDetails.subjectCode
-            });
-          }
+
+    const result: any[] = [];
+    const allEnrollments = snap.val() as Record<string, Record<string, Record<string, any>>>;
+
+    Object.entries(allEnrollments).forEach(([teacherId, teacherEnrollments]) => {
+      Object.entries(teacherEnrollments).forEach(([subjectId, subjectEnrollments]) => {
+        const enrollment = subjectEnrollments[studentId];
+        if (enrollment?.status === 'approved') {
+          const meta = subjectDetailsMap[subjectId] ?? {
+            subjectName: 'Unknown Subject',
+            teacherName: 'Unknown Teacher',
+            sectionName: '',
+            year: '',
+            subjectCode: '',
+          };
+          result.push({ ...enrollment, ...meta });
         }
       });
     });
-    
-    return allEnrollments.sort((a, b) => b.joinedAt - a.joinedAt);
+
+    return result.sort((a, b) => b.joinedAt - a.joinedAt);
   } catch (error: any) {
-    console.error('❌ [getStudentEnrollments] Error:', error);
     throw new Error(error.message || 'Failed to fetch student enrollments');
   }
 };

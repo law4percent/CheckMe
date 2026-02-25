@@ -9,16 +9,16 @@ import { AnswerSheetResult, QuestionBreakdown } from '../types';
 
 /**
  * Build a name-lookup map from /enrollments/{teacherUid}/{subjectUid}/
- * Keys are school IDs (once that field is added to enrollments).
- * For now, returns an empty map since enrollments don't yet store school IDs.
  *
- * Shape: { [schoolId]: "Last Name, First Name" }
+ * Shape: { [schoolId]: studentName }
  *
- * TODO: When school ID field is added to enrollment records, update this to:
- *   Object.values(snapshot.val()).reduce((map, enrollment) => {
- *     if (enrollment.schoolId) map[enrollment.schoolId] = enrollment.studentName;
- *     return map;
- *   }, {})
+ * schoolId comes from enrollment.schoolId which is written at join time
+ * by reading /users/students/{uid}/studentId (the school-provided number,
+ * e.g. "4201400"). This matches the key used in /answer_sheets/.
+ *
+ * Enrollments created before this field was added will not have schoolId
+ * and will continue to show "Unknown Student" until the student re-enrolls
+ * or the field is backfilled.
  */
 const buildStudentNameMap = async (
   teacherUid: string,
@@ -34,9 +34,9 @@ const buildStudentNameMap = async (
     const map: Record<string, string> = {};
 
     Object.values(data).forEach((enrollment: any) => {
-      // Future: when schoolId field exists in enrollment
       if (enrollment?.schoolId && enrollment?.studentName) {
-        map[enrollment.schoolId] = enrollment.studentName;
+        // schoolId is stored as string — normalize to string in case saved as number
+        map[String(enrollment.schoolId)] = enrollment.studentName;
       }
     });
 
