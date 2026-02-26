@@ -115,7 +115,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
             {/* Logo */}
             <View style={styles.logoContainer}>
               <Image
-                source={require('../../../assets/checkme-logo.jpg')}
+                source={require('../../../assets/checkme-logo.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
