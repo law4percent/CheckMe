@@ -163,8 +163,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   // ── Delete Assessment ─────────────────────────
   const handleDeleteAssessment = (assessment: Assessment) => {
     Alert.alert(
-      'Delete Assessment',
-      `Are you sure you want to delete "${assessment.assessmentName}"?\n\nAssessment UID: ${assessment.assessmentUid}\n\nThis will remove the assessment record.`,
+      '⚠️ Delete Assessment',
+      `Are you sure you want to delete "${assessment.assessmentName}"?\n\nAssessment UID: ${assessment.assessmentUid}\n\nThis will permanently delete:\n• The assessment record\n• The scanned answer key\n• All student answer sheets and scores\n\nThis action cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -361,6 +361,9 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Assessments</Text>
             <View style={styles.headerButtonsContainer}>
+              <TouchableOpacity style={styles.answerKeysHeaderButton} onPress={handleViewAnswerKeys} disabled={actionLoading}>
+                <Text style={styles.answerKeysHeaderButtonText}>🗝️ Answer Keys</Text>
+              </TouchableOpacity>
               {pendingEnrollments.length > 0 && (
                 <TouchableOpacity onPress={handleViewPendingEnrollments}>
                   <Text style={[styles.sectionTitle, styles.clickableTitle, styles.pendingBadge]}>
@@ -404,9 +407,6 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 </View>
 
                 <View style={styles.assessmentActions}>
-                  <TouchableOpacity style={styles.answerKeysButton} onPress={handleViewAnswerKeys}>
-                    <Text style={styles.answerKeysButtonText}>🗝️ Answer Keys</Text>
-                  </TouchableOpacity>
                   <TouchableOpacity style={styles.viewScoresButton} onPress={() => handleViewScores(assessment)}>
                     <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
                   </TouchableOpacity>
@@ -704,14 +704,13 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 12, color: '#22c55e', fontWeight: '600' },
   assessmentActions: { flexDirection: 'row', gap: 8 },
-  answerKeysButton: {
-    flex: 1,
+  answerKeysHeaderButton: {
     backgroundColor: '#fef3c7',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
-  answerKeysButtonText: {
+  answerKeysHeaderButtonText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#d97706',

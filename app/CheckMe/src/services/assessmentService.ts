@@ -168,5 +168,10 @@ export const deleteAssessment = async (
 ): Promise<void> => {
   if (!teacherId || !assessmentUid) throw new Error('teacherId and assessmentUid are required');
 
-  await remove(ref(database, `assessments/${teacherId}/${assessmentUid}`));
+  // Cascade delete: assessment record + answer key + all answer sheets
+  await Promise.all([
+    remove(ref(database, `assessments/${teacherId}/${assessmentUid}`)),
+    remove(ref(database, `answer_keys/${teacherId}/${assessmentUid}`)),
+    remove(ref(database, `answer_sheets/${teacherId}/${assessmentUid}`)),
+  ]);
 };

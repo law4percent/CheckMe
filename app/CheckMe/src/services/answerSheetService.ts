@@ -571,3 +571,69 @@ export const getAnswerSheetCount = async (
     return 0;
   }
 };
+
+// ─────────────────────────────────────────────
+// Update individual student answer + re-score
+// ─────────────────────────────────────────────
+
+export interface StudentAnswerEdit {
+  questionKey: string;          // e.g. "Q3"
+  newStudentAnswer: string;     // corrected answer from teacher
+  newCheckingResult: boolean | 'pending';
+}
+
+/**
+ * Updates one or more student answers in a breakdown,
+ * recalculates total_score and is_final_score, and writes back.
+ *
+ * Used by teacher to correct OCR errors or grade essays manually.
+ */
+export const updateStudentAnswerSheet = async (
+  teacherUid: string,
+  assessmentUid: string,
+  studentId: string,
+  edits: StudentAnswerEdit[],
+  markFinal: boolean            // teacher decision: is this sheet now fully graded?
+): Promise<{ newScore: number; newTotal: number }> => {
+  // Read current sheet
+  const snap = await get(
+    ref(database, `answer_sheets/${teacherUid}/${assessmentUid}/${studentId}`)
+  );
+  if (!snap.exists()) throw new Error('Answer sheet not found');
+
+  const sheet = snap.val() as any;
+  const breakdown: Record<string, any> = { ...(sheet.breakdown ?? {}) };
+
+  // Apply each edit
+  for (const edit of edits) {
+    if (!breakdown[edit.questionKey]) continue;
+    breakdown[edit.questionKey] = {
+      ...breakdown[edit.questionKey],
+      student_answer: edit.newStudentAnswer,
+      checking_result: edit.newCheckingResult,
+    };
+  }
+
+  // Recalculate score from updated breakdown
+  let newScore = 0;
+  let hasPending = false;
+
+  for (const qData of Object.values(breakdown) as any[]) {
+    if (qData.checking_result === true) newScore++;
+    if (qData.checking_result === 'pending') hasPending = true;
+  }
+
+  const isFinal = markFinal ? true : !hasPending;
+
+  await update(
+    ref(database, `answer_sheets/${teacherUid}/${assessmentUid}/${studentId}`),
+    {
+      breakdown,
+      total_score: newScore,
+      is_final_score: isFinal,
+      updated_at: Date.now(),
+    }
+  );
+
+  return { newScore, newTotal: sheet.total_questions };
+};
