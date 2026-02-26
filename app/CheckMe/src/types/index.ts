@@ -175,6 +175,9 @@ export type RootStackParamList = {
   TeacherAssessmentScoreTable: {
     result: AnswerSheetResult;
     assessmentName: string;
+    teacherUid: string;
+    assessmentUid: string;
+    subjectUid: string;
   };
   StudentLogin: undefined;
   StudentRegister: undefined;
