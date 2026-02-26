@@ -161,6 +161,11 @@ export type RootStackParamList = {
     subject: Subject;
     section: Section;
   };
+  AnswerKeys: {
+    teacherUid: string;
+    subjectUid: string;
+    subjectName: string;
+  };
   ViewScores: {
     assessmentUid: string;
     assessmentName?: string;

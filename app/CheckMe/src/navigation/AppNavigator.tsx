@@ -16,6 +16,7 @@ import StudentLoginScreen from '../screens/student/LoginScreen';
 import StudentRegisterScreen from '../screens/student/RegisterScreen';
 import StudentDashboardScreen from '../screens/student/DashboardScreen';
 import ViewScoresScreen from '../screens/teacher/ViewScoresScreen';
+import AnswerKeysScreen from '../screens/teacher/AnswerKeysScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -51,6 +52,11 @@ const AppNavigator: React.FC = () => {
                 name="TeacherSubjectDashboard"
                 component={SubjectDashboardScreen}
                 options={{ ...headerCommon, title: 'Subject Dashboard' }}
+              />
+              <Stack.Screen
+                name="AnswerKeys"
+                component={AnswerKeysScreen}
+                options={{ title: 'Answer Keys' }}
               />
               <Stack.Screen
                 name="ViewScores"

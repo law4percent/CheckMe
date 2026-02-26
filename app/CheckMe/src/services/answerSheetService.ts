@@ -362,3 +362,212 @@ export const reassignAnswerKey = async (
   // Delete old key
   await remove(oldRef);
 };
+
+// ─────────────────────────────────────────────
+// Answer Key monitoring & editing
+// ─────────────────────────────────────────────
+
+export interface AnswerKeyEntry {
+  assessmentUid: string;
+  assessmentName: string;       // from /assessments/ — "Unidentified" if no match
+  totalQuestions: number;
+  answers: Record<string, string>;    // { Q1: "A", Q2: "TRUE", ... }
+  imageUrls: string[];
+  createdAt: number;
+  updatedAt: number;
+  sectionUid: string;
+  subjectUid: string;
+  hasAnswerKey: true;
+}
+
+export interface AssessmentWithoutKey {
+  assessmentUid: string;
+  assessmentName: string;
+  hasAnswerKey: false;
+}
+
+export type AnswerKeyListItem = AnswerKeyEntry | AssessmentWithoutKey;
+
+/**
+ * Loads all assessments for a subject and joins with /answer_keys/.
+ * Returns a list where each item is either an AnswerKeyEntry (key exists)
+ * or AssessmentWithoutKey (not yet scanned).
+ */
+export const getAnswerKeysForSubject = async (
+  teacherUid: string,
+  subjectUid: string
+): Promise<AnswerKeyListItem[]> => {
+  try {
+    // Load assessments for this subject
+    const assessmentsSnap = await get(ref(database, `assessments/${teacherUid}`));
+    const assessments: Record<string, string> = {}; // uid → name
+    if (assessmentsSnap.exists()) {
+      const data = assessmentsSnap.val() as Record<string, any>;
+      Object.entries(data).forEach(([uid, a]) => {
+        if (a?.subjectUid === subjectUid || a?.subject_uid === subjectUid) {
+          assessments[uid] = a?.assessmentName ?? a?.assessment_name ?? 'Unidentified';
+        }
+      });
+    }
+
+    // Load all answer keys for teacher
+    const keysSnap = await get(ref(database, `answer_keys/${teacherUid}`));
+    const keyMap: Record<string, any> = keysSnap.exists() ? keysSnap.val() : {};
+
+    // Build result list — assessments for this subject only
+    const result: AnswerKeyListItem[] = [];
+
+    for (const [uid, name] of Object.entries(assessments)) {
+      if (keyMap[uid]) {
+        const k = keyMap[uid];
+        const rawAnswers = k.answer_key ?? k.answers ?? {};
+        // Sort answers numerically Q1, Q2 … Q10
+        const sorted: Record<string, string> = {};
+        Object.keys(rawAnswers)
+          .sort((a, b) => parseInt(a.replace(/\D/g, '')) - parseInt(b.replace(/\D/g, '')))
+          .forEach(q => { sorted[q] = rawAnswers[q]; });
+
+        result.push({
+          hasAnswerKey: true,
+          assessmentUid: uid,
+          assessmentName: name,
+          totalQuestions: k.total_questions ?? Object.keys(rawAnswers).length,
+          answers: sorted,
+          imageUrls: parseImageUrls(k.image_urls),
+          createdAt: k.created_at ?? 0,
+          updatedAt: k.updated_at ?? 0,
+          sectionUid: k.section_uid ?? '',
+          subjectUid: k.subject_uid ?? subjectUid,
+        });
+      } else {
+        result.push({ hasAnswerKey: false, assessmentUid: uid, assessmentName: name });
+      }
+    }
+
+    // Sort: keyed first (by updatedAt desc), then unkeyed
+    result.sort((a, b) => {
+      if (a.hasAnswerKey && b.hasAnswerKey) return b.updatedAt - a.updatedAt;
+      if (a.hasAnswerKey) return -1;
+      if (b.hasAnswerKey) return 1;
+      return 0;
+    });
+
+    return result;
+  } catch (error: any) {
+    throw new Error(error.message || 'Failed to load answer keys');
+  }
+};
+
+/**
+ * Update a single question's correct answer in /answer_keys/.
+ */
+export const updateAnswerKeyAnswer = async (
+  teacherUid: string,
+  assessmentUid: string,
+  questionKey: string,   // e.g. "Q3"
+  newAnswer: string
+): Promise<void> => {
+  await update(
+    ref(database, `answer_keys/${teacherUid}/${assessmentUid}/answer_key`),
+    { [questionKey]: newAnswer, }
+  );
+  await update(
+    ref(database, `answer_keys/${teacherUid}/${assessmentUid}`),
+    { updated_at: Date.now() }
+  );
+};
+
+/**
+ * Delete an entire answer key.
+ */
+export const deleteAnswerKey = async (
+  teacherUid: string,
+  assessmentUid: string
+): Promise<void> => {
+  await remove(ref(database, `answer_keys/${teacherUid}/${assessmentUid}`));
+};
+
+/**
+ * Re-scores all answer sheets for an assessment using an updated answer key.
+ * Reads every sheet under /answer_sheets/{teacherUid}/{assessmentUid}/,
+ * recomputes breakdown + total_score + is_final_score, and writes back.
+ */
+export const rescoreAnswerSheets = async (
+  teacherUid: string,
+  assessmentUid: string,
+  updatedAnswerKey: Record<string, string>   // { Q1: "A", Q2: "B", ... }
+): Promise<number> => {
+  const sheetsSnap = await get(
+    ref(database, `answer_sheets/${teacherUid}/${assessmentUid}`)
+  );
+  if (!sheetsSnap.exists()) return 0;
+
+  const sheets = sheetsSnap.val() as Record<string, any>;
+  let rescored = 0;
+
+  for (const [studentId, sheet] of Object.entries(sheets)) {
+    const studentAnswers: Record<string, string> = {};
+
+    // Flatten breakdown back to student answers map
+    const breakdown = sheet.breakdown ?? {};
+    for (const [q, qData] of Object.entries(breakdown as Record<string, any>)) {
+      studentAnswers[q] = qData?.student_answer ?? 'missing_answer';
+    }
+
+    // Recalculate
+    let score = 0;
+    let isFinal = true;
+    const newBreakdown: Record<string, any> = {};
+
+    for (const [q, correctAnswer] of Object.entries(updatedAnswerKey)) {
+      const studentAnswer = studentAnswers[q] ?? 'missing_answer';
+
+      if (studentAnswer === 'essay_answer') {
+        isFinal = false;
+        newBreakdown[q] = {
+          student_answer: studentAnswer,
+          correct_answer: 'will_check_by_teacher',
+          checking_result: 'pending',
+        };
+      } else {
+        const isCorrect = studentAnswer === correctAnswer;
+        if (isCorrect) score++;
+        newBreakdown[q] = {
+          student_answer: studentAnswer,
+          correct_answer: correctAnswer,
+          checking_result: isCorrect,
+        };
+      }
+    }
+
+    await update(
+      ref(database, `answer_sheets/${teacherUid}/${assessmentUid}/${studentId}`),
+      {
+        total_score: score,
+        is_final_score: isFinal,
+        breakdown: newBreakdown,
+        updated_at: Date.now(),
+      }
+    );
+    rescored++;
+  }
+
+  return rescored;
+};
+
+/**
+ * Check how many answer sheets exist for an assessment.
+ * Used to decide whether to show the re-score confirmation.
+ */
+export const getAnswerSheetCount = async (
+  teacherUid: string,
+  assessmentUid: string
+): Promise<number> => {
+  try {
+    const snap = await get(ref(database, `answer_sheets/${teacherUid}/${assessmentUid}`));
+    if (!snap.exists()) return 0;
+    return Object.keys(snap.val()).length;
+  } catch {
+    return 0;
+  }
+};

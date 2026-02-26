@@ -189,6 +189,15 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   // ── View Scores ───────────────────────────────
+  const handleViewAnswerKeys = () => {
+    if (!user?.uid) return;
+    navigation.navigate('AnswerKeys', {
+      teacherUid: user.uid,
+      subjectUid: subject.id,
+      subjectName: subject.subjectName,
+    });
+  };
+
   const handleViewScores = (assessment: Assessment) => {
     if (!user?.uid) return;
     navigation.navigate('ViewScores', {
@@ -395,6 +404,9 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 </View>
 
                 <View style={styles.assessmentActions}>
+                  <TouchableOpacity style={styles.answerKeysButton} onPress={handleViewAnswerKeys}>
+                    <Text style={styles.answerKeysButtonText}>🗝️ Answer Keys</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={styles.viewScoresButton} onPress={() => handleViewScores(assessment)}>
                     <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
                   </TouchableOpacity>
@@ -692,6 +704,18 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 12, color: '#22c55e', fontWeight: '600' },
   assessmentActions: { flexDirection: 'row', gap: 8 },
+  answerKeysButton: {
+    flex: 1,
+    backgroundColor: '#fef3c7',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  answerKeysButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#d97706',
+  },
   viewScoresButton: { flex: 1, backgroundColor: '#dbeafe', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   viewScoresButtonText: { fontSize: 14, fontWeight: '600', color: '#2563eb' },
   deleteAssessmentButton: { backgroundColor: '#fee2e2', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center' },
