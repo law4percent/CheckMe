@@ -4,13 +4,13 @@
     "slug": "checkme",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon.jpg",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-icon.jpg",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#171441"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -21,19 +21,19 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/adaptive-icon.jpg",
+        "backgroundColor": "#171441"
       },
       "package": "com.mr_itnology.checkme",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.jpg"
     },
     "extra": {
       "eas": {
-        "projectId": "441a78f3-2f2f-407a-8d2b-cf2a389c9d9e"
+        "projectId": "52217ffd-e5f4-426f-8554-9239f56339ef"
       }
     }
   }
