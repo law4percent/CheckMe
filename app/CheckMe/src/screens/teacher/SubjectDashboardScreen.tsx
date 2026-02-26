@@ -31,6 +31,7 @@ import {
   getAssessments,
   deleteAssessment,
 } from '../../services/assessmentService';
+import { deleteSubjectCascade } from '../../services/assessmentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDashboard'>;
 
@@ -53,6 +54,9 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [enrolledStudentsModalVisible, setEnrolledStudentsModalVisible] = useState(false);
   const [isEditingEnrollments, setIsEditingEnrollments] = useState(false);
   const [pendingEnrollmentsModalVisible, setPendingEnrollmentsModalVisible] = useState(false);
+
+  // ── Delete confirmation modal for assessment ──
+  const [deleteAssessmentTarget, setDeleteAssessmentTarget] = useState<Assessment | null>(null);
 
   useEffect(() => {
     if (subject.id && user?.uid) {
@@ -162,30 +166,22 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
   // ── Delete Assessment ─────────────────────────
   const handleDeleteAssessment = (assessment: Assessment) => {
-    Alert.alert(
-      '⚠️ Delete Assessment',
-      `Are you sure you want to delete "${assessment.assessmentName}"?\n\nAssessment UID: ${assessment.assessmentUid}\n\nThis will permanently delete:\n• The assessment record\n• The scanned answer key\n• All student answer sheets and scores\n\nThis action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            if (!user?.uid) return;
-            try {
-              setActionLoading(true);
-              await deleteAssessment(user.uid, assessment.assessmentUid);
-              setAssessments(prev => prev.filter(a => a.assessmentUid !== assessment.assessmentUid));
-              Alert.alert('Success', 'Assessment deleted successfully');
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            } finally {
-              setActionLoading(false);
-            }
-          }
-        }
-      ]
-    );
+    setDeleteAssessmentTarget(assessment);
+  };
+
+  const confirmDeleteAssessment = async () => {
+    if (!deleteAssessmentTarget || !user?.uid) return;
+    try {
+      setActionLoading(true);
+      await deleteAssessment(user.uid, deleteAssessmentTarget.assessmentUid);
+      setAssessments(prev => prev.filter(a => a.assessmentUid !== deleteAssessmentTarget.assessmentUid));
+      setDeleteAssessmentTarget(null);
+      Alert.alert('Deleted', 'Assessment and all related data removed.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // ── View Scores ───────────────────────────────
@@ -410,8 +406,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   <TouchableOpacity style={styles.viewScoresButton} onPress={() => handleViewScores(assessment)}>
                     <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.deleteAssessmentButton} onPress={() => handleDeleteAssessment(assessment)}>
-                    <Text style={styles.deleteAssessmentButtonText}>🗑️ Delete</Text>
+                  <TouchableOpacity style={styles.deleteAssessmentIconButton} onPress={() => handleDeleteAssessment(assessment)}>
+                    <Text style={styles.deleteAssessmentIconText}>🗑️</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -639,6 +635,53 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* ── Delete Assessment Confirmation Modal ─── */}
+      <Modal
+        visible={deleteAssessmentTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteAssessmentTarget(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <Text style={styles.deleteModalTitle}>⚠️ Delete Assessment</Text>
+
+            {deleteAssessmentTarget && (
+              <View style={styles.deleteWarningBox}>
+                <Text style={styles.deleteWarningName}>{deleteAssessmentTarget.assessmentName}</Text>
+                <Text style={styles.deleteWarningUid}>UID: {deleteAssessmentTarget.assessmentUid}</Text>
+                <View style={styles.deleteConsequenceList}>
+                  <Text style={styles.deleteConsequenceItem}>• The assessment record</Text>
+                  <Text style={styles.deleteConsequenceItem}>• The scanned answer key</Text>
+                  <Text style={styles.deleteConsequenceItem}>• All student answer sheets and scores</Text>
+                </View>
+                <Text style={styles.deleteWarningNote}>This action cannot be undone.</Text>
+              </View>
+            )}
+
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={styles.deleteCancelBtn}
+                onPress={() => setDeleteAssessmentTarget(null)}
+                disabled={actionLoading}
+              >
+                <Text style={styles.deleteCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteConfirmBtn}
+                onPress={confirmDeleteAssessment}
+                disabled={actionLoading}
+              >
+                {actionLoading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.deleteConfirmBtnText}>Delete</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -717,8 +760,33 @@ const styles = StyleSheet.create({
   },
   viewScoresButton: { flex: 1, backgroundColor: '#dbeafe', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   viewScoresButtonText: { fontSize: 14, fontWeight: '600', color: '#2563eb' },
-  deleteAssessmentButton: { backgroundColor: '#fee2e2', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center' },
-  deleteAssessmentButtonText: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
+  deleteAssessmentIconButton: {
+    backgroundColor: '#fee2e2', paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+  },
+  deleteAssessmentIconText: { fontSize: 18 },
+  // Delete modal
+  deleteModalContent: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 24,
+    width: '100%', maxWidth: 420,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 10, elevation: 10,
+  },
+  deleteModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginBottom: 16 },
+  deleteWarningBox: {
+    backgroundColor: '#fef2f2', borderRadius: 10,
+    borderLeftWidth: 4, borderLeftColor: '#ef4444', padding: 14, marginBottom: 16,
+  },
+  deleteWarningName: { fontSize: 15, fontWeight: '700', color: '#1e293b', marginBottom: 2 },
+  deleteWarningUid: { fontSize: 11, color: '#64748b', fontFamily: 'monospace', marginBottom: 10 },
+  deleteConsequenceList: { marginBottom: 10 },
+  deleteConsequenceItem: { fontSize: 13, color: '#7f1d1d', lineHeight: 22 },
+  deleteWarningNote: { fontSize: 12, color: '#dc2626', fontWeight: '700' },
+  deleteModalButtons: { flexDirection: 'row', gap: 12 },
+  deleteCancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  deleteCancelBtnText: { fontSize: 15, fontWeight: '600', color: '#475569' },
+  deleteConfirmBtn: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },
+  deleteConfirmBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
   enrollmentCard: {
     backgroundColor: '#ffffff', borderRadius: 12, padding: 16, marginBottom: 12,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },

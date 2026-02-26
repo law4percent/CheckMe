@@ -637,3 +637,18 @@ export const updateStudentAnswerSheet = async (
 
   return { newScore, newTotal: sheet.total_questions };
 };
+
+/**
+ * Delete a single student answer sheet.
+ * Used by teachers to remove an incorrectly scanned sheet.
+ */
+export const deleteAnswerSheet = async (
+  teacherUid: string,
+  assessmentUid: string,
+  studentId: string
+): Promise<void> => {
+  if (!teacherUid || !assessmentUid || !studentId)
+    throw new Error('teacherUid, assessmentUid, and studentId are required');
+
+  await remove(ref(database, `answer_sheets/${teacherUid}/${assessmentUid}/${studentId}`));
+};

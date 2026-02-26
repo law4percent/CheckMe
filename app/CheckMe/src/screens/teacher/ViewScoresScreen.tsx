@@ -13,6 +13,7 @@ import {
   reassignAnswerSheet,
   validateStudentId,
   StudentIdValidation,
+  deleteAnswerSheet,
 } from '../../services/answerSheetService';
 import { getSubjectEnrollments, Enrollment } from '../../services/enrollmentService';
 
@@ -64,6 +65,10 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [results, setResults]       = useState<AnswerSheetResult[]>([]);
   const [notScanned, setNotScanned] = useState<Enrollment[]>([]);
+
+  // ── Delete answer sheet ──────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<AnswerSheetResult | null>(null);
+  const [deleting, setDeleting]         = useState(false);
 
   // ── Reassign Student ID modal ──────────────
   const [reassignModalVisible, setReassignModalVisible] = useState(false);
@@ -122,6 +127,25 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   // ─────────────────────────────────────────────
   // Reassign Student ID
   // ─────────────────────────────────────────────
+
+  const handleDeleteSheet = (r: AnswerSheetResult) => {
+    setDeleteTarget(r);
+  };
+
+  const confirmDeleteSheet = async () => {
+    if (!deleteTarget) return;
+    try {
+      setDeleting(true);
+      await deleteAnswerSheet(effectiveTeacherUid, assessmentUid, deleteTarget.studentId);
+      await loadResults();
+      setDeleteTarget(null);
+      Alert.alert('Deleted', 'Answer sheet removed successfully.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to delete answer sheet');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const openReassign = (r: AnswerSheetResult) => {
     setReassignTarget(r);
@@ -356,7 +380,10 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                       <Text style={styles.breakdownButtonText}>📊 View & Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.reassignButton} onPress={() => openReassign(r)}>
-                      <Text style={styles.reassignButtonText}>👤 Reassign</Text>
+                      <Text style={styles.reassignButtonText}>👤</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.deleteSheetButton} onPress={() => handleDeleteSheet(r)}>
+                      <Text style={styles.deleteSheetButtonText}>🗑️</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -464,6 +491,52 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                 {savingReassign
                   ? <ActivityIndicator color="#fff" size="small" />
                   : <Text style={styles.saveBtnText}>Reassign</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Delete Sheet Confirmation Modal ──────── */}
+      <Modal
+        visible={deleteTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteTarget(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>🗑️ Delete Answer Sheet</Text>
+
+            {deleteTarget && (
+              <View style={styles.deleteWarningBox}>
+                <Text style={styles.deleteWarningTitle}>
+                  {deleteTarget.matchedStudentName ?? 'Unknown Student'}
+                </Text>
+                <Text style={styles.deleteWarningSub}>ID: {deleteTarget.studentId}</Text>
+                <Text style={styles.deleteWarningDesc}>
+                  This will permanently delete the student's scanned answer sheet, their score, and all question breakdown data for this assessment.{'\n\n'}This action cannot be undone.
+                </Text>
+              </View>
+            )}
+
+            <View style={[styles.modalButtons, { marginTop: 8 }]}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: '#ef4444' }]}
+                onPress={confirmDeleteSheet}
+                disabled={deleting}
+              >
+                {deleting
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.saveBtnText}>Delete</Text>
                 }
               </TouchableOpacity>
             </View>
@@ -645,6 +718,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#22c55e', alignItems: 'center',
   },
   saveBtnText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
+
+  // Delete sheet button
+  deleteSheetButton: {
+    backgroundColor: '#fee2e2', paddingVertical: 10,
+    paddingHorizontal: 14, borderRadius: 8, alignItems: 'center',
+  },
+  deleteSheetButtonText: { fontSize: 16 },
+
+  // Delete warning
+  deleteWarningBox: {
+    backgroundColor: '#fef2f2', borderRadius: 10,
+    borderLeftWidth: 4, borderLeftColor: '#ef4444',
+    padding: 14, marginBottom: 8,
+  },
+  deleteWarningTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b', marginBottom: 2 },
+  deleteWarningSub: { fontSize: 12, color: '#64748b', fontFamily: 'monospace', marginBottom: 10 },
+  deleteWarningDesc: { fontSize: 13, color: '#7f1d1d', lineHeight: 20 },
 });
 
 export default ViewScoresScreen;

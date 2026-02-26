@@ -24,6 +24,7 @@ import {
   Section
 } from '../../services/sectionService';
 import { updateTeacherProfile, generateTempCode, isEmployeeIdTaken } from '../../services/authService';
+import { deleteSectionCascade } from '../../services/assessmentService';
 import { RootStackParamList } from '../../types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -63,6 +64,9 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   // ── Section Details Modal ────────────────────
   const [sectionDetailsModalVisible, setSectionDetailsModalVisible] = useState(false);
   const [selectedSectionForDetails, setSelectedSectionForDetails] = useState<Section | null>(null);
+
+  // ── Delete confirmation modal ────────────────
+  const [deleteSectionTarget, setDeleteSectionTarget] = useState<Section | null>(null);
 
   // ── Generate Code ────────────────────────────
   const [codeModalVisible, setCodeModalVisible] = useState(false);
@@ -294,30 +298,23 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleDeleteSection = (section: Section) => {
-    Alert.alert(
-      'Delete Section',
-      `Are you sure you want to delete ${section.year}-${section.sectionName}?\n\nThis action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            if (!user?.uid) return;
-            try {
-              setActionLoading(true);
-              await deleteSection(user.uid, section.id);
-              setSections(sections.filter(s => s.id !== section.id));
-              Alert.alert('Success', 'Section deleted successfully!');
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            } finally {
-              setActionLoading(false);
-            }
-          }
-        }
-      ]
-    );
+    setDeleteSectionTarget(section);
+  };
+
+  const confirmDeleteSection = async () => {
+    if (!deleteSectionTarget || !user?.uid) return;
+    try {
+      setActionLoading(true);
+      // Cascade: all subjects + assessments + answer keys + sheets + enrollments + section
+      await deleteSectionCascade(user.uid, deleteSectionTarget.id);
+      setSections(sections.filter(s => s.id !== deleteSectionTarget.id));
+      setDeleteSectionTarget(null);
+      Alert.alert('Deleted', 'Section and all related data removed.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleSectionPress = (section: Section) => {
@@ -439,18 +436,19 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
                 <View style={styles.sectionCardActions}>
                   <TouchableOpacity
-                    style={styles.editButton}
+                    style={styles.iconActionBtn}
                     onPress={() => handleEditSection(section)}
                     disabled={actionLoading}
                   >
-                    <Text style={styles.editButtonText}>✏️ Edit</Text>
+                    <Text style={styles.iconActionText}>✏️</Text>
                   </TouchableOpacity>
+                  <View style={styles.iconActionDivider} />
                   <TouchableOpacity
-                    style={styles.deleteButton}
+                    style={styles.iconActionBtnDanger}
                     onPress={() => handleDeleteSection(section)}
                     disabled={actionLoading}
                   >
-                    <Text style={styles.deleteButtonText}>🗑️ Delete</Text>
+                    <Text style={styles.iconActionText}>🗑️</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -796,6 +794,59 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* ── Delete Section Confirmation Modal ─────── */}
+      <Modal
+        visible={deleteSectionTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteSectionTarget(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <Text style={styles.deleteModalTitle}>⚠️ Delete Section</Text>
+
+            {deleteSectionTarget && (
+              <View style={styles.deleteWarningBox}>
+                <Text style={styles.deleteWarningName}>
+                  {deleteSectionTarget.year}-{deleteSectionTarget.sectionName}
+                </Text>
+                <Text style={styles.deleteWarningDesc}>
+                  Deleting this section will permanently remove:
+                </Text>
+                <View style={styles.deleteConsequenceList}>
+                  <Text style={styles.deleteConsequenceItem}>• All subjects in this section</Text>
+                  <Text style={styles.deleteConsequenceItem}>• All assessments (quizzes and exams)</Text>
+                  <Text style={styles.deleteConsequenceItem}>• All scanned answer keys</Text>
+                  <Text style={styles.deleteConsequenceItem}>• All student answer sheets and scores</Text>
+                  <Text style={styles.deleteConsequenceItem}>• All student enrollments</Text>
+                </View>
+                <Text style={styles.deleteWarningNote}>This action cannot be undone.</Text>
+              </View>
+            )}
+
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={styles.deleteCancelBtn}
+                onPress={() => setDeleteSectionTarget(null)}
+                disabled={actionLoading}
+              >
+                <Text style={styles.deleteCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteConfirmBtn}
+                onPress={confirmDeleteSection}
+                disabled={actionLoading}
+              >
+                {actionLoading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.deleteConfirmBtnText}>Delete</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -855,11 +906,25 @@ const styles = StyleSheet.create({
   detailIconText: { fontSize: 20 },
   sectionCardTitle: { fontSize: 18, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
   sectionCardDetails: { fontSize: 14, color: '#64748b' },
-  sectionCardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
-  editButton: { flex: 1, paddingVertical: 12, alignItems: 'center', backgroundColor: '#eff6ff', borderRightWidth: 1, borderRightColor: '#f1f5f9' },
-  editButtonText: { fontSize: 14, fontWeight: '600', color: '#3b82f6' },
-  deleteButton: { flex: 1, paddingVertical: 12, alignItems: 'center', backgroundColor: '#fef2f2' },
-  deleteButtonText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
+  sectionCardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#f1f5f9', justifyContent: 'flex-end' },
+  iconActionBtn: { paddingVertical: 10, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff6ff' },
+  iconActionBtnDanger: { paddingVertical: 10, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fef2f2' },
+  iconActionText: { fontSize: 18 },
+  iconActionDivider: { width: 1, backgroundColor: '#f1f5f9' },
+  // Delete modal
+  deleteModalContent: { backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 },
+  deleteModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginBottom: 16 },
+  deleteWarningBox: { backgroundColor: '#fef2f2', borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#ef4444', padding: 14, marginBottom: 16 },
+  deleteWarningName: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 8 },
+  deleteWarningDesc: { fontSize: 13, color: '#475569', marginBottom: 8 },
+  deleteConsequenceList: { marginBottom: 10 },
+  deleteConsequenceItem: { fontSize: 13, color: '#7f1d1d', lineHeight: 22 },
+  deleteWarningNote: { fontSize: 12, color: '#dc2626', fontWeight: '700', marginTop: 4 },
+  deleteModalButtons: { flexDirection: 'row', gap: 12 },
+  deleteCancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  deleteCancelBtnText: { fontSize: 15, fontWeight: '600', color: '#475569' },
+  deleteConfirmBtn: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },
+  deleteConfirmBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
 
   // ── Code Modal ───────────────────────────────
   codeModalBody: { alignItems: 'center', paddingVertical: 24 },

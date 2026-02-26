@@ -175,3 +175,76 @@ export const deleteAssessment = async (
     remove(ref(database, `answer_sheets/${teacherId}/${assessmentUid}`)),
   ]);
 };
+
+// ─────────────────────────────────────────────
+// Cascade delete helpers used by higher-level screens
+// ─────────────────────────────────────────────
+
+/**
+ * Delete all assessments for a given subject (+ their answer keys and sheets).
+ * Called internally by deleteSubjectCascade and deleteSectionCascade.
+ */
+export const deleteAssessmentsForSubject = async (
+  teacherId: string,
+  subjectUid: string
+): Promise<void> => {
+  const assessments = await getAssessments(teacherId, subjectUid);
+  await Promise.all(
+    assessments.map(a =>
+      Promise.all([
+        remove(ref(database, `assessments/${teacherId}/${a.assessmentUid}`)),
+        remove(ref(database, `answer_keys/${teacherId}/${a.assessmentUid}`)),
+        remove(ref(database, `answer_sheets/${teacherId}/${a.assessmentUid}`)),
+      ])
+    )
+  );
+};
+
+/**
+ * Cascade-delete a subject and everything beneath it:
+ *   - All assessments (+ answer keys + answer sheets)
+ *   - Enrollments for this subject
+ *   - The subject record itself
+ *
+ * The subject record lives at /subjects/{teacherId}/{sectionId}/{subjectId}.
+ * Pass sectionId so we can delete the correct path.
+ */
+export const deleteSubjectCascade = async (
+  teacherId: string,
+  sectionId: string,
+  subjectId: string
+): Promise<void> => {
+  await Promise.all([
+    deleteAssessmentsForSubject(teacherId, subjectId),
+    remove(ref(database, `enrollments/${teacherId}/${subjectId}`)),
+    remove(ref(database, `subjects/${teacherId}/${sectionId}/${subjectId}`)),
+  ]);
+};
+
+/**
+ * Cascade-delete a section and everything beneath it:
+ *   - All subjects in the section (each triggering deleteSubjectCascade)
+ *   - The section record itself
+ *
+ * Subjects live at /subjects/{teacherId}/{sectionId}/ — read all children,
+ * cascade-delete each, then remove the section record.
+ */
+export const deleteSectionCascade = async (
+  teacherId: string,
+  sectionId: string
+): Promise<void> => {
+  // 1. Read all subjects under this section
+  const snap = await get(ref(database, `subjects/${teacherId}/${sectionId}`));
+
+  if (snap.exists()) {
+    const subjectIds = Object.keys(snap.val() as Record<string, any>);
+    await Promise.all(
+      subjectIds.map(subjectId =>
+        deleteSubjectCascade(teacherId, sectionId, subjectId)
+      )
+    );
+  }
+
+  // 2. Delete section record
+  await remove(ref(database, `sections/${teacherId}/${sectionId}`));
+};
