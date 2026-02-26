@@ -1,5 +1,5 @@
 // src/services/answerSheetService.ts
-import { ref, get, update } from 'firebase/database';
+import { ref, get, set, update, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 import { AnswerSheetResult, QuestionBreakdown } from '../types';
 
@@ -184,4 +184,181 @@ export const updateAnswerSheetScore = async (
       updated_at: Date.now(),
     }
   );
+};
+
+// ─────────────────────────────────────────────
+// Student ID validation
+// ─────────────────────────────────────────────
+
+export interface StudentIdValidation {
+  exists: boolean;          // found in /users/students/ by schoolId
+  enrolled: boolean;        // has approved enrollment in this subject
+  studentName: string | null;
+  firebaseUid: string | null;
+}
+
+/**
+ * Validates a school ID (e.g. "4201400") against registered students
+ * and checks enrollment in the given subject.
+ *
+ * 1. Scans /users/students/ for a matching studentId field
+ * 2. If found, checks /enrollments/{teacherUid}/{subjectUid}/ for approved status
+ */
+export const validateStudentId = async (
+  schoolId: string,
+  teacherUid: string,
+  subjectUid: string
+): Promise<StudentIdValidation> => {
+  const result: StudentIdValidation = {
+    exists: false,
+    enrolled: false,
+    studentName: null,
+    firebaseUid: null,
+  };
+
+  try {
+    // Step 1: Find student by school ID
+    const studentsSnap = await get(ref(database, 'users/students'));
+    if (!studentsSnap.exists()) return result;
+
+    const students = studentsSnap.val() as Record<string, any>;
+    let matchedUid: string | null = null;
+    let matchedName: string | null = null;
+
+    for (const [uid, data] of Object.entries(students)) {
+      if (data?.studentId != null && String(data.studentId) === String(schoolId).trim()) {
+        matchedUid = uid;
+        matchedName = data.fullName ?? `${data.firstName ?? ''} ${data.lastName ?? ''}`.trim() ?? null;
+        break;
+      }
+    }
+
+    if (!matchedUid) return result;
+
+    result.exists = true;
+    result.firebaseUid = matchedUid;
+    result.studentName = matchedName;
+
+    // Step 2: Check enrollment
+    const enrollmentSnap = await get(
+      ref(database, `enrollments/${teacherUid}/${subjectUid}/${matchedUid}`)
+    );
+
+    if (enrollmentSnap.exists()) {
+      const enrollment = enrollmentSnap.val();
+      result.enrolled = enrollment?.status === 'approved';
+    }
+
+    return result;
+  } catch {
+    return result;
+  }
+};
+
+// ─────────────────────────────────────────────
+// Reassign answer sheet to a different student ID
+// ─────────────────────────────────────────────
+
+/**
+ * Moves an answer sheet from one student ID key to another.
+ *
+ * RTDB operation:
+ *   1. Read full document at /answer_sheets/{teacherUid}/{assessmentUid}/{oldStudentId}
+ *   2. Write it to /answer_sheets/{teacherUid}/{assessmentUid}/{newStudentId}
+ *      with student_id field updated to newStudentId
+ *   3. Delete the old key
+ *
+ * Throws if old key does not exist or new key already has data.
+ */
+export const reassignAnswerSheet = async (
+  teacherUid: string,
+  assessmentUid: string,
+  oldStudentId: string,
+  newStudentId: string
+): Promise<void> => {
+  if (oldStudentId === newStudentId) return;
+
+  const oldRef = ref(database, `answer_sheets/${teacherUid}/${assessmentUid}/${oldStudentId}`);
+  const newRef = ref(database, `answer_sheets/${teacherUid}/${assessmentUid}/${newStudentId}`);
+
+  // Check old record exists
+  const oldSnap = await get(oldRef);
+  if (!oldSnap.exists()) {
+    throw new Error(`No answer sheet found for student ID "${oldStudentId}"`);
+  }
+
+  // Check new key is not already taken
+  const newSnap = await get(newRef);
+  if (newSnap.exists()) {
+    throw new Error(
+      `Student ID "${newStudentId}" already has an answer sheet for this assessment. ` +
+      `Delete it first before reassigning.`
+    );
+  }
+
+  const data = oldSnap.val();
+
+  // Write to new key with updated student_id field
+  await set(newRef, {
+    ...data,
+    student_id: newStudentId,
+    updated_at: Date.now(),
+  });
+
+  // Delete old key
+  await remove(oldRef);
+};
+
+// ─────────────────────────────────────────────
+// Reassign answer key to a different assessment UID
+// ─────────────────────────────────────────────
+
+/**
+ * Moves an answer key from one assessment UID key to another.
+ *
+ * RTDB operation:
+ *   1. Read full document at /answer_keys/{teacherUid}/{oldAssessmentUid}
+ *   2. Check /answer_keys/{teacherUid}/{newAssessmentUid} does NOT exist — block if taken
+ *   3. Write to new key with assessment_uid field updated
+ *   4. Delete old key
+ *
+ * Answer sheets under the old UID are NOT moved — teacher decides what to do with them.
+ * Throws if old key does not exist or new UID is already taken.
+ */
+export const reassignAnswerKey = async (
+  teacherUid: string,
+  oldAssessmentUid: string,
+  newAssessmentUid: string
+): Promise<void> => {
+  if (oldAssessmentUid === newAssessmentUid) return;
+
+  const oldRef = ref(database, `answer_keys/${teacherUid}/${oldAssessmentUid}`);
+  const newRef = ref(database, `answer_keys/${teacherUid}/${newAssessmentUid}`);
+
+  // Check old key exists
+  const oldSnap = await get(oldRef);
+  if (!oldSnap.exists()) {
+    throw new Error(`No answer key found for assessment UID "${oldAssessmentUid}"`);
+  }
+
+  // Block if new UID already taken
+  const newSnap = await get(newRef);
+  if (newSnap.exists()) {
+    throw new Error(
+      `Assessment UID "${newAssessmentUid}" already has an answer key. ` +
+      `Choose a different UID.`
+    );
+  }
+
+  const data = oldSnap.val();
+
+  // Write to new key with updated assessment_uid field
+  await set(newRef, {
+    ...data,
+    assessment_uid: newAssessmentUid,
+    updated_at: Date.now(),
+  });
+
+  // Delete old key
+  await remove(oldRef);
 };
