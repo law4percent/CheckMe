@@ -119,9 +119,44 @@ safe_pip_install websockets==15.0.1
 safe_pip_install tenacity==9.1.4
 
 # -----------------------------
-# 9. VERIFY SCANNER
+# 9. CREATE .ENV FILE (IF MISSING)
 # -----------------------------
-echo "=== 9. Verifying Epson Scanner ==="
+echo "=== 9. Checking .env File ==="
+
+if [ ! -f ".env" ]; then
+    echo "Creating .env template..."
+    cat <<EOF > .env
+# ===== CHECKME ENVIRONMENT VARIABLES =====
+
+
+# Get your API key from: https://aistudio.google.com/app/apikey
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+
+CLOUDINARY_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+FIREBASE_RTDB_BASE_REFERENCE=
+FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
+
+USER_CREDENTIALS_FILE=credentials/cred.txt
+
+ANSWER_KEYS_PATH=scans/answer_keys
+ANSWER_SHEETS_PATH=scans/answer_sheets
+EOF
+
+    chmod 600 .env
+    echo "✓ .env template created."
+    echo "⚠ IMPORTANT: Edit .env and fill in your real credentials."
+else
+    echo "✓ .env already exists."
+fi
+
+# -----------------------------
+# 10. VERIFY SCANNER
+# -----------------------------
+echo "=== 10. Verifying Epson Scanner ==="
 
 echo "--- USB Detection ---"
 lsusb | grep -i epson || echo "⚠ Epson not detected via USB"
@@ -130,9 +165,9 @@ echo "--- SANE Detection ---"
 scanimage -L || echo "⚠ Scanner not detected by SANE"
 
 # -----------------------------
-# 10. VERIFY PYTHON STACK
+# 11. VERIFY PYTHON STACK
 # -----------------------------
-echo "=== 10. Verifying Python Modules ==="
+echo "=== 11. Verifying Python Modules ==="
 
 python3 -c "import cv2; print('✓ OpenCV', cv2.__version__)" || echo "✗ OpenCV failed"
 python3 -c "import numpy; print('✓ NumPy', numpy.__version__)" || echo "✗ NumPy failed"
@@ -146,13 +181,13 @@ echo "-----------------------------------------"
 echo "✓ FULL Setup Complete!"
 echo ""
 echo "IMPORTANT:"
-echo "Reboot required for I2C & group changes."
-echo "Run: sudo reboot"
+echo "1. Reboot required for I2C & group changes."
+echo "   Run: sudo reboot"
 echo ""
-echo "After reboot:"
-echo "source checkme-env/bin/activate"
-echo "python main.py"
+echo "2. After reboot:"
+echo "   source checkme-env/bin/activate"
+echo "   python main.py"
 echo ""
-echo "Scanner test:"
-echo "scanimage --format=png --resolution 300 > test.png"
+echo "3. Scanner test:"
+echo "   scanimage --format=png --resolution 300 > test.png"
 echo "-----------------------------------------"
