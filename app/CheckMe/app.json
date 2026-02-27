@@ -10,19 +10,19 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#171441"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mr_itnology.checkme"
+      "bundleIdentifier": "com.mritnology.checkme"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#171441"
       },
       "package": "com.mr_itnology.checkme",
       "edgeToEdgeEnabled": true,
@@ -33,7 +33,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "7472b7ab-4721-41ed-8223-b381100e537d"
+        "projectId": "52217ffd-e5f4-426f-8554-9239f56339ef"
       }
     }
   }

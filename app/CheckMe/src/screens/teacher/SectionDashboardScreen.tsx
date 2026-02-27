@@ -1,3 +1,4 @@
+// src/screens/teacher/SectionDashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -10,7 +11,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
-  Clipboard
+  Clipboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -25,6 +26,7 @@ import {
   Subject,
 } from '../../services/subjectService';
 import { updateSectionSubjectCount } from '../../services/sectionService';
+import { deleteSubjectCascade, getAssessments } from '../../services/assessmentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSectionDashboard'>;
 
@@ -32,44 +34,53 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const { section } = route.params;
   const { user } = useAuth();
 
-  // State for subjects
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [subjects, setSubjects]         = useState<Subject[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // State for Create Subject Modal
+  // Assessment count per subject
+  const [assessmentCounts, setAssessmentCounts] = useState<Record<string, number>>({});
+
+  // Delete confirmation modal
+  const [deleteSubjectTarget, setDeleteSubjectTarget] = useState<Subject | null>(null);
+
+  // Create Subject Modal
   const [createSubjectModalVisible, setCreateSubjectModalVisible] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
 
-  // State for Edit Subject Modal
+  // Edit Subject Modal
   const [editSubjectModalVisible, setEditSubjectModalVisible] = useState(false);
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
   const [editSubjectName, setEditSubjectName] = useState('');
 
-  // State for Subject Details Modal
+  // Subject Details Modal
   const [subjectDetailsModalVisible, setSubjectDetailsModalVisible] = useState(false);
   const [selectedSubjectForDetails, setSelectedSubjectForDetails] = useState<Subject | null>(null);
 
-  // Load subjects on mount
   useEffect(() => {
-    if (user?.uid && section.id) {
-      loadSubjects();
-    }
+    if (user?.uid && section.id) loadSubjects();
   }, [user?.uid, section.id]);
 
   const loadSubjects = async () => {
     if (!user?.uid) return;
-
     try {
       setLoading(true);
       const fetchedSubjects = await getSectionSubjects(user.uid, section.id);
       setSubjects(fetchedSubjects);
-      
-      // Update section's subject count if it differs
       if (fetchedSubjects.length !== section.subjectCount) {
         await updateSectionSubjectCount(user.uid, section.id, fetchedSubjects.length);
       }
+
+      // Load assessment counts for each subject
+      const counts: Record<string, number> = {};
+      await Promise.all(
+        fetchedSubjects.map(async s => {
+          const a = await getAssessments(user!.uid!, s.id);
+          counts[s.id] = a.length;
+        })
+      );
+      setAssessmentCounts(counts);
     } catch (error: any) {
       Alert.alert('Error', error.message);
     } finally {
@@ -83,22 +94,19 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     setRefreshing(false);
   };
 
+  // ── Create Subject ─────────────────────────────
   const handleCreateSubject = () => {
     setNewSubjectName('');
     setCreateSubjectModalVisible(true);
   };
 
   const handleConfirmCreateSubject = async () => {
-    if (!user?.uid) return;
-
-    if (!newSubjectName.trim()) {
+    if (!user?.uid || !newSubjectName.trim()) {
       Alert.alert('Error', 'Please enter a subject name');
       return;
     }
-
     try {
       setActionLoading(true);
-
       const newSubject = await createSubject({
         year: section.year,
         subjectName: newSubjectName,
@@ -107,12 +115,8 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         teacherName: user.role === 'teacher' ? user.fullName : undefined,
         sectionName: section.sectionName,
       });
-
       setSubjects([newSubject, ...subjects]);
-      
-      // Update section's subject count
       await updateSectionSubjectCount(user.uid, section.id, subjects.length + 1);
-
       setCreateSubjectModalVisible(false);
       Alert.alert('Success', `Subject "${newSubjectName}" created!`);
     } catch (error: any) {
@@ -122,11 +126,7 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  const handleCancelCreateSubject = () => {
-    setNewSubjectName('');
-    setCreateSubjectModalVisible(false);
-  };
-
+  // ── Edit Subject ───────────────────────────────
   const handleEditSubject = (subject: Subject) => {
     setEditingSubjectId(subject.id);
     setEditSubjectName(subject.subjectName);
@@ -134,31 +134,18 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleConfirmEditSubject = async () => {
-    if (!user?.uid || !editingSubjectId) return;
-
-    if (!editSubjectName.trim()) {
+    if (!user?.uid || !editingSubjectId || !editSubjectName.trim()) {
       Alert.alert('Error', 'Please enter a subject name');
       return;
     }
-
     try {
       setActionLoading(true);
-
-      await updateSubject(user.uid, section.id, editingSubjectId, {
-        subjectName: editSubjectName,
-      });
-
-      // Update local state
-      setSubjects(subjects.map(subject =>
-        subject.id === editingSubjectId
-          ? {
-              ...subject,
-              subjectName: editSubjectName.trim(),
-              updatedAt: Date.now()
-            }
-          : subject
+      await updateSubject(user.uid, section.id, editingSubjectId, { subjectName: editSubjectName });
+      setSubjects(subjects.map(s =>
+        s.id === editingSubjectId
+          ? { ...s, subjectName: editSubjectName.trim(), updatedAt: Date.now() }
+          : s
       ));
-
       setEditSubjectModalVisible(false);
       Alert.alert('Success', 'Subject updated successfully!');
     } catch (error: any) {
@@ -168,81 +155,42 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  const handleCancelEditSubject = () => {
-    setEditingSubjectId(null);
-    setEditSubjectName('');
-    setEditSubjectModalVisible(false);
+  // ── Delete Subject (cascade) ───────────────────
+  const handleDeleteSubject = (subject: Subject) => {
+    setDeleteSubjectTarget(subject);
   };
 
-  const handleDeleteSubject = (subject: Subject) => {
-    Alert.alert(
-      'Delete Subject',
-      `Are you sure you want to delete "${subject.subjectName}"?\n\nThis action cannot be undone.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            if (!user?.uid) return;
-
-            try {
-              setActionLoading(true);
-
-              await deleteSubject(user.uid, section.id, subject.id);
-
-              // Update local state
-              const newSubjects = subjects.filter(s => s.id !== subject.id);
-              setSubjects(newSubjects);
-
-              // Update section's subject count
-              await updateSectionSubjectCount(user.uid, section.id, newSubjects.length);
-
-              Alert.alert('Success', 'Subject deleted successfully!');
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            } finally {
-              setActionLoading(false);
-            }
-          }
-        }
-      ]
-    );
+  const confirmDeleteSubject = async () => {
+    if (!deleteSubjectTarget || !user?.uid) return;
+    try {
+      setActionLoading(true);
+      await deleteSubjectCascade(user.uid, section.id, deleteSubjectTarget.id);
+      const newSubjects = subjects.filter(s => s.id !== deleteSubjectTarget.id);
+      setSubjects(newSubjects);
+      await updateSectionSubjectCount(user.uid, section.id, newSubjects.length);
+      setDeleteSubjectTarget(null);
+      Alert.alert('Deleted', 'Subject and all related data removed.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleSubjectPress = (subject: Subject) => {
     navigation.navigate('TeacherSubjectDashboard', { subject, section });
   };
 
-  const handleShowSubjectDetails = (subject: Subject, event: any) => {
-    event.stopPropagation();
-    setSelectedSubjectForDetails(subject);
-    setSubjectDetailsModalVisible(true);
-  };
-
-  const handleCloseSubjectDetails = () => {
-    setSubjectDetailsModalVisible(false);
-    setSelectedSubjectForDetails(null);
-  };
-
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   const handleCopyToClipboard = (text: string, label: string) => {
     Clipboard.setString(text);
     Alert.alert('Copied!', `${label} copied to clipboard`);
   };
+
+  const formatDate = (timestamp: number) =>
+    new Date(timestamp).toLocaleString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
 
   if (loading) {
     return (
@@ -259,28 +207,15 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
         style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Section Info Header */}
         <View style={styles.sectionInfoHeader}>
-          <Text style={styles.sectionInfoTitle}>
-            {section.year}-{section.sectionName}
-          </Text>
+          <Text style={styles.sectionInfoTitle}>{section.year}-{section.sectionName}</Text>
           <Text style={styles.sectionInfoSubtitle}>
             {subjects.length} {subjects.length === 1 ? 'subject' : 'subjects'}
           </Text>
         </View>
-
-{/* 
-  Add a small icon (Detail icon) that if click the overlayed firebase detials of this subject will appear.
-  Those detail are:
-  > Created at
-  > Subject ID (UID)
-  > Section ID (UID)
-  > Teacher ID (UID)
-*/}
 
         {/* Manage Subjects */}
         <View style={styles.manageSections}>
@@ -302,7 +237,7 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
               <Text style={styles.emptyStateSubtext}>Create your first subject to get started</Text>
             </View>
           ) : (
-            subjects.map((subject) => (
+            subjects.map(subject => (
               <View key={subject.id} style={styles.subjectCard}>
                 <TouchableOpacity
                   style={styles.subjectCardContent}
@@ -312,16 +247,19 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 >
                   <View style={styles.subjectCardContentRow}>
                     <View style={styles.subjectCardInfo}>
-                      <Text style={styles.subjectCardTitle}>
-                        {subject.subjectName}
-                      </Text>
+                      <Text style={styles.subjectCardTitle}>{subject.subjectName}</Text>
                       <Text style={styles.subjectCardDetails}>
-                        {subject.studentCount} {subject.studentCount === 1 ? 'enrolled student' : 'enrolled students'}
+                        {subject.studentCount} enrolled{'  ·  '}
+                        {assessmentCounts[subject.id] ?? 0}{' '}
+                        {(assessmentCounts[subject.id] ?? 0) === 1 ? 'assessment' : 'assessments'}
                       </Text>
                     </View>
                     <TouchableOpacity
                       style={styles.detailIconButton}
-                      onPress={(e) => handleShowSubjectDetails(subject, e)}
+                      onPress={() => {
+                        setSelectedSubjectForDetails(subject);
+                        setSubjectDetailsModalVisible(true);
+                      }}
                       disabled={actionLoading}
                     >
                       <Text style={styles.detailIconText}>ℹ️</Text>
@@ -329,21 +267,22 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   </View>
                 </TouchableOpacity>
 
-                <View style={styles.sectionCardActions}>
+                {/* Icon-only action row */}
+                <View style={styles.cardActions}>
                   <TouchableOpacity
-                    style={styles.editButton}
+                    style={styles.iconActionBtn}
                     onPress={() => handleEditSubject(subject)}
                     disabled={actionLoading}
                   >
-                    <Text style={styles.editButtonText}>✏️ Edit</Text>
+                    <Text style={styles.iconActionText}>✏️</Text>
                   </TouchableOpacity>
-
+                  <View style={styles.iconActionDivider} />
                   <TouchableOpacity
-                    style={styles.deleteButton}
+                    style={styles.iconActionBtnDanger}
                     onPress={() => handleDeleteSubject(subject)}
                     disabled={actionLoading}
                   >
-                    <Text style={styles.deleteButtonText}>🗑️ Delete</Text>
+                    <Text style={styles.iconActionText}>🗑️</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -352,26 +291,19 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </ScrollView>
 
-      {/* Loading Overlay */}
       {actionLoading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#22c55e" />
         </View>
       )}
 
-      {/* Create Subject Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={createSubjectModalVisible}
-        onRequestClose={handleCancelCreateSubject}
-      >
+      {/* ── Create Subject Modal ─────────────────── */}
+      <Modal animationType="slide" transparent visible={createSubjectModalVisible} onRequestClose={() => setCreateSubjectModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create New Subject</Text>
             </View>
-
             <View style={styles.modalBody}>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Subject Name</Text>
@@ -384,32 +316,13 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   editable={!actionLoading}
                 />
               </View>
-
-              <View style={styles.createSectionActions}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={handleCancelCreateSubject}
-                  disabled={actionLoading}
-                >
+              <View style={styles.modalButtonRow}>
+                <TouchableOpacity style={styles.cancelButton} onPress={() => setCreateSubjectModalVisible(false)} disabled={actionLoading}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.confirmButton}
-                  onPress={handleConfirmCreateSubject}
-                  disabled={actionLoading}
-                >
-                  <LinearGradient
-                    colors={['#84cc16', '#22c55e']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.gradientButton}
-                  >
-                    {actionLoading ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <Text style={styles.confirmButtonText}>Create</Text>
-                    )}
+                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmCreateSubject} disabled={actionLoading}>
+                  <LinearGradient colors={['#84cc16', '#22c55e']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.gradientButton}>
+                    {actionLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmButtonText}>Create</Text>}
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -418,19 +331,13 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Edit Subject Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={editSubjectModalVisible}
-        onRequestClose={handleCancelEditSubject}
-      >
+      {/* ── Edit Subject Modal ───────────────────── */}
+      <Modal animationType="slide" transparent visible={editSubjectModalVisible} onRequestClose={() => setEditSubjectModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Subject</Text>
             </View>
-
             <View style={styles.modalBody}>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Subject Name</Text>
@@ -443,32 +350,13 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   editable={!actionLoading}
                 />
               </View>
-
-              <View style={styles.createSectionActions}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={handleCancelEditSubject}
-                  disabled={actionLoading}
-                >
+              <View style={styles.modalButtonRow}>
+                <TouchableOpacity style={styles.cancelButton} onPress={() => setEditSubjectModalVisible(false)} disabled={actionLoading}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.confirmButton}
-                  onPress={handleConfirmEditSubject}
-                  disabled={actionLoading}
-                >
-                  <LinearGradient
-                    colors={['#84cc16', '#22c55e']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.gradientButton}
-                  >
-                    {actionLoading ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <Text style={styles.confirmButtonText}>Save Changes</Text>
-                    )}
+                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmEditSubject} disabled={actionLoading}>
+                  <LinearGradient colors={['#84cc16', '#22c55e']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.gradientButton}>
+                    {actionLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmButtonText}>Save Changes</Text>}
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -477,85 +365,90 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Subject Details Modal */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={subjectDetailsModalVisible}
-        onRequestClose={handleCloseSubjectDetails}
-      >
+      {/* ── Subject Details Modal ────────────────── */}
+      <Modal animationType="fade" transparent visible={subjectDetailsModalVisible} onRequestClose={() => setSubjectDetailsModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Subject Details</Text>
-              <TouchableOpacity
-                style={styles.iconButton}
-                onPress={handleCloseSubjectDetails}
-              >
+              <TouchableOpacity style={styles.iconButton} onPress={() => setSubjectDetailsModalVisible(false)}>
                 <Text style={styles.iconButtonText}>✕ Close</Text>
               </TouchableOpacity>
             </View>
-
             <ScrollView style={styles.modalBody}>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Subject Name</Text>
+                <Text style={styles.modalValue}>{selectedSubjectForDetails?.subjectName}</Text>
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Enrolled Students</Text>
+                <Text style={styles.modalValue}>{selectedSubjectForDetails?.studentCount ?? 0}</Text>
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Assessments Created</Text>
                 <Text style={styles.modalValue}>
-                  {selectedSubjectForDetails?.subjectName}
+                  {selectedSubjectForDetails ? (assessmentCounts[selectedSubjectForDetails.id] ?? 0) : 0}
                 </Text>
               </View>
-
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Created At</Text>
                 <Text style={styles.modalValue}>
                   {selectedSubjectForDetails?.createdAt ? formatDate(selectedSubjectForDetails.createdAt) : 'N/A'}
                 </Text>
               </View>
-
-              <View style={styles.modalField}>
-                <Text style={styles.modalLabel}>Subject ID (UID)</Text>
-                <View style={styles.uidContainer}>
-                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
-                    {selectedSubjectForDetails?.id}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.copyButton}
-                    onPress={() => handleCopyToClipboard(selectedSubjectForDetails?.id || '', 'Subject ID')}
-                  >
-                    <Text style={styles.copyButtonText}>📋 Copy</Text>
-                  </TouchableOpacity>
+              {[
+                { label: 'Subject ID (UID)', val: selectedSubjectForDetails?.id },
+                { label: 'Section ID (UID)', val: selectedSubjectForDetails?.sectionId },
+                { label: 'Teacher ID (UID)', val: selectedSubjectForDetails?.teacherId },
+              ].map(row => (
+                <View key={row.label} style={styles.modalField}>
+                  <Text style={styles.modalLabel}>{row.label}</Text>
+                  <View style={styles.uidContainer}>
+                    <Text style={[styles.modalValue, styles.monoValue]}>{row.val}</Text>
+                    <TouchableOpacity style={styles.copyButton} onPress={() => handleCopyToClipboard(row.val || '', row.label)}>
+                      <Text style={styles.copyButtonText}>📋 Copy</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-
-              <View style={styles.modalField}>
-                <Text style={styles.modalLabel}>Section ID (UID)</Text>
-                <View style={styles.uidContainer}>
-                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
-                    {selectedSubjectForDetails?.sectionId}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.copyButton}
-                    onPress={() => handleCopyToClipboard(selectedSubjectForDetails?.sectionId || '', 'Section ID')}
-                  >
-                    <Text style={styles.copyButtonText}>📋 Copy</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.modalField}>
-                <Text style={styles.modalLabel}>Teacher ID (UID)</Text>
-                <View style={styles.uidContainer}>
-                  <Text style={[styles.modalValue, styles.monoValue, styles.uidText]}>
-                    {selectedSubjectForDetails?.teacherId}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.copyButton}
-                    onPress={() => handleCopyToClipboard(selectedSubjectForDetails?.teacherId || '', 'Teacher ID')}
-                  >
-                    <Text style={styles.copyButtonText}>📋 Copy</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              ))}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Delete Subject Confirmation Modal ─────── */}
+      <Modal visible={deleteSubjectTarget !== null} transparent animationType="fade" onRequestClose={() => setDeleteSubjectTarget(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <Text style={styles.deleteModalTitle}>⚠️ Delete Subject</Text>
+
+            {deleteSubjectTarget && (
+              <View style={styles.deleteWarningBox}>
+                <Text style={styles.deleteWarningName}>{deleteSubjectTarget.subjectName}</Text>
+                <Text style={styles.deleteWarningDesc}>Deleting this subject will permanently remove:</Text>
+                <View style={styles.deleteConsequenceList}>
+                  <Text style={styles.deleteConsequenceItem}>
+                    • All {assessmentCounts[deleteSubjectTarget.id] ?? 0} assessments in this subject
+                  </Text>
+                  <Text style={styles.deleteConsequenceItem}>• All scanned answer keys</Text>
+                  <Text style={styles.deleteConsequenceItem}>• All student answer sheets and scores</Text>
+                  <Text style={styles.deleteConsequenceItem}>• All student enrollments</Text>
+                </View>
+                <Text style={styles.deleteWarningNote}>This action cannot be undone.</Text>
+              </View>
+            )}
+
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity style={styles.deleteCancelBtn} onPress={() => setDeleteSubjectTarget(null)} disabled={actionLoading}>
+                <Text style={styles.deleteCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteConfirmBtn} onPress={confirmDeleteSubject} disabled={actionLoading}>
+                {actionLoading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.deleteConfirmBtnText}>Delete</Text>
+                }
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -564,302 +457,100 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5'
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#64748b'
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  scrollView: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 16, color: '#64748b' },
   loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center'
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center',
   },
   sectionInfoHeader: {
-    backgroundColor: '#171443',
-    paddingHorizontal: 24,
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2060'
+    backgroundColor: '#171443', paddingHorizontal: 24, paddingVertical: 20,
+    borderBottomWidth: 1, borderBottomColor: '#2a2060',
   },
-  sectionInfoTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4
-  },
-  sectionInfoSubtitle: {
-    fontSize: 14,
-    color: '#cdd5df'
-  },
-  manageSections: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 24
-  },
-  subjectHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16
-  },
-  subjectTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1e293b'
-  },
-  createButton: {
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8
-  },
-  createButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 14
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40
-  },
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 16
-  },
-  emptyStateText: {
-    fontSize: 18,
-    color: '#64748b',
-    fontWeight: '600',
-    marginBottom: 8
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#94a3b8'
-  },
+  sectionInfoTitle: { fontSize: 24, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
+  sectionInfoSubtitle: { fontSize: 14, color: '#cdd5df' },
+  manageSections: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 24 },
+  subjectHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  subjectTitle: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
+  createButton: { backgroundColor: '#22c55e', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  createButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  emptyStateIcon: { fontSize: 48, marginBottom: 16 },
+  emptyStateText: { fontSize: 18, color: '#64748b', fontWeight: '600', marginBottom: 8 },
+  emptyStateSubtext: { fontSize: 14, color: '#94a3b8' },
+
   subjectCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden'
+    backgroundColor: '#ffffff', borderRadius: 12, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, overflow: 'hidden',
   },
-  subjectCardContent: {
-    padding: 20
-  },
-  subjectCardContentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  subjectCardInfo: {
-    flex: 1
-  },
-  detailIconButton: {
-    padding: 8,
-    marginLeft: 8
-  },
-  detailIconText: {
-    fontSize: 20
-  },
-  iconButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#f1f5f9'
-  },
-  iconButtonText: {
-    fontSize: 14,
-    color: '#475569',
-    fontWeight: '600'
-  },
-  subjectCardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4
-  },
-  subjectCardDetails: {
-    fontSize: 14,
-    color: '#64748b'
-  },
-  sectionCardActions: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9'
-  },
-  editButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#eff6ff',
-    borderRightWidth: 1,
-    borderRightColor: '#f1f5f9'
-  },
-  editButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3b82f6'
-  },
-  deleteButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#fef2f2'
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ef4444'
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20
-  },
+  subjectCardContent: { padding: 20 },
+  subjectCardContentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  subjectCardInfo: { flex: 1 },
+  detailIconButton: { padding: 8, marginLeft: 8 },
+  detailIconText: { fontSize: 20 },
+  subjectCardTitle: { fontSize: 18, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  subjectCardDetails: { fontSize: 14, color: '#64748b' },
+
+  // Icon-only action row
+  cardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#f1f5f9', justifyContent: 'flex-end' },
+  iconActionBtn: { paddingVertical: 10, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff6ff' },
+  iconActionBtnDanger: { paddingVertical: 10, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fef2f2' },
+  iconActionText: { fontSize: 18 },
+  iconActionDivider: { width: 1, backgroundColor: '#f1f5f9' },
+
+  // Modal shared
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    width: '100%',
-    maxWidth: 500,
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10
+    backgroundColor: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 500, maxHeight: '80%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0'
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 15,
+    borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1e293b'
-  },
-  modalBody: {
-    padding: 20
-  },
-  modalField: {
-    marginBottom: 20
-  },
-  modalLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 8
-  },
-  modalValue: {
-    fontSize: 16,
-    color: '#1e293b',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8fafc',
-    borderRadius: 8
-  },
-  monoValue: {
-    fontFamily: 'monospace',
-    fontSize: 12
-  },
-  uidContainer: {
-    flexDirection: 'column',
-    gap: 8
-  },
-  uidText: {
-    flex: 1
-  },
-  copyButton: {
-    backgroundColor: '#22c55e',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    alignItems: 'center'
-  },
-  copyButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 14
-  },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
+  iconButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#f1f5f9' },
+  iconButtonText: { fontSize: 14, color: '#475569', fontWeight: '600' },
+  modalBody: { padding: 20 },
+  modalField: { marginBottom: 20 },
+  modalLabel: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 8 },
+  modalValue: { fontSize: 16, color: '#1e293b', paddingVertical: 12, paddingHorizontal: 16, backgroundColor: '#f8fafc', borderRadius: 8 },
+  monoValue: { fontFamily: 'monospace', fontSize: 12 },
+  uidContainer: { flexDirection: 'column', gap: 8 },
+  copyButton: { backgroundColor: '#22c55e', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, alignItems: 'center' },
+  copyButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
   modalInput: {
-    fontSize: 16,
-    color: '#1e293b',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0'
+    fontSize: 16, color: '#1e293b', paddingVertical: 12, paddingHorizontal: 16,
+    backgroundColor: '#ffffff', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0',
   },
-  createSectionActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center'
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#475569'
-  },
-  confirmButton: {
-    flex: 1,
-    borderRadius: 10,
-    overflow: 'hidden'
-  },
-  gradientButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  confirmButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff'
-  }
-});
+  modalButtonRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  cancelButton: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#475569' },
+  confirmButton: { flex: 1, borderRadius: 10, overflow: 'hidden' },
+  gradientButton: { paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  confirmButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
 
+  // Delete modal
+  deleteModalContent: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10,
+  },
+  deleteModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginBottom: 16 },
+  deleteWarningBox: { backgroundColor: '#fef2f2', borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#ef4444', padding: 14, marginBottom: 16 },
+  deleteWarningName: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 8 },
+  deleteWarningDesc: { fontSize: 13, color: '#475569', marginBottom: 8 },
+  deleteConsequenceList: { marginBottom: 10 },
+  deleteConsequenceItem: { fontSize: 13, color: '#7f1d1d', lineHeight: 22 },
+  deleteWarningNote: { fontSize: 12, color: '#dc2626', fontWeight: '700', marginTop: 4 },
+  deleteModalButtons: { flexDirection: 'row', gap: 12 },
+  deleteCancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  deleteCancelBtnText: { fontSize: 15, fontWeight: '600', color: '#475569' },
+  deleteConfirmBtn: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },
+  deleteConfirmBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+});
 
 export default SectionDashboardScreen;

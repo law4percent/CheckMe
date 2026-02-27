@@ -1,520 +1,543 @@
 // src/screens/teacher/ViewScoresScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  TouchableOpacity,
-  Alert,
-  TextInput,
-  Modal,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator,
+  RefreshControl, TouchableOpacity, Alert, TextInput, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../types';
+import { RootStackParamList, AnswerSheetResult } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import {
+  getAnswerSheets,
+  reassignAnswerSheet,
+  validateStudentId,
+  StudentIdValidation,
+  deleteAnswerSheet,
+} from '../../services/answerSheetService';
+import { getSubjectEnrollments, Enrollment } from '../../services/enrollmentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ViewScores'>;
 
-// Match Python structure exactly
-interface StudentScore {
-  studentId: string; // From object key
-  score: number; // Raw score (e.g., 17)
-  perfectScore: number; // Total questions (e.g., 20)
-  isPartialScore: boolean; // Always false from Python
-  assessmentUid: string;
-  scannedAt: string; // Format: "MM/DD/YYYY HH:MM:SS"
-}
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+
+const pct = (score: number, total: number) =>
+  total > 0 ? Math.round((score / total) * 100) : 0;
+
+const gradeLabel = (p: number) => {
+  if (p >= 90) return 'A';
+  if (p >= 85) return 'B+';
+  if (p >= 80) return 'B';
+  if (p >= 75) return 'C+';
+  if (p >= 70) return 'C';
+  if (p >= 65) return 'D+';
+  if (p >= 60) return 'D';
+  return 'F';
+};
+
+const scoreColor = (p: number) => {
+  if (p >= 90) return '#22c55e';
+  if (p >= 75) return '#3b82f6';
+  if (p >= 60) return '#f59e0b';
+  return '#ef4444';
+};
+
+const formatDate = (ts: number) => {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+};
+
+// ─────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────
 
 const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
-  const assessmentUid = route.params?.assessmentUid;
-  const assessmentName = route.params?.assessmentName;
+  const { assessmentUid, assessmentName, teacherUid, subjectUid } = route.params;
   const { user } = useAuth();
+  const effectiveTeacherUid = teacherUid ?? user?.uid ?? '';
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [scores, setScores] = useState<StudentScore[]>([]);
-  
-  // Edit modal state
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<StudentScore | null>(null);
-  const [editScore, setEditScore] = useState('');
-  const [editPerfectScore, setEditPerfectScore] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [results, setResults]       = useState<AnswerSheetResult[]>([]);
+  const [notScanned, setNotScanned] = useState<Enrollment[]>([]);
+
+  // ── Delete answer sheet ──────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<AnswerSheetResult | null>(null);
+  const [deleting, setDeleting]         = useState(false);
+
+  // ── Reassign Student ID modal ──────────────
+  const [reassignModalVisible, setReassignModalVisible] = useState(false);
+  const [reassignTarget, setReassignTarget]             = useState<AnswerSheetResult | null>(null);
+  const [newStudentId, setNewStudentId]                 = useState('');
+  const [savingReassign, setSavingReassign]             = useState(false);
+  const [validating, setValidating]                     = useState(false);
+  const [idValidation, setIdValidation]                 = useState<StudentIdValidation | null>(null);
+  const [idValidated, setIdValidated]                   = useState(false);
+
+  // ─────────────────────────────────────────────
+  // Data
+  // ─────────────────────────────────────────────
+
+  const loadResults = useCallback(async () => {
+    if (!effectiveTeacherUid || !assessmentUid) return;
+    try {
+      const [data, enrollments] = await Promise.all([
+        getAnswerSheets(effectiveTeacherUid, assessmentUid, subjectUid),
+        getSubjectEnrollments(effectiveTeacherUid, subjectUid),
+      ]);
+      setResults(data);
+
+      // Build set of school IDs already scanned
+      const scannedIds = new Set(data.map(r => String(r.studentId)));
+      // Approved enrollments whose schoolId has no answer sheet yet
+      const missing = enrollments.filter(e => {
+        if (e.status !== 'approved') return false;
+        if (!e.schoolId) return true; // no schoolId on record — always show as unscanned
+        return !scannedIds.has(String(e.schoolId));
+      });
+      setNotScanned(missing);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to load results');
+    }
+  }, [effectiveTeacherUid, assessmentUid, subjectUid]);
 
   useEffect(() => {
-    if (!assessmentUid) {
-      console.error('❌ [ViewScores] No assessmentUid in route params');
-      Alert.alert(
-        'Error',
-        'Assessment ID is missing. Please go back and try again.',
-        [
-          {
-            text: 'Go Back',
-            onPress: () => navigation.goBack()
-          }
-        ]
-      );
-      return;
-    }
+    (async () => { setLoading(true); await loadResults(); setLoading(false); })();
+  }, [loadResults]);
 
-    loadScores();
-  }, [assessmentUid]);
+  const onRefresh = async () => { setRefreshing(true); await loadResults(); setRefreshing(false); };
 
-  const loadScores = async () => {
-    if (!user?.uid) {
-      console.error('❌ [ViewScores] No user UID');
-      return;
-    }
+  // ─────────────────────────────────────────────
+  // Statistics
+  // ─────────────────────────────────────────────
 
-    if (!assessmentUid) {
-      console.error('❌ [ViewScores] No assessmentUid');
-      return;
-    }
+  const scored       = results.filter(r => r.is_final_score);
+  const pendingList  = results.filter(r => !r.is_final_score);
+  const avgPct       = scored.length > 0
+    ? scored.reduce((s, r) => s + pct(r.total_score, r.total_questions), 0) / scored.length : 0;
+  const highPct      = scored.length > 0
+    ? Math.max(...scored.map(r => pct(r.total_score, r.total_questions))) : 0;
+  const hasUnmatched = results.some(r => !r.matchedStudentName);
 
+  // ─────────────────────────────────────────────
+  // Reassign Student ID
+  // ─────────────────────────────────────────────
+
+  const handleDeleteSheet = (r: AnswerSheetResult) => {
+    setDeleteTarget(r);
+  };
+
+  const confirmDeleteSheet = async () => {
+    if (!deleteTarget) return;
     try {
-      setLoading(true);
-      console.log('📊 [ViewScores] Loading scores...');
-      console.log('  - teacherId:', user.uid);
-      console.log('  - assessmentUid:', assessmentUid);
-
-      const url = `https://checkme-68003-default-rtdb.asia-southeast1.firebasedatabase.app/assessmentScoresAndImages/${user.uid}/${assessmentUid}.json`;
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch scores');
-      }
-
-      const data = await response.json();
-      
-      if (!data) {
-        console.log('📊 [ViewScores] No data found');
-        setScores([]);
-        return;
-      }
-
-      // Parse student scores from Firebase
-      const studentScores: StudentScore[] = [];
-      
-      Object.keys(data).forEach(key => {
-        const studentData = data[key];
-        
-        // Validate that this is a student score object
-        if (studentData && 
-            typeof studentData.score === 'number' && 
-            typeof studentData.perfectScore === 'number' &&
-            typeof studentData.scannedAt === 'string') {
-          
-          studentScores.push({
-            studentId: key,
-            score: studentData.score,
-            perfectScore: studentData.perfectScore,
-            isPartialScore: studentData.isPartialScore ?? false,
-            assessmentUid: studentData.assessmentUid || assessmentUid,
-            scannedAt: studentData.scannedAt
-          });
-        }
-      });
-
-      // Sort by percentage score (highest first)
-      studentScores.sort((a, b) => {
-        const percentA = (a.score / a.perfectScore) * 100;
-        const percentB = (b.score / b.perfectScore) * 100;
-        return percentB - percentA;
-      });
-
-      console.log('✅ [ViewScores] Loaded scores:', studentScores.length);
-      setScores(studentScores);
-
+      setDeleting(true);
+      await deleteAnswerSheet(effectiveTeacherUid, assessmentUid, deleteTarget.studentId);
+      await loadResults();
+      setDeleteTarget(null);
+      Alert.alert('Deleted', 'Answer sheet removed successfully.');
     } catch (error: any) {
-      console.error('❌ [ViewScores] Error loading scores:', error);
-      Alert.alert('Error', error.message || 'Failed to load scores');
+      Alert.alert('Error', error.message || 'Failed to delete answer sheet');
     } finally {
-      setLoading(false);
+      setDeleting(false);
     }
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadScores();
-    setRefreshing(false);
+  const openReassign = (r: AnswerSheetResult) => {
+    setReassignTarget(r);
+    setNewStudentId('');
+    setIdValidation(null);
+    setIdValidated(false);
+    setReassignModalVisible(true);
   };
 
-  // Open edit modal
-  const openEditModal = (studentScore: StudentScore) => {
-    setEditingStudent(studentScore);
-    setEditScore(studentScore.score.toString());
-    setEditPerfectScore(studentScore.perfectScore.toString());
-    setEditModalVisible(true);
+  const closeReassign = () => {
+    setReassignModalVisible(false);
+    setReassignTarget(null);
+    setNewStudentId('');
+    setIdValidation(null);
+    setIdValidated(false);
   };
 
-  // Close edit modal
-  const closeEditModal = () => {
-    setEditModalVisible(false);
-    setEditingStudent(null);
-    setEditScore('');
-    setEditPerfectScore('');
-  };
-
-  // Save edited score
-  const saveEditedScore = async () => {
-    if (!editingStudent || !user?.uid || !assessmentUid) {
-      return;
-    }
-
-    const newScore = parseInt(editScore);
-    const newPerfectScore = parseInt(editPerfectScore);
-
-    // Validation
-    if (isNaN(newScore) || isNaN(newPerfectScore)) {
-      Alert.alert('Invalid Input', 'Please enter valid numbers');
-      return;
-    }
-
-    if (newScore < 0 || newPerfectScore < 0) {
-      Alert.alert('Invalid Input', 'Scores cannot be negative');
-      return;
-    }
-
-    if (newScore > newPerfectScore) {
-      Alert.alert('Invalid Input', 'Score cannot be greater than perfect score');
-      return;
-    }
-
+  const handleValidateId = async () => {
+    const trimmed = newStudentId.trim();
+    if (!trimmed) { Alert.alert('Invalid', 'Student ID cannot be empty'); return; }
+    if (trimmed === reassignTarget?.studentId) { setIdValidation(null); setIdValidated(false); return; }
     try {
-      setSaving(true);
-      console.log('💾 [ViewScores] Saving edited score...');
-      console.log('  - Student:', editingStudent.studentId);
-      console.log('  - New score:', newScore);
-      console.log('  - New perfect score:', newPerfectScore);
+      setValidating(true);
+      const v = await validateStudentId(trimmed, effectiveTeacherUid, subjectUid);
+      setIdValidation(v);
+      setIdValidated(true);
+    } catch { setIdValidation(null); setIdValidated(false); }
+    finally { setValidating(false); }
+  };
 
-      const url = `https://checkme-68003-default-rtdb.asia-southeast1.firebasedatabase.app/assessmentScoresAndImages/${user.uid}/${assessmentUid}/${editingStudent.studentId}.json`;
-      
-      // Update only score and perfectScore, keep other fields
-      const updatedData = {
-        score: newScore,
-        perfectScore: newPerfectScore,
-        isPartialScore: true, // Mark as edited
-        assessmentUid: editingStudent.assessmentUid,
-        scannedAt: editingStudent.scannedAt
-      };
+  const handleConfirmReassign = async () => {
+    if (!reassignTarget) return;
+    const trimmed = newStudentId.trim();
+    if (!trimmed || trimmed === reassignTarget.studentId) { closeReassign(); return; }
+    if (!idValidated) { Alert.alert('Validate First', 'Tap Validate before saving.'); return; }
+    if (idValidation && !idValidation.exists) {
+      Alert.alert('Not Found', `"${trimmed}" is not registered in the app.`); return;
+    }
 
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
+    let msg = `Move answer sheet from "${reassignTarget.studentId}" → "${trimmed}"`;
+    if (idValidation?.studentName) msg += ` (${idValidation.studentName})`;
+    if (idValidation && !idValidation.enrolled)
+      msg += `\n\n⚠️ This student is not enrolled in this subject.`;
+    msg += `\n\nThe old record will be permanently deleted.`;
+
+    Alert.alert('⚠️ Reassign Answer Sheet', msg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reassign', style: 'destructive',
+        onPress: async () => {
+          try {
+            setSavingReassign(true);
+            await reassignAnswerSheet(
+              effectiveTeacherUid, assessmentUid,
+              reassignTarget.studentId, trimmed
+            );
+            await loadResults();
+            closeReassign();
+            Alert.alert('Reassigned', 'Answer sheet moved successfully.');
+          } catch (error: any) {
+            Alert.alert('Error', error.message);
+          } finally { setSavingReassign(false); }
         },
-        body: JSON.stringify(updatedData)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update score');
-      }
-
-      console.log('✅ [ViewScores] Score updated successfully');
-      
-      // Update local state
-      setScores(prevScores => 
-        prevScores.map(s => 
-          s.studentId === editingStudent.studentId
-            ? { ...s, score: newScore, perfectScore: newPerfectScore, isPartialScore: true }
-            : s
-        ).sort((a, b) => {
-          const percentA = (a.score / a.perfectScore) * 100;
-          const percentB = (b.score / b.perfectScore) * 100;
-          return percentB - percentA;
-        })
-      );
-
-      closeEditModal();
-      Alert.alert('Success', 'Score updated successfully');
-
-    } catch (error: any) {
-      console.error('❌ [ViewScores] Error saving score:', error);
-      Alert.alert('Error', error.message || 'Failed to update score');
-    } finally {
-      setSaving(false);
-    }
+      },
+    ]);
   };
 
-  // Calculate percentage from raw score
-  const calculatePercentage = (score: number, perfectScore: number): number => {
-    if (perfectScore === 0) return 0;
-    return Math.round((score / perfectScore) * 100);
-  };
+  // ─────────────────────────────────────────────
+  // Validation badge
+  // ─────────────────────────────────────────────
 
-  const getScoreColor = (percentage: number) => {
-    if (percentage >= 90) return '#22c55e'; // Green
-    if (percentage >= 75) return '#3b82f6'; // Blue
-    if (percentage >= 60) return '#f59e0b'; // Orange
-    return '#ef4444'; // Red
-  };
-
-  const getScoreGrade = (percentage: number) => {
-    if (percentage >= 90) return 'A';
-    if (percentage >= 85) return 'B+';
-    if (percentage >= 80) return 'B';
-    if (percentage >= 75) return 'C+';
-    if (percentage >= 70) return 'C';
-    if (percentage >= 65) return 'D+';
-    if (percentage >= 60) return 'D';
-    return 'F';
-  };
-
-  // Parse scannedAt date (format: "MM/DD/YYYY HH:MM:SS")
-  const formatDate = (scannedAt: string): string => {
-    try {
-      const [datePart, timePart] = scannedAt.split(' ');
-      const [month, day, year] = datePart.split('/');
-      const [hour, minute, second] = timePart.split(':');
-      
-      const date = new Date(
-        parseInt(year),
-        parseInt(month) - 1,
-        parseInt(day),
-        parseInt(hour),
-        parseInt(minute),
-        parseInt(second)
-      );
-      
-      return date.toLocaleString();
-    } catch (e) {
-      return scannedAt;
-    }
-  };
-
-  if (!assessmentUid) {
-    return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>❌ Assessment ID missing</Text>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+  const renderValidationBadge = () => {
+    if (!reassignTarget) return null;
+    if (newStudentId.trim() === reassignTarget.studentId) return null;
+    if (validating) return (
+      <View style={styles.validationRow}>
+        <ActivityIndicator size="small" color="#6366f1" />
+        <Text style={styles.validatingText}>  Validating...</Text>
+      </View>
     );
-  }
+    if (!idValidated || !idValidation) return null;
+    if (!idValidation.exists) return (
+      <View style={[styles.validationRow, styles.valError]}>
+        <Text style={styles.valErrorText}>❌ Student ID not registered in the app</Text>
+      </View>
+    );
+    if (idValidation.enrolled) return (
+      <View style={[styles.validationRow, styles.valOk]}>
+        <Text style={styles.valOkText}>✅ {idValidation.studentName} — Enrolled</Text>
+      </View>
+    );
+    return (
+      <View style={[styles.validationRow, styles.valWarn]}>
+        <Text style={styles.valWarnText}>
+          ⚠️ {idValidation.studentName} — Not enrolled in this subject
+        </Text>
+      </View>
+    );
+  };
+
+  // ─────────────────────────────────────────────
+  // Loading
+  // ─────────────────────────────────────────────
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color="#22c55e" />
-          <Text style={styles.loadingText}>Loading scores...</Text>
+          <Text style={styles.loadingText}>Loading results...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Calculate statistics
-  const averagePercentage = scores.length > 0
-    ? scores.reduce((sum, s) => sum + calculatePercentage(s.score, s.perfectScore), 0) / scores.length
-    : 0;
-
-  const highestPercentage = scores.length > 0
-    ? Math.max(...scores.map(s => calculatePercentage(s.score, s.perfectScore)))
-    : 0;
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
         style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Header */}
+        {/* ── Header ─────────────────────────────── */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>📊 Assessment Results</Text>
-          {assessmentName && (
-            <Text style={styles.assessmentName}>{assessmentName}</Text>
-          )}
-          <Text style={styles.headerSubtitle}>UID: {assessmentUid}</Text>
-          <View style={styles.statsContainer}>
+          <Text style={styles.headerTitle}>{assessmentName ?? 'Assessment Results'}</Text>
+          <Text style={styles.headerUid}>UID: {assessmentUid}</Text>
+
+          <View style={styles.statsRow}>
             <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{scores.length}</Text>
-              <Text style={styles.statLabel}>Submissions</Text>
+              <Text style={styles.statNum}>{results.length}</Text>
+              <Text style={styles.statLbl}>Scanned</Text>
             </View>
-            {scores.length > 0 && (
-              <>
-                <View style={styles.statBox}>
-                  <Text style={styles.statNumber}>
-                    {averagePercentage.toFixed(1)}%
-                  </Text>
-                  <Text style={styles.statLabel}>Average</Text>
-                </View>
-                <View style={styles.statBox}>
-                  <Text style={styles.statNumber}>{highestPercentage}%</Text>
-                  <Text style={styles.statLabel}>Highest</Text>
-                </View>
-              </>
+            <View style={styles.statBox}>
+              <Text style={styles.statNum}>{pendingList.length}</Text>
+              <Text style={styles.statLbl}>Pending</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={[styles.statNum, { color: '#ef4444' }]}>{notScanned.length}</Text>
+              <Text style={styles.statLbl}>Not Scanned</Text>
+            </View>
+            {scored.length > 0 && (
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{avgPct.toFixed(1)}%</Text>
+                <Text style={styles.statLbl}>Average</Text>
+              </View>
             )}
           </View>
+
+          {hasUnmatched && (
+            <View style={styles.warningBanner}>
+              <Text style={styles.warningBannerText}>
+                ⚠️ Some IDs could not be matched to enrolled students. Tap 👤 on a row to reassign.
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Scores List */}
-        <View style={styles.scoresSection}>
-          {scores.length === 0 ? (
+        {/* ── Scanned results ─────────────────────── */}
+        <View style={styles.listSection}>
+          {results.length === 0 ? (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyStateIcon}>📝</Text>
-              <Text style={styles.emptyStateText}>No submissions yet</Text>
-              <Text style={styles.emptyStateSubtext}>
-                Scores will appear here once students submit their answer sheets
+              <Text style={styles.emptyIcon}>📋</Text>
+              <Text style={styles.emptyTitle}>No submissions yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Scores will appear here once the Raspberry Pi scans answer sheets.
               </Text>
             </View>
           ) : (
-            scores.map((studentScore, index) => {
-              const percentage = calculatePercentage(studentScore.score, studentScore.perfectScore);
-              
+            results.map((r, index) => {
+              const percentage = pct(r.total_score, r.total_questions);
+              const color = scoreColor(percentage);
+              const name = r.matchedStudentName ?? 'Unknown Student';
               return (
-                <View key={studentScore.studentId} style={styles.scoreCard}>
-                  <View style={styles.scoreHeader}>
+                <View key={r.studentId} style={styles.resultCard}>
+                  <View style={styles.cardHeader}>
                     <View style={styles.rankBadge}>
                       <Text style={styles.rankText}>#{index + 1}</Text>
                     </View>
-                    
                     <View style={styles.studentInfo}>
-                      <Text style={styles.studentId}>{studentScore.studentId}</Text>
-                      <Text style={styles.scoreStats}>
-                        {studentScore.score}/{studentScore.perfectScore} correct
-                      </Text>
-                      {studentScore.isPartialScore && (
-                        <View style={styles.partialScoreBadge}>
-                          <Text style={styles.partialScoreLabel}>✏️ Manually Edited</Text>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.studentName}>{name}</Text>
+                        {!r.matchedStudentName && (
+                          <View style={styles.unmatchedBadge}>
+                            <Text style={styles.unmatchedText}>⚠️</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.schoolId}>ID: {r.studentId}</Text>
+                      <Text style={styles.checkedAt}>Scanned: {formatDate(r.checked_at)}</Text>
+                    </View>
+                    <View style={styles.scoreDisplay}>
+                      {r.is_final_score ? (
+                        <>
+                          <Text style={[styles.scorePct, { color }]}>{percentage}%</Text>
+                          <Text style={[styles.scoreGrade, { color }]}>{gradeLabel(percentage)}</Text>
+                        </>
+                      ) : (
+                        <View style={styles.pendingBadge}>
+                          <Text style={styles.pendingText}>⏳ Pending</Text>
                         </View>
                       )}
-                      <Text style={styles.timestamp}>
-                        {formatDate(studentScore.scannedAt)}
-                      </Text>
-                    </View>
-
-                    <View style={styles.scoreDisplay}>
-                      <Text 
-                        style={[
-                          styles.scorePercentage,
-                          { color: getScoreColor(percentage) }
-                        ]}
-                      >
-                        {percentage}%
-                      </Text>
-                      <Text 
-                        style={[
-                          styles.scoreGrade,
-                          { color: getScoreColor(percentage) }
-                        ]}
-                      >
-                        {getScoreGrade(percentage)}
-                      </Text>
                     </View>
                   </View>
 
-                  {/* Progress Bar */}
-                  <View style={styles.progressBarContainer}>
-                    <View 
-                      style={[
-                        styles.progressBar,
-                        { 
-                          width: `${percentage}%`,
-                          backgroundColor: getScoreColor(percentage)
-                        }
-                      ]}
-                    />
-                  </View>
+                  <Text style={styles.scoreFraction}>
+                    {r.total_score} / {r.total_questions} correct
+                  </Text>
 
-                  {/* Edit Button - Always visible for all scores */}
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() => openEditModal(studentScore)}
-                  >
-                    <Text style={styles.editButtonText}>✏️ Edit Score</Text>
-                  </TouchableOpacity>
+                  {r.is_final_score && (
+                    <View style={styles.progressBg}>
+                      <View style={[
+                        styles.progressFill,
+                        { width: `${percentage}%` as any, backgroundColor: color },
+                      ]} />
+                    </View>
+                  )}
+
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity
+                      style={styles.breakdownButton}
+                      onPress={() => navigation.navigate('TeacherAssessmentScoreTable', {
+                        result: r,
+                        assessmentName: assessmentName ?? assessmentUid,
+                        teacherUid: effectiveTeacherUid,
+                        assessmentUid,
+                        subjectUid,
+                      })}
+                    >
+                      <Text style={styles.breakdownButtonText}>📊 View & Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.reassignButton} onPress={() => openReassign(r)}>
+                      <Text style={styles.reassignButtonText}>👤</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.deleteSheetButton} onPress={() => handleDeleteSheet(r)}>
+                      <Text style={styles.deleteSheetButtonText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               );
             })
           )}
         </View>
+
+        {/* ── Not Yet Scanned ─────────────────────── */}
+        {notScanned.length > 0 && (
+          <View style={styles.notScannedSection}>
+            <View style={styles.notScannedHeader}>
+              <Text style={styles.notScannedTitle}>⏳ Not Yet Scanned</Text>
+              <View style={styles.notScannedCount}>
+                <Text style={styles.notScannedCountText}>{notScanned.length}</Text>
+              </View>
+            </View>
+            <Text style={styles.notScannedSubtitle}>
+              These enrolled students have no answer sheet for this assessment yet.
+            </Text>
+            {notScanned.map(e => (
+              <View key={e.studentId} style={styles.notScannedCard}>
+                <View style={styles.notScannedAvatar}>
+                  <Text style={styles.notScannedAvatarText}>
+                    {(e.studentName ?? '?').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.notScannedInfo}>
+                  <Text style={styles.notScannedName}>{e.studentName ?? 'Unknown'}</Text>
+                  <Text style={styles.notScannedId}>
+                    {e.schoolId ? `ID: ${e.schoolId}` : '⚠️ No school ID on record'}
+                  </Text>
+                </View>
+                <View style={styles.notScannedBadge}>
+                  <Text style={styles.notScannedBadgeText}>Not scanned</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={{ height: 32 }} />
       </ScrollView>
 
-      {/* Edit Modal */}
+      {/* ── Reassign Student ID Modal ──────────────── */}
       <Modal
-        visible={editModalVisible}
-        transparent={true}
+        visible={reassignModalVisible}
+        transparent
         animationType="slide"
-        onRequestClose={closeEditModal}
+        onRequestClose={closeReassign}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Score</Text>
-            
-            {editingStudent && (
-              <View style={styles.modalStudentInfo}>
-                <Text style={styles.modalStudentId}>Student: {editingStudent.studentId}</Text>
-                <Text style={styles.modalOriginalScore}>
-                  Original: {editingStudent.score}/{editingStudent.perfectScore}
+            <Text style={styles.modalTitle}>Reassign Student ID</Text>
+
+            {reassignTarget && (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoName}>
+                  {reassignTarget.matchedStudentName ?? 'Unknown Student'}
                 </Text>
+                <Text style={styles.infoSub}>Current ID: {reassignTarget.studentId}</Text>
               </View>
             )}
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Score</Text>
+            <Text style={styles.fieldLabel}>New Student ID</Text>
+            <View style={styles.inputRow}>
               <TextInput
-                style={styles.input}
-                value={editScore}
-                onChangeText={setEditScore}
+                style={[styles.textInput, { flex: 1, marginBottom: 0 }]}
+                value={newStudentId}
+                onChangeText={t => {
+                  setNewStudentId(t);
+                  setIdValidated(false);
+                  setIdValidation(null);
+                }}
+                placeholder="School-provided ID"
                 keyboardType="numeric"
-                placeholder="Enter score"
-                editable={!saving}
+                editable={!savingReassign}
               />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Perfect Score (Total Questions)</Text>
-              <TextInput
-                style={styles.input}
-                value={editPerfectScore}
-                onChangeText={setEditPerfectScore}
-                keyboardType="numeric"
-                placeholder="Enter perfect score"
-                editable={!saving}
-              />
-            </View>
-
-            {editScore && editPerfectScore && (
-              <View style={styles.previewContainer}>
-                <Text style={styles.previewLabel}>Preview:</Text>
-                <Text style={styles.previewText}>
-                  {calculatePercentage(parseInt(editScore) || 0, parseInt(editPerfectScore) || 1)}%
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={closeEditModal}
-                disabled={saving}
+                style={[styles.validateBtn, validating && { opacity: 0.6 }]}
+                onPress={handleValidateId}
+                disabled={validating || savingReassign}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                {validating
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.validateBtnText}>Validate</Text>
+                }
               </TouchableOpacity>
+            </View>
+            {renderValidationBadge()}
 
+            <View style={[styles.modalButtons, { marginTop: 12 }]}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={saveEditedScore}
-                disabled={saving}
+                style={styles.cancelBtn}
+                onPress={closeReassign}
+                disabled={savingReassign}
               >
-                {saving ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Save</Text>
-                )}
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: '#ef4444' }]}
+                onPress={handleConfirmReassign}
+                disabled={savingReassign}
+              >
+                {savingReassign
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.saveBtnText}>Reassign</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Delete Sheet Confirmation Modal ──────── */}
+      <Modal
+        visible={deleteTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteTarget(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>🗑️ Delete Answer Sheet</Text>
+
+            {deleteTarget && (
+              <View style={styles.deleteWarningBox}>
+                <Text style={styles.deleteWarningTitle}>
+                  {deleteTarget.matchedStudentName ?? 'Unknown Student'}
+                </Text>
+                <Text style={styles.deleteWarningSub}>ID: {deleteTarget.studentId}</Text>
+                <Text style={styles.deleteWarningDesc}>
+                  This will permanently delete the student's scanned answer sheet, their score, and all question breakdown data for this assessment.{'\n\n'}This action cannot be undone.
+                </Text>
+              </View>
+            )}
+
+            <View style={[styles.modalButtons, { marginTop: 8 }]}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: '#ef4444' }]}
+                onPress={confirmDeleteSheet}
+                disabled={deleting}
+              >
+                {deleting
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.saveBtnText}>Delete</Text>
+                }
               </TouchableOpacity>
             </View>
           </View>
@@ -524,309 +547,194 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   );
 };
 
+// ─────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#64748b',
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#ef4444',
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  backButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  scrollView: { flex: 1 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 16, color: '#64748b' },
+
   header: {
-    backgroundColor: '#171443',
-    paddingHorizontal: 24,
-    paddingVertical: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2060',
+    backgroundColor: '#171443', paddingHorizontal: 24,
+    paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: '#2a2060',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  assessmentName: {
-    fontSize: 18,
-    color: '#22c55e',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#cdd5df',
-    fontFamily: 'monospace',
-    marginBottom: 16,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
+  headerUid: { fontSize: 12, color: '#94a3b8', fontFamily: 'monospace', marginBottom: 16 },
+  statsRow: { flexDirection: 'row', gap: 8 },
   statBox: {
-    flex: 1,
-    backgroundColor: '#2a2060',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
+    flex: 1, backgroundColor: '#2a2060', borderRadius: 10,
+    paddingVertical: 12, alignItems: 'center',
   },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#22c55e',
-    marginBottom: 4,
+  statNum: { fontSize: 18, fontWeight: 'bold', color: '#22c55e', marginBottom: 2 },
+  statLbl: { fontSize: 10, color: '#cdd5df', textAlign: 'center' },
+  warningBanner: {
+    marginTop: 12, backgroundColor: '#fef3c7',
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#cdd5df',
+  warningBannerText: { fontSize: 12, color: '#92400e', lineHeight: 18 },
+
+  listSection: { padding: 16, paddingBottom: 0 },
+  emptyState: { alignItems: 'center', paddingVertical: 60 },
+  emptyIcon: { fontSize: 64, marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#64748b', marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: '#94a3b8', textAlign: 'center', paddingHorizontal: 32 },
+
+  resultCard: {
+    backgroundColor: '#ffffff', borderRadius: 14, padding: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
-  scoresSection: {
-    padding: 16,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyStateIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    color: '#64748b',
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  scoreCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  scoreHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
   rankBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f1f5f9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#f1f5f9',
+    justifyContent: 'center', alignItems: 'center', marginRight: 10, marginTop: 2,
   },
-  rankText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#475569',
+  rankText: { fontSize: 12, fontWeight: 'bold', color: '#475569' },
+  studentInfo: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  studentName: { fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
+  unmatchedBadge: {
+    backgroundColor: '#fef3c7', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4,
   },
-  studentInfo: {
-    flex: 1,
+  unmatchedText: { fontSize: 12 },
+  schoolId: { fontSize: 13, color: '#64748b', fontFamily: 'monospace', marginBottom: 2 },
+  checkedAt: { fontSize: 11, color: '#94a3b8' },
+  scoreDisplay: { alignItems: 'flex-end', minWidth: 64 },
+  scorePct: { fontSize: 28, fontWeight: 'bold' },
+  scoreGrade: { fontSize: 14, fontWeight: '600' },
+  pendingBadge: {
+    backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
   },
-  studentId: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 2,
+  pendingText: { fontSize: 12, color: '#d97706', fontWeight: '700' },
+  scoreFraction: { fontSize: 13, color: '#64748b', marginBottom: 8 },
+  progressBg: {
+    height: 8, backgroundColor: '#f1f5f9',
+    borderRadius: 4, overflow: 'hidden', marginBottom: 12,
   },
-  scoreStats: {
-    fontSize: 13,
-    color: '#64748b',
-    marginBottom: 2,
+  progressFill: { height: '100%', borderRadius: 4 },
+  cardActions: { flexDirection: 'row', gap: 8 },
+  breakdownButton: {
+    flex: 2, backgroundColor: '#dbeafe',
+    paddingVertical: 10, borderRadius: 8, alignItems: 'center',
   },
-  partialScoreBadge: {
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-    marginBottom: 2,
+  breakdownButtonText: { fontSize: 14, fontWeight: '600', color: '#2563eb' },
+  reassignButton: {
+    flex: 1, backgroundColor: '#f1f5f9',
+    paddingVertical: 10, borderRadius: 8, alignItems: 'center',
   },
-  partialScoreLabel: {
-    fontSize: 11,
-    color: '#d97706',
-    fontWeight: '600',
+  reassignButtonText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+
+  // Not yet scanned section
+  notScannedSection: {
+    margin: 16, marginTop: 8,
+    backgroundColor: '#ffffff', borderRadius: 14, padding: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
-  timestamp: {
-    fontSize: 11,
-    color: '#94a3b8',
+  notScannedHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6,
   },
-  scoreDisplay: {
-    alignItems: 'flex-end',
+  notScannedTitle: { fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
+  notScannedCount: {
+    backgroundColor: '#fee2e2', paddingHorizontal: 8,
+    paddingVertical: 2, borderRadius: 12,
   },
-  scorePercentage: {
-    fontSize: 32,
-    fontWeight: 'bold',
+  notScannedCountText: { fontSize: 13, fontWeight: '700', color: '#dc2626' },
+  notScannedSubtitle: {
+    fontSize: 12, color: '#94a3b8', marginBottom: 12, lineHeight: 18,
   },
-  scoreGrade: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  progressBarContainer: {
-    height: 8,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  editButton: {
-    marginTop: 12,
-    backgroundColor: '#6366f1',
+  notScannedCard: {
+    flexDirection: 'row', alignItems: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+    borderTopWidth: 1, borderTopColor: '#f1f5f9',
   },
-  editButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+  notScannedAvatar: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: '#e0e7ff', justifyContent: 'center',
+    alignItems: 'center', marginRight: 12,
   },
-  // Modal styles
+  notScannedAvatarText: { fontSize: 16, fontWeight: 'bold', color: '#6366f1' },
+  notScannedInfo: { flex: 1 },
+  notScannedName: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 2 },
+  notScannedId: { fontSize: 12, color: '#64748b', fontFamily: 'monospace' },
+  notScannedBadge: {
+    backgroundColor: '#f1f5f9', paddingHorizontal: 8,
+    paddingVertical: 3, borderRadius: 6,
+  },
+  notScannedBadgeText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
+
+  // Modal
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
+    backgroundColor: '#ffffff', borderRadius: 16,
+    padding: 24, width: '100%', maxWidth: 420,
   },
   modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 16,
-    textAlign: 'center',
+    fontSize: 20, fontWeight: 'bold', color: '#1e293b',
+    marginBottom: 16, textAlign: 'center',
   },
-  modalStudentInfo: {
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+  infoBox: { backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, marginBottom: 16 },
+  infoName: { fontSize: 15, fontWeight: '600', color: '#1e293b', marginBottom: 2 },
+  infoSub: { fontSize: 12, color: '#64748b' },
+  fieldLabel: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 8 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  textInput: {
+    borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 16, color: '#1e293b', marginBottom: 12,
   },
-  modalStudentId: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
+  validateBtn: {
+    backgroundColor: '#6366f1', paddingVertical: 14,
+    paddingHorizontal: 14, borderRadius: 8,
   },
-  modalOriginalScore: {
-    fontSize: 14,
-    color: '#64748b',
+  validateBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+
+  validationRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginBottom: 8,
   },
-  inputGroup: {
-    marginBottom: 16,
+  validatingText: { fontSize: 13, color: '#6366f1' },
+  valOk: { backgroundColor: '#f0fdf4' },
+  valOkText: { fontSize: 13, color: '#16a34a', fontWeight: '600' },
+  valWarn: { backgroundColor: '#fefce8' },
+  valWarnText: { fontSize: 13, color: '#ca8a04', fontWeight: '600' },
+  valError: { backgroundColor: '#fef2f2' },
+  valErrorText: { fontSize: 13, color: '#dc2626', fontWeight: '600' },
+
+  modalButtons: { flexDirection: 'row', gap: 12 },
+  cancelBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 8,
+    backgroundColor: '#f1f5f9', alignItems: 'center',
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 8,
+  cancelBtnText: { fontSize: 16, fontWeight: '600', color: '#475569' },
+  saveBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 8,
+    backgroundColor: '#22c55e', alignItems: 'center',
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: '#1e293b',
-    backgroundColor: '#ffffff',
+  saveBtnText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
+
+  // Delete sheet button
+  deleteSheetButton: {
+    backgroundColor: '#fee2e2', paddingVertical: 10,
+    paddingHorizontal: 14, borderRadius: 8, alignItems: 'center',
   },
-  previewContainer: {
-    backgroundColor: '#f0fdf4',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  deleteSheetButtonText: { fontSize: 16 },
+
+  // Delete warning
+  deleteWarningBox: {
+    backgroundColor: '#fef2f2', borderRadius: 10,
+    borderLeftWidth: 4, borderLeftColor: '#ef4444',
+    padding: 14, marginBottom: 8,
   },
-  previewLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#166534',
-    marginRight: 8,
-  },
-  previewText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#22c55e',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#f1f5f9',
-  },
-  cancelButtonText: {
-    color: '#475569',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveButton: {
-    backgroundColor: '#22c55e',
-  },
-  saveButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  deleteWarningTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b', marginBottom: 2 },
+  deleteWarningSub: { fontSize: 12, color: '#64748b', fontFamily: 'monospace', marginBottom: 10 },
+  deleteWarningDesc: { fontSize: 13, color: '#7f1d1d', lineHeight: 20 },
 });
 
 export default ViewScoresScreen;

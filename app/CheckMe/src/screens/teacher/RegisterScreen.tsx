@@ -17,12 +17,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
-import { 
-  isGmailAddress, 
-  validatePassword, 
-  validateUsername, 
-  validateEmployeeId 
+import {
+  isGmailAddress,
+  validatePassword,
+  validateUsername,
+  validateEmployeeId
 } from '../../utils/validation';
+import { isEmployeeIdTaken } from '../../services/authService';
 import { LinearGradient } from 'expo-linear-gradient';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherRegister'>;
@@ -41,18 +42,18 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     if (!fullName.trim()) return 'Full name is required';
     if (!email.trim()) return 'Email is required';
     if (!isGmailAddress(email)) return 'Only Gmail addresses (@gmail.com) are allowed';
-    
+
     const usernameCheck = validateUsername(username);
     if (!usernameCheck.isValid) return usernameCheck.message || 'Invalid username';
-    
+
     const employeeIdCheck = validateEmployeeId(employeeId);
     if (!employeeIdCheck.isValid) return employeeIdCheck.message || 'Invalid employee ID';
-    
+
     const passwordCheck = validatePassword(password);
     if (!passwordCheck.isValid) return passwordCheck.message || 'Invalid password';
-    
+
     if (password !== confirmPassword) return 'Passwords do not match';
-    
+
     return null;
   };
 
@@ -65,12 +66,24 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
     try {
       setLoading(true);
+
+      // ── Duplicate employee ID check ────────────
+      const taken = await isEmployeeIdTaken(employeeId.trim());
+      if (taken) {
+        Alert.alert(
+          'Employee ID Already in Use',
+          `The Employee ID "${employeeId.trim()}" is already registered to another account.\n\nIf you believe this is a mistake, please contact your school administrator.`
+        );
+        setLoading(false);
+        return;
+      }
+
       await signUp({
         fullName: fullName.trim(),
         email: email.trim(),
         password,
         username: username.trim(),
-        employeeId: employeeId.trim()
+        employeeId: employeeId.trim(),
       });
 
       Alert.alert(
@@ -91,20 +104,19 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
-            {/* Logo Section */}
+            {/* Logo */}
             <View style={styles.logoContainer}>
-              <Image 
-                source={require('../../../assets/checkme-logo.jpg')} 
+              <Image
+                source={require('../../../assets/checkme-logo.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
-              {/* Decorative dots */}
               <View style={[styles.dot, styles.dotTopLeft]} />
               <View style={[styles.dot, styles.dotTopRight]} />
               <View style={[styles.dot, styles.dotBottomLeft]} />
@@ -113,7 +125,6 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
             <Text style={styles.title}>Teacher Sign Up</Text>
 
-            {/* Form */}
             <View style={styles.form}>
               <TextInput
                 style={styles.input}
@@ -147,15 +158,20 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 editable={!loading}
               />
 
-              <TextInput
-                style={styles.input}
-                placeholder="Employee ID"
-                placeholderTextColor="#94a3b8"
-                value={employeeId}
-                onChangeText={setEmployeeId}
-                autoCapitalize="characters"
-                editable={!loading}
-              />
+              <View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Employee ID"
+                  placeholderTextColor="#94a3b8"
+                  value={employeeId}
+                  onChangeText={setEmployeeId}
+                  autoCapitalize="characters"
+                  editable={!loading}
+                />
+                <Text style={styles.fieldHint}>
+                  ⚠️ Use your official school-issued Employee ID.
+                </Text>
+              </View>
 
               <TextInput
                 style={styles.input}
@@ -201,7 +217,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
               <View style={styles.loginContainer}>
                 <Text style={styles.loginText}>Already have an account? </Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => navigation.navigate('TeacherLogin')}
                   disabled={loading}
                 >
@@ -217,114 +233,54 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#171443'
-  },
-  keyboardView: {
-    flex: 1
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 30
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 40,
-    paddingTop: 20,
-    alignItems: 'center'
-  },
+  container: { flex: 1, backgroundColor: '#171443' },
+  keyboardView: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 30 },
+  content: { flex: 1, paddingHorizontal: 40, paddingTop: 20, alignItems: 'center' },
   logoContainer: {
-    position: 'relative',
-    marginBottom: 30,
-    alignItems: 'center',
-    width: 150,
-    height: 150
+    position: 'relative', marginBottom: 30,
+    alignItems: 'center', width: 150, height: 150,
   },
-  logoImage: {
-    width: '100%',
-    height: '100%'
-  },
+  logoImage: { width: '100%', height: '100%' },
   dot: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#22c55e'
+    position: 'absolute', width: 8, height: 8,
+    borderRadius: 4, backgroundColor: '#22c55e',
   },
-  dotTopLeft: {
-    top: 10,
-    left: 10
-  },
-  dotTopRight: {
-    top: 10,
-    right: 10
-  },
-  dotBottomLeft: {
-    bottom: 10,
-    left: 10
-  },
-  dotBottomRight: {
-    bottom: 10,
-    right: 10
-  },
+  dotTopLeft: { top: 10, left: 10 },
+  dotTopRight: { top: 10, right: 10 },
+  dotBottomLeft: { bottom: 10, left: 10 },
+  dotBottomRight: { bottom: 10, right: 10 },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 25,
-    textAlign: 'center'
+    fontSize: 24, fontWeight: 'bold', color: '#ffffff',
+    marginBottom: 25, textAlign: 'center',
   },
-  form: {
-    width: '100%',
-    gap: 15
-  },
+  form: { width: '100%', gap: 15 },
   input: {
-    backgroundColor: '#e2e8f0',
-    borderRadius: 25,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    fontSize: 15,
-    color: '#1e293b'
+    backgroundColor: '#e2e8f0', borderRadius: 25,
+    paddingVertical: 14, paddingHorizontal: 24,
+    fontSize: 15, color: '#1e293b',
+  },
+  fieldHint: {
+    fontSize: 11, color: '#94a3b8',
+    marginTop: 6, paddingHorizontal: 8, lineHeight: 16,
   },
   buttonWrapper: {
-    width: '100%',
-    borderRadius: 25,
-    overflow: 'hidden',
-    marginTop: 10,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8
+    width: '100%', borderRadius: 25, overflow: 'hidden',
+    marginTop: 10, elevation: 5,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8,
   },
   gradientButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 40,
-    alignItems: 'center',
-    justifyContent: 'center'
+    paddingVertical: 16, paddingHorizontal: 40,
+    alignItems: 'center', justifyContent: 'center',
   },
-  buttonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    letterSpacing: 0.5
-  },
+  buttonText: { fontSize: 18, fontWeight: 'bold', color: '#ffffff', letterSpacing: 0.5 },
   loginContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 15
+    flexDirection: 'row', justifyContent: 'center',
+    alignItems: 'center', marginTop: 15,
   },
-  loginText: {
-    fontSize: 14,
-    color: '#cbd5e1'
-  },
-  loginLink: {
-    fontSize: 14,
-    color: '#22c55e',
-    fontWeight: '600'
-  }
+  loginText: { fontSize: 14, color: '#cbd5e1' },
+  loginLink: { fontSize: 14, color: '#22c55e', fontWeight: '600' },
 });
 
 export default RegisterScreen;
