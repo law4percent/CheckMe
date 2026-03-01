@@ -48,15 +48,26 @@ fi
 # 1. SYSTEM UPDATE
 # -----------------------------
 echo "=== 1. Updating System ==="
+
+# Force apt to use the main Raspbian mirror directly
+# (avoids broken third-party mirrors like mirror.ossplanet.net)
+sudo tee /etc/apt/sources.list > /dev/null << 'EOF'
+deb http://raspbian.raspberrypi.com/raspbian/ bookworm main contrib non-free rpi
+EOF
+sudo tee /etc/apt/sources.list.d/raspi.list > /dev/null << 'EOF'
+deb http://archive.raspberrypi.com/debian/ bookworm main
+EOF
+echo "✓ apt sources pinned to official mirrors"
+
 sudo apt update
-sudo apt full-upgrade -y
+sudo apt full-upgrade -y --fix-missing
 sudo apt autoremove -y
 
 # -----------------------------
 # 2. INSTALL SYSTEM DEPENDENCIES
 # -----------------------------
 echo "=== 2. Installing SANE, OpenCV system deps, and build tools ==="
-sudo apt install -y \
+sudo apt install -y --fix-missing \
     sane-utils libsane1 libsane-common sane-airscan usbutils \
     build-essential python3-dev python3-venv python3-pip wget tar \
     libatlas-base-dev libopenjp2-7 libtiff6 libwebp7 \
