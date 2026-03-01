@@ -143,7 +143,7 @@ def _do_scan(
     lcd.show(["Scanning page", f"{page_number}..."])
 
     try:
-        filename = scanner.scan(target_directory=normalize_path(ANSWER_KEYS_PATH))
+        filename = scanner.scan(target_directory=ANSWER_KEYS_PATH)
         time.sleep(debounce)
 
         scanned_files.append(filename)
