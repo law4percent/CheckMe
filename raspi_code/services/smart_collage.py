@@ -1,9 +1,9 @@
 import cv2
 import numpy as np
 
-from .logger import get_log_file
+from .logger import get_logger
 
-log = get_log_file("smart_collage.log")
+log = get_logger("smart_collage.py")
 
 class SmartCollage:
 

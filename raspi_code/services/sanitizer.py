@@ -1,8 +1,8 @@
 import json
 import re
-from .logger import get_log_file
+from .logger import get_logger
 
-log = get_log_file("sanitizer.py")
+log = get_logger("sanitizer.py")
 
 def sanitize_gemini_json(raw: str) -> dict:
     """
