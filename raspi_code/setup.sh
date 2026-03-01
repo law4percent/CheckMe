@@ -1,11 +1,12 @@
 #!/bin/bash
 # setup.sh - FULL Production Setup for CheckMe
-# Optimized for Raspberry Pi OS 32-bit (Bookworm / armhf)
+# Optimized for Raspberry Pi OS 32-bit Bullseye (armhf) - HEADLESS (no Desktop)
 
 set -euo pipefail
 
 echo "========================================="
 echo "        CHECKME FULL 32-bit SETUP"
+echo "         (Headless / No Desktop)"
 echo "========================================="
 
 # -----------------------------
@@ -41,45 +42,26 @@ echo "=== 3. Configuring User Groups ==="
 sudo usermod -aG scanner "$USER" || true
 
 # -----------------------------
-# 4. INSTALL EPSON OFFICIAL DRIVER (EPKOWA / ISCAN) - 32-bit
+# 4. ENABLE EPSON2 BACKEND (no proprietary driver needed)
 # -----------------------------
-echo "=== 4. Installing Epson L3210 Driver (32-bit) ==="
-DRIVER_DIR="$HOME/checkme_drivers"
-mkdir -p "$DRIVER_DIR"
-cd "$DRIVER_DIR"
-
-EPSON_ISCAN="iscan-bundle-2.30.4-deb.tar.gz"
-
-if [ ! -f "$EPSON_ISCAN" ]; then
-    echo "Downloading Epson driver..."
-    wget https://download.ebz.epson.net/dsc/f/03/00/00/90/iscan-bundle-2.30.4-deb.tar.gz
-fi
-
-echo "Extracting driver..."
-tar -xvzf "$EPSON_ISCAN"
-cd iscan-bundle-*/Debian
-
-echo "Installing driver..."
-sudo dpkg -i *.deb || sudo apt -f install -y
+echo "=== 4. Enabling epson2 backend ==="
+sudo sed -i '/^#epson2/ s/^#//' /etc/sane.d/dll.conf
+# Make sure epkowa is NOT interfering
+sudo sed -i 's/^epkowa/#epkowa/' /etc/sane.d/dll.conf || true
+echo "✓ epson2 backend enabled"
 
 # -----------------------------
-# 5. ENABLE EPSON BACKEND
+# 5. CREATE SCAN DIRECTORY (headless path, no Desktop)
 # -----------------------------
-echo "=== 5. Enabling epkowa backend ==="
-sudo sed -i '/^#epkowa/ s/^#//' /etc/sane.d/dll.conf
-sudo sed -i '/^epson2/ s/^/#/' /etc/sane.d/dll.conf
-
-# -----------------------------
-# 6. CREATE SCAN DIRECTORY
-# -----------------------------
-echo "=== 6. Creating Scan Directory ==="
-SCAN_DIR="$HOME/Desktop/l3210_test/scans"
+echo "=== 5. Creating Scan Directory ==="
+SCAN_DIR="$HOME/scans"
 mkdir -p "$SCAN_DIR"
+echo "✓ Scan directory: $SCAN_DIR"
 
 # -----------------------------
-# 7. CREATE PYTHON VENV
+# 6. CREATE PYTHON VENV
 # -----------------------------
-echo "=== 7. Creating Python Virtual Environment ==="
+echo "=== 6. Creating Python Virtual Environment ==="
 cd "$HOME"
 if [ -d "checkme-env" ]; then
     echo "✓ Virtual environment exists."
@@ -90,9 +72,9 @@ fi
 source checkme-env/bin/activate
 
 # -----------------------------
-# 8. INSTALL PYTHON DEPENDENCIES
+# 7. INSTALL PYTHON DEPENDENCIES
 # -----------------------------
-echo "=== 8. Installing Python Packages ==="
+echo "=== 7. Installing Python Packages ==="
 pip install --upgrade pip setuptools wheel --no-cache-dir
 
 safe_pip_install() {
@@ -125,9 +107,9 @@ safe_pip_install websockets==15.0.1
 safe_pip_install tenacity==9.1.4
 
 # -----------------------------
-# 9. VERIFY SCANNER
+# 8. VERIFY SCANNER
 # -----------------------------
-echo "=== 9. Verifying Epson Scanner ==="
+echo "=== 8. Verifying Epson Scanner ==="
 echo "--- USB Detection ---"
 lsusb | grep -i epson || echo "⚠ Epson not detected via USB"
 
@@ -135,23 +117,51 @@ echo "--- SANE Detection ---"
 scanimage -L || echo "⚠ Scanner not detected by SANE"
 
 # -----------------------------
-# 10. TEST SCAN
+# 9. TEST SCAN
 # -----------------------------
-echo "=== 10. Test Scan ==="
+echo "=== 9. Test Scan ==="
 TEST_FILE="$SCAN_DIR/test_scan.png"
-scanimage --format=png --resolution 300 --mode Color > "$TEST_FILE" && echo "✅ Test scan saved at $TEST_FILE" || echo "✗ Test scan failed!"
+if scanimage --format=png --resolution 300 --mode Color > "$TEST_FILE"; then
+    echo "✅ Test scan saved at $TEST_FILE"
+else
+    echo "✗ Test scan failed! Check USB connection and scanner power."
+fi
+
+# -----------------------------
+# 10. SETUP SCAN VIEWER (Python HTTP server)
+# -----------------------------
+echo "=== 10. Creating Scan Viewer Script ==="
+cat > "$HOME/view_scans.sh" << 'EOF'
+#!/bin/bash
+# Simple HTTP server to view scans from Windows browser
+SCAN_DIR="$HOME/scans"
+PORT=8080
+echo "========================================="
+echo "  Scan Viewer running on port $PORT"
+echo "  Open on Windows browser:"
+echo "  http://$(hostname -I | awk '{print $1}'):$PORT"
+echo "  Press CTRL+C to stop"
+echo "========================================="
+cd "$SCAN_DIR"
+python3 -m http.server $PORT
+EOF
+chmod +x "$HOME/view_scans.sh"
+echo "✓ Scan viewer script created at ~/view_scans.sh"
 
 echo "-----------------------------------------"
-echo "✓ FULL 32-bit Setup Complete!"
+echo "✓ FULL 32-bit Headless Setup Complete!"
 echo ""
 echo "IMPORTANT:"
-echo "1. Reboot required for driver and group changes:"
+echo "1. Reboot required for group changes:"
 echo "   sudo reboot"
 echo ""
-echo "2. After reboot:"
+echo "2. After reboot, activate environment:"
 echo "   source checkme-env/bin/activate"
 echo "   python main.py"
 echo ""
-echo "3. Scanner test:"
-echo "   scanimage --format=png --resolution 300 > ~/Desktop/l3210_test/scans/test.png"
+echo "3. To view scans from Windows browser:"
+echo "   ~/view_scans.sh"
+echo "   Then open: http://$(hostname -I | awk '{print $1}'):8080"
+echo ""
+echo "4. Scans are saved to: ~/scans/"
 echo "-----------------------------------------"
