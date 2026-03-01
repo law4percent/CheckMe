@@ -7,9 +7,21 @@ Uses Firebase Admin SDK internally — public interface is unchanged.
 import os
 import json
 from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
 
 import firebase_admin
 from firebase_admin import credentials, db
+
+
+def _now() -> str:
+    """
+    Return current UTC time as ISO 8601 string.
+
+    Replaces db.SERVER_TIMESTAMP which was removed in firebase_admin 6+.
+    Using client-side UTC time is accurate enough for created_at / updated_at
+    timestamps in this application.
+    """
+    return datetime.now(timezone.utc).isoformat()
 
 
 class FirebaseError(Exception):
@@ -35,34 +47,21 @@ class FirebaseRTDB:
     initialized (e.g. called from multiple modules), it reuses the existing app.
 
     Example usage:
-        db = FirebaseRTDB(
+        firebase = FirebaseRTDB(
             database_url        = "https://project-id.firebaseio.com",
             credentials_path    = "firebase-credentials.json"
         )
 
         # Save answer key
-        db.save_answer_key(
+        firebase.save_answer_key(
             assessment_uid  = "MATH-001",
             answer_key      = {"Q1": "A", "Q2": "TRUE"},
             total_questions = 50,
             image_urls      = ["https://..."],
+            image_public_ids= ["answer-keys/abc123"],
             teacher_uid     = "TCHR-001",
             section_uid     = "-Fkk3f-..",
             subject_uid     = "-SFkk3f-.."
-        )
-
-        # Get answer keys
-        keys = db.get_answer_keys(teacher_uid="TCHR-001")
-
-        # Save student result
-        db.save_student_result(
-            student_id      = "STUD-001",
-            assessment_uid  = "MATH-001",
-            answer_sheet    = {"Q1": "A", "Q2": "FALSE"},
-            total_score     = 45,
-            total_questions = 50,
-            image_urls      = ["https://..."],
-            teacher_uid     = "TCHR-001"
         )
     """
 
@@ -72,27 +71,14 @@ class FirebaseRTDB:
         credentials_path    : str   = "firebase-credentials.json",
         timeout             : int   = 10
     ):
-        """
-        Initialize Firebase RTDB client.
-
-        Args:
-            database_url        : Firebase RTDB URL (e.g. https://project.firebaseio.com)
-            credentials_path    : Path to Firebase service account JSON file
-            timeout             : Unused — kept for backwards compatibility
-        """
         self.database_url   = database_url.rstrip('/')
-        self.timeout        = timeout   # kept for API compatibility
-
+        self.timeout        = timeout
         self._initialize_app(credentials_path)
 
     def _initialize_app(self, credentials_path: str) -> None:
-        """
-        Initialize Firebase Admin SDK once per process.
-        Safely skips if already initialized.
-        """
+        """Initialize Firebase Admin SDK once per process."""
         if firebase_admin._apps:
-            return  # Already initialized — reuse existing app
-
+            return
         try:
             cred = credentials.Certificate(credentials_path)
             firebase_admin.initialize_app(cred, {
@@ -102,35 +88,30 @@ class FirebaseRTDB:
             raise FirebaseConnectionError(f"Failed to initialize Firebase app: {e}")
 
     def _ref(self, path: str):
-        """Return a database reference for the given path."""
         try:
             return db.reference(path)
         except Exception as e:
             raise FirebaseConnectionError(f"Failed to get DB reference: {e}")
 
     def _get(self, path: str) -> Any:
-        """GET a value from the database."""
         try:
             return self._ref(path).get()
         except Exception as e:
             raise FirebaseConnectionError(f"GET failed at {path}: {e}")
 
     def _set(self, path: str, data: Dict) -> None:
-        """SET (PUT) a value at the given path."""
         try:
             self._ref(path).set(data)
         except Exception as e:
             raise FirebaseConnectionError(f"SET failed at {path}: {e}")
 
     def _update(self, path: str, data: Dict) -> None:
-        """PATCH (update) fields at the given path."""
         try:
             self._ref(path).update(data)
         except Exception as e:
             raise FirebaseConnectionError(f"UPDATE failed at {path}: {e}")
 
     def _delete(self, path: str) -> None:
-        """DELETE the node at the given path."""
         try:
             self._ref(path).delete()
         except Exception as e:
@@ -151,37 +132,14 @@ class FirebaseRTDB:
         section_uid     : str,
         subject_uid     : str
     ) -> bool:
-        """
-        Save answer key to Firebase RTDB.
-
-        Args:
-            assessment_uid  : Unique assessment identifier
-            answer_key      : Dictionary of answers (e.g., {"Q1": "A", "Q2": "TRUE"})
-            total_questions : Total number of questions
-            image_urls      : List of Cloudinary URLs
-            image_public_ids: List of Cloudinary public ids
-            teacher_uid     : Teacher identifier
-            section_uid     : Section identifier
-            subject_uid     : Subject identifier
-
-        Returns:
-            True if successful
-
-        Raises:
-            FirebaseDataError       : If validation fails
-            FirebaseConnectionError : If save fails
-        """
         if not assessment_uid or not assessment_uid.strip():
             raise FirebaseDataError("assessment_uid cannot be empty")
-
         if not answer_key or not isinstance(answer_key, dict):
             raise FirebaseDataError("answer_key must be a non-empty dictionary")
-
         if total_questions <= 0:
             raise FirebaseDataError("total_questions must be positive")
 
-        now = db.SERVER_TIMESTAMP
-
+        now = _now()
         data = {
             "assessment_uid"    : assessment_uid,
             "answer_key"        : answer_key,
@@ -194,58 +152,21 @@ class FirebaseRTDB:
             "section_uid"       : section_uid,
             "subject_uid"       : subject_uid,
         }
-
         self._set(f"/answer_keys/{teacher_uid}/{assessment_uid}", data)
         return True
 
     def get_answer_key(self, assessment_uid: str, teacher_uid: str) -> Optional[Dict]:
-        """
-        Get a specific answer key by assessment UID and teacher UID.
-
-        Args:
-            assessment_uid  : Assessment identifier
-            teacher_uid     : Teacher identifier
-
-        Returns:
-            Answer key data or None if not found
-        """
         return self._get(f"/answer_keys/{teacher_uid}/{assessment_uid}")
 
     def get_answer_keys(self, teacher_uid: Optional[str] = None) -> List[Dict]:
-        """
-        Get all answer keys, optionally filtered by teacher.
-
-        Args:
-            teacher_uid: Filter by teacher (None = all keys)
-
-        Returns:
-            List of answer key dictionaries
-        """
         data = None
         if teacher_uid:
             data = self._get(f"/answer_keys/{teacher_uid}")
-
         if data is None:
             return []
-
-        answer_keys = []
-        if teacher_uid:
-            for uid, key_data in data.items():
-                answer_keys.append(key_data)
-
-        return answer_keys
+        return list(data.values()) if teacher_uid else []
 
     def delete_answer_key(self, assessment_uid: str, teacher_uid: str) -> bool:
-        """
-        Delete answer key from RTDB.
-
-        Args:
-            assessment_uid  : Assessment identifier
-            teacher_uid     : Teacher identifier
-
-        Returns:
-            True if deleted
-        """
         self._delete(f"/answer_keys/{teacher_uid}/{assessment_uid}")
         return True
 
@@ -254,51 +175,22 @@ class FirebaseRTDB:
         assessment_uid  : str,
         teacher_uid     : str
     ) -> Optional[Dict]:
-        """
-        Check if an assessment_uid exists and return its metadata.
-
-        Args:
-            assessment_uid  : Assessment identifier to check
-            teacher_uid     : Teacher identifier
-
-        Returns:
-            Dict with section_uid and subject_uid if exists, False if not found
-
-        Raises:
-            FirebaseConnectionError : If request fails
-        """
         try:
             data = self._get(f"/assessments/{teacher_uid}/{assessment_uid}")
-
             if data is not None:
                 return {
                     "section_uid" : data.get("section_uid"),
                     "subject_uid" : data.get("subject_uid")
                 }
             return False
-
         except FirebaseConnectionError:
             raise
         except Exception as e:
             raise FirebaseError(f"Failed to validate assessment: {e}")
 
     def validate_teacher_exists(self, teacher_uid: str) -> bool:
-        """
-        Check if a teacher_uid exists in the database.
-
-        Args:
-            teacher_uid: Teacher identifier to check
-
-        Returns:
-            True if teacher exists, False if not found
-
-        Raises:
-            FirebaseConnectionError : If request fails
-        """
         try:
-            teacher_data = self._get(f"/users/teachers/{teacher_uid}")
-            return teacher_data is not None
-
+            return self._get(f"/users/teachers/{teacher_uid}") is not None
         except FirebaseConnectionError:
             raise
         except Exception as e:
@@ -323,38 +215,16 @@ class FirebaseRTDB:
         subject_uid     : str,
         breakdown       : dict
     ) -> bool:
-        """
-        Save student result to Firebase RTDB.
-
-        Args:
-            student_id      : Student identifier
-            assessment_uid  : Assessment identifier
-            answer_sheet    : Student's answers
-            total_score     : Score achieved
-            total_questions : Total possible score
-            image_urls      : List of Cloudinary URLs
-            image_public_ids: Loist of Cloudinary public ids
-            teacher_uid     : Teacher who checked
-            is_final_score  : Whether this is the final score
-            breakdown       : A detailed checking
-
-        Returns:
-            True if successful
-        """
         if not student_id or not student_id.strip():
             raise FirebaseDataError("student_id cannot be empty")
-
         if not assessment_uid or not assessment_uid.strip():
             raise FirebaseDataError("assessment_uid cannot be empty")
-
         if not answer_sheet or not isinstance(answer_sheet, dict):
             raise FirebaseDataError("answer_sheet must be a non-empty dictionary")
-
         if total_score < 0 or total_score > total_questions:
             raise FirebaseDataError("Invalid total_score")
 
-        now = db.SERVER_TIMESTAMP
-
+        now = _now()
         data = {
             "student_id"        : student_id,
             "assessment_uid"    : assessment_uid,
@@ -371,7 +241,6 @@ class FirebaseRTDB:
             "subject_uid"       : subject_uid,
             "breakdown"         : breakdown
         }
-
         self._set(f"/answer_sheets/{teacher_uid}/{assessment_uid}/{student_id}", data)
         return True
 
@@ -381,33 +250,12 @@ class FirebaseRTDB:
         assessment_uid  : str,
         student_id      : str
     ) -> Optional[Dict]:
-        """
-        Get specific student result.
-
-        Args:
-            assessment_uid  : Assessment identifier
-            student_id      : Student identifier
-
-        Returns:
-            Student result data or None if not found
-        """
         return self._get(f"/answer_sheets/{teacher_uid}/{assessment_uid}/{student_id}")
 
     def get_assessment_results(self, assessment_uid: str, teacher_uid: str) -> List[Dict]:
-        """
-        Get all results for a specific assessment.
-
-        Args:
-            assessment_uid: Assessment identifier
-
-        Returns:
-            List of student results
-        """
         data = self._get(f"/answer_sheets/{teacher_uid}/{assessment_uid}")
-
         if data is None:
             return []
-
         return list(data.values())
 
     def update_image_urls(
@@ -417,20 +265,9 @@ class FirebaseRTDB:
         student_id      : str,
         image_urls      : List[str]
     ) -> bool:
-        """
-        Update image URLs for a student result (for background retry).
-
-        Args:
-            assessment_uid  : Assessment identifier
-            student_id      : Student identifier
-            image_urls      : Updated list of URLs
-
-        Returns:
-            True if successful
-        """
         self._update(f"/answer_sheets/{teacher_uid}/{assessment_uid}/{student_id}", {
             "image_urls": image_urls,
-            "updated_at": db.SERVER_TIMESTAMP
+            "updated_at": _now()
         })
         return True
 
@@ -439,28 +276,13 @@ class FirebaseRTDB:
     # =========================================================================
 
     def get_temp_code_data(self, temp_code: str) -> Optional[Dict]:
-        """
-        Get teacher data from temporary code.
-
-        Args:
-            temp_code: 8-digit temporary code
-
-        Returns:
-            Dictionary with uid and username, or None if not found
-        """
         return self._get(f"/users_temp_code/{temp_code}")
 
     # =========================================================================
-    # UTILITY OPERATIONS
+    # UTILITY
     # =========================================================================
 
     def test_connection(self) -> bool:
-        """
-        Test connection to Firebase RTDB.
-
-        Returns:
-            True if connection successful
-        """
         try:
             self._get("/.info/connected")
             return True
@@ -469,7 +291,6 @@ class FirebaseRTDB:
 
     def __repr__(self) -> str:
         return f"FirebaseRTDB(url={self.database_url})"
-
 
 # =============================================================================
 # USAGE EXAMPLES
