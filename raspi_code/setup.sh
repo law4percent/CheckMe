@@ -178,10 +178,13 @@ safe_pip_install google-genai==1.63.0
 # source (30+ min, may fail on low RAM). Use 1.26.x which has piwheels wheels.
 safe_pip_install "numpy==1.26.4"
 
-# opencv-python-headless: headless variant (no GUI deps) is correct for a
-# headless Pi. piwheels has prebuilt armhf wheels for it.
-# Do NOT use plain opencv-python — it pulls in Qt/GTK GUI libs unnecessarily.
-safe_pip_install opencv-python-headless
+# OpenCV: do NOT install via pip on 32-bit Bookworm — piwheels has no prebuilt
+# wheel so pip compiles from source (1–3 hours on Pi). Use apt instead which
+# gives a pre-compiled binary in seconds. The venv was created with
+# --system-site-packages so it can see the apt-installed python3-opencv.
+echo "Installing opencv via apt (pre-compiled, much faster than pip)..."
+sudo apt install -y python3-opencv
+echo "✓ opencv installed via apt"
 
 # Pillow: required by SmartCollage for image stitching / saving collages.
 # Was missing from the original setup.sh.
