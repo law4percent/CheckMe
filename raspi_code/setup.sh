@@ -1,6 +1,6 @@
 #!/bin/bash
 # setup.sh - FULL Production Setup for CheckMe
-# Target: Raspberry Pi OS 32-bit Bullseye (armhf) - HEADLESS (no Desktop)
+# Target: Raspberry Pi OS 32-bit Bookworm (armhf) - HEADLESS (no Desktop)
 #
 # CHANGES FROM ORIGINAL:
 #   - Added Pillow (missing dep for SmartCollage)
@@ -17,7 +17,7 @@ set -euo pipefail
 
 echo "========================================="
 echo "        CHECKME FULL 32-bit SETUP"
-echo "         (Headless / No Desktop)"
+echo "         (Headless / Bookworm 32-bit)"
 echo "========================================="
 
 # -----------------------------
@@ -59,7 +59,7 @@ echo "=== 2. Installing SANE, OpenCV system deps, and build tools ==="
 sudo apt install -y \
     sane-utils libsane1 libsane-common sane-airscan usbutils \
     build-essential python3-dev python3-venv python3-pip wget tar \
-    libatlas-base-dev libopenjp2-7 libtiff5 libwebp6 \
+    libatlas-base-dev libopenjp2-7 libtiff6 libwebp7 \
     i2c-tools python3-smbus \
     git
 
