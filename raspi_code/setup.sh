@@ -1,11 +1,11 @@
 #!/bin/bash
-# setup_checkme_rpi64.sh - FULL Production Setup for CheckMe
-# Optimized for Raspberry Pi OS 64-bit (Bookworm / aarch64)
+# setup.sh - FULL Production Setup for CheckMe
+# Optimized for Raspberry Pi OS 32-bit (Bookworm / armhf)
 
 set -euo pipefail
 
 echo "========================================="
-echo "        CHECKME FULL RPI 64-bit SETUP"
+echo "        CHECKME FULL 32-bit SETUP"
 echo "========================================="
 
 # -----------------------------
@@ -31,8 +31,8 @@ sudo apt autoremove -y
 # 2. INSTALL SANE + DEPENDENCIES
 # -----------------------------
 echo "=== 2. Installing SANE and Dependencies ==="
-sudo apt install -y sane-utils libsane libsane-common sane-airscan usbutils build-essential \
-    python3-dev python3-venv python3-pip wget tar lsb-core
+sudo apt install -y sane-utils libsane1 libsane-common sane-airscan usbutils build-essential \
+    python3-dev python3-venv python3-pip wget tar
 
 # -----------------------------
 # 3. ADD USER TO SCANNER GROUP
@@ -41,18 +41,18 @@ echo "=== 3. Configuring User Groups ==="
 sudo usermod -aG scanner "$USER" || true
 
 # -----------------------------
-# 4. INSTALL EPSON OFFICIAL DRIVER (EPKOWA / ISCAN) - 64-bit
+# 4. INSTALL EPSON OFFICIAL DRIVER (EPKOWA / ISCAN) - 32-bit
 # -----------------------------
-echo "=== 4. Installing Epson L3210 Driver (64-bit) ==="
+echo "=== 4. Installing Epson L3210 Driver (32-bit) ==="
 DRIVER_DIR="$HOME/checkme_drivers"
 mkdir -p "$DRIVER_DIR"
 cd "$DRIVER_DIR"
 
-EPSON_ISCAN="iscan-bundle-2.30.4-deb64.tar.gz"
+EPSON_ISCAN="iscan-bundle-2.30.4-deb.tar.gz"
 
 if [ ! -f "$EPSON_ISCAN" ]; then
     echo "Downloading Epson driver..."
-    wget https://download.ebz.epson.net/dsc/f/03/00/00/90/iscan-bundle-2.30.4-deb64.tar.gz
+    wget https://download.ebz.epson.net/dsc/f/03/00/00/90/iscan-bundle-2.30.4-deb.tar.gz
 fi
 
 echo "Extracting driver..."
@@ -115,7 +115,7 @@ safe_pip_install cloudinary==1.44.1
 safe_pip_install firebase_admin==7.1.0
 safe_pip_install google-genai==1.63.0
 safe_pip_install numpy==2.4.2
-safe_pip_install opencv-python-headless
+safe_pip_install opencv-python
 safe_pip_install smbus2==0.6.0
 safe_pip_install RPi.GPIO
 safe_pip_install python-dotenv==1.2.1
@@ -142,7 +142,7 @@ TEST_FILE="$SCAN_DIR/test_scan.png"
 scanimage --format=png --resolution 300 --mode Color > "$TEST_FILE" && echo "✅ Test scan saved at $TEST_FILE" || echo "✗ Test scan failed!"
 
 echo "-----------------------------------------"
-echo "✓ FULL 64-bit Setup Complete!"
+echo "✓ FULL 32-bit Setup Complete!"
 echo ""
 echo "IMPORTANT:"
 echo "1. Reboot required for driver and group changes:"
