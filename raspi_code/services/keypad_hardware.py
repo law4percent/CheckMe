@@ -13,7 +13,7 @@ class KeypadMode(Enum):
     """Keypad operation modes"""
     NUMERIC         = "numeric"       # 0-9 only
     ALPHANUMERIC    = "alphanumeric"  # 0-9, *, #
-    CUSTOM          = "custom"         # Custom matrix
+    CUSTOM          = "custom"        # Custom matrix
 
 
 class KeypadError(Exception):
@@ -43,19 +43,19 @@ class Keypad3x4:
         key = keypad.wait_for_key(valid_keys=['1', '2', '3'])
         
         # Read multi-character input
-        code = keypad.read_input(length=8, uppercase=True)
+        code = keypad.read_input(length=8)
     """
     
     # Default GPIO pin configuration (BCM numbering)
-    DEFAULT_ROW_PINS = [19, 21, 20, 16]
-    DEFAULT_COL_PINS = [12, 13, 6]
+    # NOTE: ROW and COL are swapped vs physical labeling due to wiring
+    DEFAULT_ROW_PINS = [12, 13, 6]        # Physical COL1, COL2, COL3
+    DEFAULT_COL_PINS = [19, 21, 20, 16]   # Physical ROW1, ROW2, ROW3, ROW4
     
-    # Default key matrix layout
+    # Default key matrix layout (3 rows x 4 columns after swap)
     DEFAULT_MATRIX = [
-        ['1', '2', '3'],
-        ['4', '5', '6'],
-        ['7', '8', '9'],
-        ['*', '0', '#']
+        ['1', '4', '7', '*'],
+        ['2', '5', '8', '0'],
+        ['3', '6', '9', '#']
     ]
     
     def __init__(
@@ -72,7 +72,7 @@ class Keypad3x4:
         Args:
             row_pins: GPIO pins for rows (BCM numbering)
             col_pins: GPIO pins for columns (BCM numbering)
-            matrix: Key layout matrix (4 rows x 3 columns)
+            matrix: Key layout matrix (3 rows x 4 columns)
             debounce_time: Time to wait after key press (seconds)
             stability_delay: Delay between row scans (seconds)
         """
@@ -94,14 +94,14 @@ class Keypad3x4:
     
     def _validate_configuration(self) -> None:
         """Validate pin configuration and matrix layout"""
-        if len(self.row_pins) != 4:
-            raise KeypadError("Exactly 4 row pins required")
+        if len(self.row_pins) != 3:
+            raise KeypadError("Exactly 3 row pins required")
         
-        if len(self.col_pins) != 3:
-            raise KeypadError("Exactly 3 column pins required")
+        if len(self.col_pins) != 4:
+            raise KeypadError("Exactly 4 column pins required")
         
-        if len(self.matrix) != 4 or any(len(row) != 3 for row in self.matrix):
-            raise KeypadError("Matrix must be 4x3 (4 rows, 3 columns)")
+        if len(self.matrix) != 3 or any(len(row) != 4 for row in self.matrix):
+            raise KeypadError("Matrix must be 3x4 (3 rows, 4 columns)")
     
     def setup(self) -> None:
         """Initialize GPIO pins for the keypad"""
@@ -342,10 +342,10 @@ class Keypad3x4:
         Set custom key matrix layout.
         
         Args:
-            matrix: 4x3 matrix of key characters
+            matrix: 3x4 matrix of key characters
         """
-        if len(matrix) != 4 or any(len(row) != 3 for row in matrix):
-            raise KeypadError("Matrix must be 4x3")
+        if len(matrix) != 3 or any(len(row) != 4 for row in matrix):
+            raise KeypadError("Matrix must be 3x4 (3 rows, 4 columns)")
         self.matrix = matrix
     
     def cleanup(self) -> None:
@@ -474,12 +474,11 @@ if __name__ == "__main__":
     print("Example 8: Custom matrix layout")
     print("="*70)
     
-    # Example: Alphabetic keypad
+    # Example: Alphabetic keypad (3 rows x 4 cols)
     custom_matrix = [
-        ['A', 'B', 'C'],
-        ['D', 'E', 'F'],
-        ['G', 'H', 'I'],
-        ['*', '0', '#']
+        ['A', 'D', 'G', '*'],
+        ['B', 'E', 'H', '0'],
+        ['C', 'F', 'I', '#']
     ]
     
     keypad_custom = Keypad3x4(matrix=custom_matrix)
