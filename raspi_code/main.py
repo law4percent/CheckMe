@@ -84,8 +84,8 @@ def main():
             options         = main_menu_options,
             scroll_up_key   = "2",
             scroll_down_key = "8",
-            select_key      = "*",
-            exit_key        = "#",
+            select_key      = "#",
+            exit_key        = "*",
             get_key_func    = keypad.read_key
         )
 
