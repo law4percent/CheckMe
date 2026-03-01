@@ -1,11 +1,11 @@
 #!/bin/bash
-# setup.sh - FULL Production Setup for CheckMe
-# Optimized for Raspberry Pi OS 13 (Bookworm / Trixie)
+# setup_checkme_rpi64.sh - FULL Production Setup for CheckMe
+# Optimized for Raspberry Pi OS 64-bit (Bookworm / aarch64)
 
-set -e
+set -euo pipefail
 
 echo "========================================="
-echo "        CHECKME FULL RPI SETUP"
+echo "        CHECKME FULL RPI 64-bit SETUP"
 echo "========================================="
 
 # -----------------------------
@@ -24,71 +24,82 @@ fi
 # -----------------------------
 echo "=== 1. Updating System ==="
 sudo apt update
-sudo apt upgrade -y
+sudo apt full-upgrade -y
+sudo apt autoremove -y
 
 # -----------------------------
-# 2. ENABLE I2C
+# 2. INSTALL SANE + DEPENDENCIES
 # -----------------------------
-echo "=== 2. Enabling I2C Interface ==="
-sudo raspi-config nonint do_i2c 0 || true
-sudo apt install -y i2c-tools
+echo "=== 2. Installing SANE and Dependencies ==="
+sudo apt install -y sane-utils libsane libsane-common sane-airscan usbutils build-essential \
+    python3-dev python3-venv python3-pip wget tar lsb-core
 
 # -----------------------------
-# 3. INSTALL SYSTEM DEPENDENCIES
+# 3. ADD USER TO SCANNER GROUP
 # -----------------------------
-echo "=== 3. Installing System Dependencies ==="
-
-sudo apt install -y \
-    build-essential cmake git pkg-config \
-    python3-dev python3-venv python3-pip \
-    libjpeg-dev zlib1g-dev libtiff-dev libpng-dev \
-    libopenblas-dev gfortran \
-    libssl-dev libffi-dev \
-    libopencv-dev ffmpeg \
-    libi2c-dev sane-utils libsane-dev usbutils
+echo "=== 3. Configuring User Groups ==="
+sudo usermod -aG scanner "$USER" || true
 
 # -----------------------------
-# 4. GROUP PERMISSIONS
+# 4. INSTALL EPSON OFFICIAL DRIVER (EPKOWA / ISCAN) - 64-bit
 # -----------------------------
-echo "=== 4. Configuring User Groups ==="
-sudo usermod -aG i2c $USER || true
-sudo usermod -aG scanner $USER || true
-sudo usermod -aG gpio $USER || true
+echo "=== 4. Installing Epson L3210 Driver (64-bit) ==="
+DRIVER_DIR="$HOME/checkme_drivers"
+mkdir -p "$DRIVER_DIR"
+cd "$DRIVER_DIR"
+
+EPSON_ISCAN="iscan-bundle-2.30.4-deb64.tar.gz"
+
+if [ ! -f "$EPSON_ISCAN" ]; then
+    echo "Downloading Epson driver..."
+    wget https://download.ebz.epson.net/dsc/f/03/00/00/90/iscan-bundle-2.30.4-deb64.tar.gz
+fi
+
+echo "Extracting driver..."
+tar -xvzf "$EPSON_ISCAN"
+cd iscan-bundle-*/Debian
+
+echo "Installing driver..."
+sudo dpkg -i *.deb || sudo apt -f install -y
 
 # -----------------------------
-# 5. CREATE VENV
+# 5. ENABLE EPSON BACKEND
 # -----------------------------
-echo "=== 5. Creating Virtual Environment ==="
+echo "=== 5. Enabling epkowa backend ==="
+sudo sed -i '/^#epkowa/ s/^#//' /etc/sane.d/dll.conf
+sudo sed -i '/^epson2/ s/^/#/' /etc/sane.d/dll.conf
 
+# -----------------------------
+# 6. CREATE SCAN DIRECTORY
+# -----------------------------
+echo "=== 6. Creating Scan Directory ==="
+SCAN_DIR="$HOME/Desktop/l3210_test/scans"
+mkdir -p "$SCAN_DIR"
+
+# -----------------------------
+# 7. CREATE PYTHON VENV
+# -----------------------------
+echo "=== 7. Creating Python Virtual Environment ==="
+cd "$HOME"
 if [ -d "checkme-env" ]; then
     echo "✓ Virtual environment exists."
 else
     python3 -m venv --system-site-packages checkme-env
     echo "✓ Virtual environment created."
 fi
-
 source checkme-env/bin/activate
 
 # -----------------------------
-# 6. STABLE PIP CONFIG
+# 8. INSTALL PYTHON DEPENDENCIES
 # -----------------------------
-echo "=== 6. Configuring Pip ==="
+echo "=== 8. Installing Python Packages ==="
+pip install --upgrade pip setuptools wheel --no-cache-dir
 
-export PIP_DEFAULT_TIMEOUT=120
-export PIP_RETRIES=5
-
-pip install --upgrade pip setuptools wheel \
-    --index-url https://pypi.org/simple \
-    --no-cache-dir
-
-# -----------------------------
-# 7. SAFE INSTALL FUNCTION
-# -----------------------------
 safe_pip_install() {
     PACKAGE=$1
     echo "Installing $PACKAGE ..."
     for i in 1 2 3; do
-        if pip install "$PACKAGE" --index-url https://pypi.org/simple --no-cache-dir; then
+        if pip install "$PACKAGE" --no-cache-dir; then
             echo "✓ $PACKAGE installed"
             return 0
         else
@@ -100,16 +111,11 @@ safe_pip_install() {
     exit 1
 }
 
-# -----------------------------
-# 8. INSTALL PYTHON STACK
-# -----------------------------
-echo "=== 8. Installing Python Stack ==="
-
 safe_pip_install cloudinary==1.44.1
 safe_pip_install firebase_admin==7.1.0
 safe_pip_install google-genai==1.63.0
 safe_pip_install numpy==2.4.2
-safe_pip_install opencv-python
+safe_pip_install opencv-python-headless
 safe_pip_install smbus2==0.6.0
 safe_pip_install RPi.GPIO
 safe_pip_install python-dotenv==1.2.1
@@ -119,45 +125,9 @@ safe_pip_install websockets==15.0.1
 safe_pip_install tenacity==9.1.4
 
 # -----------------------------
-# 9. CREATE .ENV FILE (IF MISSING)
+# 9. VERIFY SCANNER
 # -----------------------------
-echo "=== 9. Checking .env File ==="
-
-if [ ! -f ".env" ]; then
-    echo "Creating .env template..."
-    cat <<EOF > .env
-# ===== CHECKME ENVIRONMENT VARIABLES =====
-
-
-# Get your API key from: https://aistudio.google.com/app/apikey
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
-
-CLOUDINARY_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
-
-FIREBASE_RTDB_BASE_REFERENCE=
-FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
-
-USER_CREDENTIALS_FILE=credentials/cred.txt
-
-ANSWER_KEYS_PATH=scans/answer_keys
-ANSWER_SHEETS_PATH=scans/answer_sheets
-EOF
-
-    chmod 600 .env
-    echo "✓ .env template created."
-    echo "⚠ IMPORTANT: Edit .env and fill in your real credentials."
-else
-    echo "✓ .env already exists."
-fi
-
-# -----------------------------
-# 10. VERIFY SCANNER
-# -----------------------------
-echo "=== 10. Verifying Epson Scanner ==="
-
+echo "=== 9. Verifying Epson Scanner ==="
 echo "--- USB Detection ---"
 lsusb | grep -i epson || echo "⚠ Epson not detected via USB"
 
@@ -165,29 +135,23 @@ echo "--- SANE Detection ---"
 scanimage -L || echo "⚠ Scanner not detected by SANE"
 
 # -----------------------------
-# 11. VERIFY PYTHON STACK
+# 10. TEST SCAN
 # -----------------------------
-echo "=== 11. Verifying Python Modules ==="
-
-python3 -c "import cv2; print('✓ OpenCV', cv2.__version__)" || echo "✗ OpenCV failed"
-python3 -c "import numpy; print('✓ NumPy', numpy.__version__)" || echo "✗ NumPy failed"
-python3 -c "import firebase_admin; print('✓ Firebase OK')" || echo "✗ Firebase failed"
-python3 -c "import cloudinary; print('✓ Cloudinary OK')" || echo "✗ Cloudinary failed"
-python3 -c "import smbus2; print('✓ I2C OK')" || echo "✗ smbus2 failed"
-python3 -c "import RPi.GPIO; print('✓ GPIO OK')" || echo "✗ GPIO failed"
-python3 -c "from google import genai; print('✓ Google GenAI OK')" || echo "✗ GenAI failed"
+echo "=== 10. Test Scan ==="
+TEST_FILE="$SCAN_DIR/test_scan.png"
+scanimage --format=png --resolution 300 --mode Color > "$TEST_FILE" && echo "✅ Test scan saved at $TEST_FILE" || echo "✗ Test scan failed!"
 
 echo "-----------------------------------------"
-echo "✓ FULL Setup Complete!"
+echo "✓ FULL 64-bit Setup Complete!"
 echo ""
 echo "IMPORTANT:"
-echo "1. Reboot required for I2C & group changes."
-echo "   Run: sudo reboot"
+echo "1. Reboot required for driver and group changes:"
+echo "   sudo reboot"
 echo ""
 echo "2. After reboot:"
 echo "   source checkme-env/bin/activate"
 echo "   python main.py"
 echo ""
 echo "3. Scanner test:"
-echo "   scanimage --format=png --resolution 300 > test.png"
+echo "   scanimage --format=png --resolution 300 > ~/Desktop/l3210_test/scans/test.png"
 echo "-----------------------------------------"
