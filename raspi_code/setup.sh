@@ -70,7 +70,7 @@ echo "=== 2. Installing SANE, OpenCV system deps, and build tools ==="
 sudo apt install -y --fix-missing \
     sane-utils libsane1 libsane-common sane-airscan usbutils \
     build-essential python3-dev python3-venv python3-pip wget tar \
-    libatlas-base-dev libopenjp2-7 libtiff6 libwebp7 \
+    libatlas-base-dev libopenblas-dev libopenjp2-7 libtiff6 libwebp7 \
     i2c-tools python3-smbus \
     git
 
@@ -82,15 +82,26 @@ sudo apt install -y --fix-missing \
 # 3. ENABLE I2C (required for LCD display)
 # -----------------------------
 echo "=== 3. Enabling I2C Interface ==="
-if ! grep -q "^dtparam=i2c_arm=on" /boot/config.txt; then
-    echo "dtparam=i2c_arm=on" | sudo tee -a /boot/config.txt
-    echo "✓ I2C enabled in /boot/config.txt (reboot required)"
+
+# Bookworm moved config to /boot/firmware/config.txt
+# Bullseye and older used /boot/config.txt
+if [ -f /boot/firmware/config.txt ]; then
+    CONFIG_FILE="/boot/firmware/config.txt"
 else
-    echo "✓ I2C already enabled"
+    CONFIG_FILE="/boot/config.txt"
+fi
+echo "Using config file: $CONFIG_FILE"
+
+if ! grep -q "^dtparam=i2c_arm=on" "$CONFIG_FILE"; then
+    echo "dtparam=i2c_arm=on" | sudo tee -a "$CONFIG_FILE"
+    echo "✓ I2C enabled in $CONFIG_FILE (reboot required)"
+else
+    echo "✓ I2C already enabled in $CONFIG_FILE"
 fi
 
-# Load i2c-dev module now (without reboot)
+# Load i2c modules now without rebooting
 sudo modprobe i2c-dev || true
+sudo modprobe i2c-bcm2708 || true
 
 # -----------------------------
 # 4. ADD USER TO REQUIRED GROUPS
