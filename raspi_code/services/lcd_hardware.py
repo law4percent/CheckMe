@@ -312,14 +312,14 @@ class LCD_I2C:
             lines = content
         
         # Display each line
-        for i, line in enumerate(lines[:self.rows]):  # Max rows
+        for i, line in enumerate(lines[:self.rows]):
             if center:
-                # Center text
                 padding = (self.cols - len(line)) // 2
                 line = " " * padding + line
             
-            # Truncate if too long
-            line = line[:self.cols]
+            # Pad line to full width to overwrite any stale characters,
+            # then truncate to column count
+            line = f"{line:<{self.cols}}"[:self.cols]
             
             self.write_at(0, i, line)
         
@@ -334,23 +334,24 @@ class LCD_I2C:
 
     def _render_scroll_view(
         self,
-        lines       : List[str],
-        offset      : int,
-        title       : Optional[str] = None,
+        lines                 : List[str],
+        offset                : int,
+        title                 : Optional[str] = None,
         show_scroll_indicator : bool = True,
     ) -> None:
         """
         Internal helper – renders one 'page' of a scrollable list.
 
         Layout (20x4 with title):
-            Row 0  →  title (fixed header)
+            Row 0   →  title (fixed header)
             Row 1-3 →  content lines [offset … offset+visible_rows-1]
 
-        Layout (20x4 without title):
-            Row 0-3 →  content lines [offset … offset+3]
+        Layout (16x2 with title):
+            Row 0   →  title (fixed header)
+            Row 1   →  content line [offset]
 
-        A small scroll indicator is written at the far-right of the first and
-        last content rows so the user knows there is more content above/below.
+        Layout (any size, no title):
+            Row 0-N →  content lines [offset … offset+rows-1]
         """
         self.clear()
 
@@ -367,10 +368,9 @@ class LCD_I2C:
             if line_index >= total:
                 break
 
-            line = lines[line_index][:self.cols]
+            line = lines[line_index]
 
-            # Scroll indicators (^ at top content row when scrollable up,
-            # v at bottom content row when scrollable down)
+            # Scroll indicators
             indicator = " "
             if show_scroll_indicator:
                 if i == 0 and offset > 0:
@@ -378,8 +378,8 @@ class LCD_I2C:
                 elif i == visible_rows - 1 and (offset + visible_rows) < total:
                     indicator = "v"
 
-            # Reserve last character for indicator; pad line to fill the rest
-            display_line = f"{line:<{self.cols - 1}}{indicator}"
+            # Pad + truncate: reserve last char for indicator
+            display_line = f"{line:<{self.cols - 1}}"[:self.cols - 1] + indicator
             self.write_at(0, content_start_row + i, display_line)
 
     def show_scrollable(
@@ -396,95 +396,56 @@ class LCD_I2C:
         """
         Display a scrollable list that is longer than the LCD row count.
 
-        The caller provides a *key-reading function* so this method stays
-        hardware-agnostic.  Pass either:
-          • keypad     – an object with a ``get_key()`` method (e.g. keypad_4x4)
-          • get_key_func – any callable() that blocks until a key is pressed
-                           and returns a single-character string, or None on
-                           timeout.
+        Works on both 16x2 and 20x4. Pass either:
+          • keypad       – object with a .get_key() method
+          • get_key_func – any callable() → str | None
 
-        If neither is supplied the function falls back to ``input()`` so you
-        can test it on a regular terminal.
+        If neither is supplied falls back to input() for terminal testing.
 
         Args:
-            lines        : List of text lines to display (any length).
-            title        : Optional fixed header shown on row 0.
-            scroll_up_key   : Key that scrolls the view up   (default '2').
-            scroll_down_key : Key that scrolls the view down (default '8').
-            exit_key     : Key that exits the scroll loop    (default '#').
-            keypad       : Object with .get_key() method.
-            get_key_func : Callable() → str | None.
+            lines               : List of text lines to display (any length).
+            title               : Optional fixed header shown on row 0.
+            scroll_up_key       : Key that scrolls the view up   (default '2').
+            scroll_down_key     : Key that scrolls the view down (default '8').
+            exit_key            : Key that exits the scroll loop (default '#').
+            keypad              : Object with .get_key() method.
+            get_key_func        : Callable() → str | None.
             show_scroll_indicator : Show '^'/'v' scroll hint characters.
 
         Returns:
             The current scroll offset when the user pressed exit_key, or None.
-
-        Example (with a keypad library)::
-
-            from keypad_4x4 import Keypad
-            kp = Keypad(...)
-
-            lcd.show_scrollable(
-                lines=[
-                    "Alice  – 48/50",
-                    "Bob    – 45/50",
-                    "Carol  – 50/50",
-                    "Dave   – 40/50",
-                    "Eve    – 47/50",
-                    "Frank  – 43/50",
-                    "Grace  – 49/50",
-                ],
-                title="STUDENT SCORES",
-                scroll_up_key="2",
-                scroll_down_key="8",
-                exit_key="#",
-                keypad=kp,
-            )
-
-        Example (terminal / testing without real keypad)::
-
-            lcd.show_scrollable(
-                lines=["Line " + str(i) for i in range(20)],
-                title="BIG LIST",
-            )
-            # Uses input() automatically – press 2/8/# in the terminal.
         """
         if not lines:
             self.show("(empty list)")
             return None
 
-        # Resolve the key-reading callable
+        # Resolve key-reading callable
         if get_key_func is not None:
             _get_key = get_key_func
         elif keypad is not None:
             _get_key = keypad.get_key
         else:
-            # Fallback: terminal input (useful for testing)
             def _get_key():
                 return input("Key [2=up 8=down #=exit]: ").strip() or None
 
         content_start_row = 1 if title is not None else 0
         visible_rows      = self.rows - content_start_row
         total             = len(lines)
-        offset            = 0  # Index of the topmost visible line
+        offset            = 0
 
-        # Initial render
         self._render_scroll_view(lines, offset, title, show_scroll_indicator)
 
         while True:
             key = _get_key()
-
             if key is None:
                 continue
 
             if key == scroll_down_key:
-                # Scroll down: shift the window down by one line
                 if offset + visible_rows < total:
                     offset += 1
                     self._render_scroll_view(lines, offset, title, show_scroll_indicator)
 
             elif key == scroll_up_key:
-                # Scroll up: shift the window up by one line
                 if offset > 0:
                     offset -= 1
                     self._render_scroll_view(lines, offset, title, show_scroll_indicator)
@@ -509,11 +470,27 @@ class LCD_I2C:
         """
         Interactive scrollable menu with a cursor – returns the selected index.
 
-        The cursor highlights which option is currently focused.  Use the
-        scroll keys to move it; press select_key to confirm the choice.
+        16x2 behaviour:
+            Title is shown briefly (1 s) then the full 2 rows are used for
+            options so the user can see 2 items at once.
+
+            ┌────────────────┐
+            │> Scan         v│   ← focused option + scroll-down hint
+            │  Done & Save   │   ← next option
+            └────────────────┘
+
+        20x4 behaviour:
+            Row 0 = fixed title, rows 1-3 = options (3 visible at once).
+
+            ┌────────────────────┐
+            │    MAIN MENU       │
+            │> Scan Answer Key  v│
+            │  Check Sheets      │
+            │  Settings          │
+            └────────────────────┘
 
         Args:
-            title           : Fixed header row.
+            title           : Header text (fixed on 20x4, brief splash on 16x2).
             options         : List of option strings (any length).
             scroll_up_key   : Move cursor up   (default '2').
             scroll_down_key : Move cursor down (default '8').
@@ -521,37 +498,16 @@ class LCD_I2C:
             exit_key        : Abort without selecting (default '#').
             keypad          : Object with .get_key() method.
             get_key_func    : Callable() → str | None.
-            cursor_char     : Character shown to the left of the focused option.
+            cursor_char     : Character shown left of the focused option.
 
         Returns:
-            Index of the selected option (0-based), or None if aborted.
-
-        Example::
-
-            choice = lcd.show_scrollable_menu(
-                title="SELECT MODE",
-                options=[
-                    "[1] Scan Answer Key",
-                    "[2] Check Sheets",
-                    "[3] View Scores",
-                    "[4] Export CSV",
-                    "[5] Settings",
-                    "[6] About",
-                ],
-                scroll_up_key="2",
-                scroll_down_key="8",
-                select_key="*",
-                exit_key="#",
-                keypad=kp,
-            )
-            if choice is not None:
-                print(f"User chose option {choice}: {options[choice]}")
+            Index of selected option (0-based), or None if aborted.
         """
         if not options:
             self.show("(no options)")
             return None
 
-        # Resolve the key-reading callable
+        # Resolve key-reading callable
         if get_key_func is not None:
             _get_key = get_key_func
         elif keypad is not None:
@@ -563,36 +519,55 @@ class LCD_I2C:
                     f"{select_key}=select {exit_key}=exit]: "
                 ).strip() or None
 
-        content_start_row = 1  # Row 0 is always the title
-        visible_rows      = self.rows - content_start_row
-        total             = len(options)
-        cursor            = 0   # Currently focused option index
-        offset            = 0   # Top of the visible window
+        # ── Layout differs between 16x2 and larger displays ──────────────────
+        is_small = self.rows <= 2   # True for 16x2
+
+        if is_small:
+            # Show title briefly, then reclaim both rows for options
+            self.show(title[:self.cols], duration=1)
+            content_start_row = 0
+            visible_rows      = self.rows          # 2 on a 16x2
+        else:
+            # Row 0 = permanent title header
+            content_start_row = 1
+            visible_rows      = self.rows - 1      # 3 on a 20x4
+
+        total  = len(options)
+        cursor = 0   # focused option index
+        offset = 0   # index of topmost visible option
 
         def _render():
             self.clear()
-            self.write_at(0, 0, title[:self.cols].center(self.cols))
+
+            # Permanent title row (20x4 only)
+            if not is_small:
+                self.write_at(0, 0, title[:self.cols].center(self.cols))
 
             for i in range(visible_rows):
                 line_index = offset + i
+
                 if line_index >= total:
-                    break
+                    # Blank row so stale text doesn't linger
+                    self.write_at(
+                        0, content_start_row + i,
+                        " " * self.cols
+                    )
+                    continue
 
-                is_selected = (line_index == cursor)
-                prefix      = cursor_char if is_selected else " "
+                is_focused  = (line_index == cursor)
+                prefix      = cursor_char if is_focused else " "
 
-                # Reserve 1 char for prefix + 1 for scroll hint
-                text = options[line_index]
-                max_text_len = self.cols - 2
+                # Layout: [prefix 1 char][text N chars][hint 1 char]
+                max_text = self.cols - 2
 
-                # Scroll hint
                 hint = " "
                 if i == 0 and offset > 0:
                     hint = "^"
                 elif i == visible_rows - 1 and (offset + visible_rows) < total:
                     hint = "v"
 
-                display_line = f"{prefix}{text[:max_text_len]:<{max_text_len}}{hint}"
+                text         = options[line_index]
+                display_line = f"{prefix}{text[:max_text]:<{max_text}}{hint}"
                 self.write_at(0, content_start_row + i, display_line)
 
         _render()
@@ -605,7 +580,6 @@ class LCD_I2C:
             if key == scroll_down_key:
                 if cursor < total - 1:
                     cursor += 1
-                    # Scroll window down if cursor moves past visible area
                     if cursor >= offset + visible_rows:
                         offset += 1
                     _render()
@@ -613,7 +587,6 @@ class LCD_I2C:
             elif key == scroll_up_key:
                 if cursor > 0:
                     cursor -= 1
-                    # Scroll window up if cursor moves above visible area
                     if cursor < offset:
                         offset -= 1
                     _render()
@@ -630,42 +603,42 @@ class LCD_I2C:
 
     def show_menu(
         self,
-        title: str,
-        options: List[str],
-        clear_first: bool = True
+        title       : str,
+        options     : List[str],
+        clear_first : bool = True
     ) -> None:
         """
         Display a static menu (no scrolling).
 
-        For menus longer than the available rows, use show_scrollable_menu().
+        For menus longer than the available rows use show_scrollable_menu().
+
+        16x2 layout:
+            Row 0 → title  (truncated to 16 chars)
+            Row 1 → first option
+
+        20x4 layout:
+            Row 0 → title
+            Row 1 → first option   (no separator — separator wasted a row)
+            Row 2 → second option
+            Row 3 → third option
 
         Args:
             title: Menu title (row 0)
-            options: List of menu options (remaining rows)
+            options: List of menu options
             clear_first: Clear display first
-        
-        Example:
-            lcd.show_menu("HOME MENU", [
-                "[1] Scan Answer Key",
-                "[2] Check Sheets",
-                "[3] Settings"
-            ])
         """
         if clear_first:
             self.clear()
-        
-        # Write title
-        self.write_at(0, 0, title.center(self.cols))
-        
-        # Write separator (if 20x4)
-        if self.rows >= 2:
-            self.write_at(0, 1, "=" * self.cols)
-        
-        # Write options
-        start_row = 2 if self.rows >= 4 else 1
+
+        # Row 0: title
+        self.write_at(0, 0, title[:self.cols])
+
+        # Options start on row 1 on all display sizes
         for i, option in enumerate(options):
-            if start_row + i < self.rows:
-                self.write_at(0, start_row + i, option[:self.cols])
+            row = 1 + i
+            if row >= self.rows:
+                break
+            self.write_at(0, row, option[:self.cols])
     
     def backlight_on(self) -> None:
         """Turn backlight on"""
@@ -844,26 +817,24 @@ if __name__ == "__main__":
     print("Example 2: Basic text display")
     print("="*70)
     
-    lcd = LCD_I2C(address=lcd_address, size=LCDSize.LCD_20x4)
+    lcd = LCD_I2C(address=lcd_address, size=LCDSize.LCD_16x2)
     
     # Simple text
     lcd.show("Hello, World!")
     time.sleep(2)
     
     # Clear and show new text
-    lcd.show("RaspberryPi Grading")
+    lcd.show("CheckMe System")
     time.sleep(2)
     
     
     print("\n" + "="*70)
-    print("Example 3: Multi-line display")
+    print("Example 3: Multi-line display (16x2)")
     print("="*70)
     
     lcd.show([
         "CheckMe System",
-        "Version 1.0",
-        "Ready to scan",
-        "Press key to start"
+        "Ready to scan"
     ])
     time.sleep(3)
     
@@ -873,8 +844,6 @@ if __name__ == "__main__":
     print("="*70)
     
     lcd.show("Loading...", duration=2)
-    # Auto-clears after 2 seconds
-    
     lcd.show("Scan complete!", duration=2)
     
     
@@ -887,13 +856,12 @@ if __name__ == "__main__":
     
     
     print("\n" + "="*70)
-    print("Example 6: Menu display")
+    print("Example 6: Static menu (16x2 — title + 1 option)")
     print("="*70)
-    
+
+    # 16x2: row 0 = title, row 1 = first option only
     lcd.show_menu("HOME MENU", [
         "[1] Scan Ans Key",
-        "[2] Check Sheets",
-        "[3] Settings"
     ])
     time.sleep(3)
     
@@ -904,46 +872,40 @@ if __name__ == "__main__":
     
     lcd.clear()
     lcd.write_at(0, 0, "Top Left")
-    lcd.write_at(10, 1, "Mid Right")
-    lcd.write_at(0, 3, "Bottom Left")
+    lcd.write_at(8, 1, "Bot Right")
     time.sleep(3)
     
     
     print("\n" + "="*70)
-    print("Example 8: Login screen")
+    print("Example 8: Login screen (16x2)")
     print("="*70)
     
     lcd.show([
-        "    LOGIN REQUIRED",
-        "====================",
-        "Open mobile app",
-        "Enter code: ________"
+        "LOGIN REQUIRED",
+        "PIN: ________"
     ])
     time.sleep(3)
     
     
     print("\n" + "="*70)
-    print("Example 9: Progress indicator")
+    print("Example 9: Progress indicator (16x2)")
     print("="*70)
     
     lcd.clear()
-    lcd.write_at(0, 0, "Uploading images...")
+    lcd.write_at(0, 0, "Uploading...")
     
-    # Simulate progress
-    for i in range(21):
-        progress = "█" * i
-        lcd.write_at(0, 2, f"[{progress:<20}]")
-        lcd.write_at(0, 3, f"{i*5}%")
-        time.sleep(0.2)
+    for i in range(17):
+        progress = "#" * i
+        lcd.write_at(0, 1, f"[{progress:<14}]{i*6}%")
+        time.sleep(0.15)
     
-    lcd.show("Upload complete!", duration=2)
+    lcd.show("Upload done!", duration=2)
     
     
     print("\n" + "="*70)
     print("Example 10: Custom characters")
     print("="*70)
     
-    # Create check mark symbol
     checkmark = [
         0b00000,
         0b00001,
@@ -955,7 +917,6 @@ if __name__ == "__main__":
         0b00000
     ]
     
-    # Create X symbol
     x_mark = [
         0b00000,
         0b10001,
@@ -971,13 +932,9 @@ if __name__ == "__main__":
     lcd.create_char(1, x_mark)
     
     lcd.clear()
-    lcd.write_at(0, 0, "Q1: ")
-    lcd.write(chr(0))  # Display checkmark
-    lcd.write_at(10, 0, "Q2: ")
-    lcd.write(chr(1))  # Display X
-    
-    lcd.write_at(0, 1, "Correct")
-    lcd.write_at(10, 1, "Wrong")
+    lcd.write_at(0, 0, "Q1:OK Q2:FAIL")
+    lcd.write_at(3, 0, chr(0))   # checkmark after Q1:
+    lcd.write_at(10, 0, chr(1))  # x after Q2:
     time.sleep(3)
     
     
@@ -995,32 +952,21 @@ if __name__ == "__main__":
     
     
     print("\n" + "="*70)
-    print("Example 12: Integration with keypad")
+    print("Example 12: PIN entry simulation (16x2)")
     print("="*70)
     
     def show_pin_entry():
-        """Simulate PIN entry with LCD"""
-        lcd.clear()
-        lcd.write_at(0, 0, "Enter 4-digit PIN:")
-        lcd.write_at(0, 2, "PIN: ")
-        
-        # Simulate entering PIN
+        lcd.show(["Enter PIN:", "PIN: "])
         pin = ""
-        for digit in "1234":
+        for digit in "12345678":
             pin += digit
             masked = "*" * len(pin)
-            lcd.write_at(5, 2, masked + "    ")
-            time.sleep(0.5)
+            # Write masked PIN starting at col 5, row 1
+            lcd.write_at(5, 1, f"{masked:<11}")
+            time.sleep(0.4)
         
-        lcd.write_at(0, 3, "Verifying...")
-        time.sleep(1)
-        
-        lcd.show([
-            "PIN Accepted!",
-            "",
-            "Welcome back",
-            "Prof. Smith"
-        ], duration=2)
+        lcd.show(["Verifying...", "Please wait"], duration=1)
+        lcd.show(["Login OK!", "Welcome Prof."], duration=2)
     
     show_pin_entry()
     
@@ -1029,59 +975,56 @@ if __name__ == "__main__":
     print("Example 13: Context manager usage")
     print("="*70)
     
-    with LCD_I2C(address=lcd_address, size=LCDSize.LCD_20x4) as display:
-        display.show("Using context manager")
+    with LCD_I2C(address=lcd_address, size=LCDSize.LCD_16x2) as display:
+        display.show(["Context mgr", "working!"])
         time.sleep(2)
     # Automatically closed and backlight off
     
     
     print("\n" + "="*70)
-    print("Example 14: Student score display")
+    print("Example 14: Student score display (16x2)")
     print("="*70)
     
+    lcd = LCD_I2C(address=lcd_address, size=LCDSize.LCD_16x2)
     lcd.show([
-        "Student: STUD-001",
-        "Score: 45/50",
-        "",
-        "Press # to continue"
+        "ID: 4201400",
+        "Score: 45/50 90%"
     ])
     time.sleep(3)
 
 
     # =========================================================================
-    # NEW — Example 15: Scrollable list (more lines than LCD rows)
+    # Example 15: Scrollable list (16x2)
     # =========================================================================
     print("\n" + "="*70)
     print("Example 15: Scrollable list  (2=up  8=down  #=exit)")
     print("="*70)
-    print("This uses terminal input as a stand-in for a real keypad.")
-    print("On your Pi, pass  keypad=<your_keypad_object>  instead.")
+    print("Terminal input used — press 2/8/# then Enter.")
 
     long_list = [
-        "Alice  – 48/50",
-        "Bob    – 45/50",
-        "Carol  – 50/50",
-        "Dave   – 40/50",
-        "Eve    – 47/50",
-        "Frank  – 43/50",
-        "Grace  – 49/50",
-        "Henry  – 38/50",
-        "Iris   – 46/50",
-        "Jack   – 42/50",
+        "Alice  48/50",
+        "Bob    45/50",
+        "Carol  50/50",
+        "Dave   40/50",
+        "Eve    47/50",
+        "Frank  43/50",
+        "Grace  49/50",
+        "Henry  38/50",
+        "Iris   46/50",
+        "Jack   42/50",
     ]
 
     lcd.show_scrollable(
         lines=long_list,
-        title="STUDENT SCORES",
+        title="SCORES",          # shown on row 0; row 1 = one item at a time
         scroll_up_key="2",
         scroll_down_key="8",
         exit_key="#",
-        # keypad=kp   ← uncomment and pass your keypad object on real hardware
     )
 
 
     # =========================================================================
-    # NEW — Example 16: Scrollable interactive menu with cursor
+    # Example 16: Scrollable interactive menu (16x2)
     # =========================================================================
     print("\n" + "="*70)
     print("Example 16: Scrollable menu  (2=up  8=down  *=select  #=exit)")
@@ -1091,28 +1034,23 @@ if __name__ == "__main__":
         "Scan Answer Key",
         "Check Sheets",
         "View Scores",
-        "Export CSV",
         "Settings",
-        "About",
         "Logout",
     ]
 
     selected = lcd.show_scrollable_menu(
-        title="MAIN MENU",
+        title="MAIN MENU",        # shown briefly (1s) then reclaimed on 16x2
         options=menu_options,
         scroll_up_key="2",
         scroll_down_key="8",
         select_key="*",
         exit_key="#",
-        # keypad=kp   ← uncomment and pass your keypad object on real hardware
     )
 
     if selected is not None:
         lcd.show([
             "Selected:",
-            menu_options[selected][:20],
-            "",
-            "Press # to continue"
+            menu_options[selected][:16]
         ], duration=3)
         print(f"User selected [{selected}]: {menu_options[selected]}")
     else:
@@ -1125,7 +1063,7 @@ if __name__ == "__main__":
     print("="*70)
     
     lcd.close()
-    print("✅ LCD closed")
+    print("LCD closed")
     
     print("\n" + "="*70)
     print("All examples completed!")

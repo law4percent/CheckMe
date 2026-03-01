@@ -54,13 +54,14 @@ def run(lcd, keypad, user) -> None:
     # =========================================================================
     # Step 1: Ask for total number of questions
     # =========================================================================
-    lcd.show(["Enter total no.", "of questions:"])
+    lcd.show(["Enter questions:", "Num: "])  # show prompt first
 
     exact_total_number_of_questions = keypad.read_input(
-        length      = MAX_QUESTION_DIGITS,        # up to 99 questions
+        length      = 2,   # max 2 digits (1–99)
         valid_keys  = ['0','1','2','3','4','5','6','7','8','9'],
         end_key     = '#',
-        timeout     = INPUT_TIMEOUT_SECONDS 
+        timeout     = INPUT_TIMEOUT_SECONDS,
+        echo_callback = lambda text: lcd.write_at(5, 1, f"{text:<11}")  # ← show digits on LCD row 1
     )
 
     if exact_total_number_of_questions is None:
@@ -142,7 +143,7 @@ def _do_scan(
     lcd.show(["Scanning page", f"{page_number}..."])
 
     try:
-        filename = scanner.scan(target_directory=normalize_path(ANSWER_KEYS_PATH))
+        filename = scanner.scan(target_directory=ANSWER_KEYS_PATH)
         time.sleep(debounce)
 
         scanned_files.append(filename)
