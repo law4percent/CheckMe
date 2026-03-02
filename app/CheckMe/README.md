@@ -428,4 +428,4 @@ npx expo start --clear
 - Verify the `teacherUid` in the path matches the authenticated user's UID
 
 **Building an APK**
-See [BUILD_APP.md](docs/app/BUILD_APP.md) for full instructions including EAS setup, `eas.json` configuration, and common build error fixes.
+See [BUILD_APP.md](https://github.com/law4percent/CheckMe/blob/main/docs/app/BUILD_APP.md) for full instructions including EAS setup, `eas.json` configuration, and common build error fixes.
