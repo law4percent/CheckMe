@@ -166,7 +166,7 @@ def _do_upload_and_save(
         total_questions         : int, 
         collage_save_to_local   : bool  = True, 
         keep_local_collage      : bool  = False,
-        target_path             : str   = "scans"
+        target_path             : str   = normalize_path("scans")
     ) -> bool:
     """
     Upload images → Gemini OCR → save to RTDB.
@@ -235,17 +235,26 @@ def _do_upload_and_save(
             
             try:
                 if len(scanned_files) > 1:
-                    collage_builder         = SmartCollage(scanned_files)
-                    image_to_send_gemini    = collage_builder.create_collage()
+                    collage_builder = SmartCollage(scanned_files)
+                    collage_image   = collage_builder.create_collage()  # in-memory object
                     
-                    # Optionally save collage
                     if collage_save_to_local:
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
                         collage_path = join_and_ensure_path(
                             target_path,
                             f"collage_{timestamp}.png"
                         )
-                        collage_builder.save(image_to_send_gemini, collage_path)
+                        collage_builder.save(collage_image, collage_path)
+                        image_to_send_gemini = collage_path  # ✅ NOW points to the saved file
+                    else:
+                        # No local save — save to a temp path anyway so Gemini has a real file
+                        timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        collage_path = join_and_ensure_path(
+                            target_path,
+                            f"collage_{timestamp}.png"
+                        )
+                        collage_builder.save(collage_image, collage_path)
+                        image_to_send_gemini = collage_path  # ✅ still needs a real path
                 else:
                     image_to_send_gemini = scanned_files[0]
                 
