@@ -54,13 +54,14 @@ def run(lcd, keypad, user) -> None:
     # =========================================================================
     # Step 1: Ask for total number of questions
     # =========================================================================
-    lcd.show(["Enter total no.", "of questions:"])
+    lcd.show(["Enter questions:", "Num: "])  # show prompt first
 
     exact_total_number_of_questions = keypad.read_input(
-        length      = MAX_QUESTION_DIGITS,        # up to 99 questions
+        length      = 2,   # max 2 digits (1–99)
         valid_keys  = ['0','1','2','3','4','5','6','7','8','9'],
         end_key     = '#',
-        timeout     = INPUT_TIMEOUT_SECONDS 
+        timeout     = INPUT_TIMEOUT_SECONDS,
+        echo_callback = lambda text: lcd.write_at(5, 1, f"{text:<11}")  # ← show digits on LCD row 1
     )
 
     if exact_total_number_of_questions is None:
@@ -142,7 +143,7 @@ def _do_scan(
     lcd.show(["Scanning page", f"{page_number}..."])
 
     try:
-        filename = scanner.scan(target_directory=normalize_path(ANSWER_KEYS_PATH))
+        filename = scanner.scan(target_directory=ANSWER_KEYS_PATH)
         time.sleep(debounce)
 
         scanned_files.append(filename)
@@ -165,7 +166,7 @@ def _do_upload_and_save(
         total_questions         : int, 
         collage_save_to_local   : bool  = True, 
         keep_local_collage      : bool  = False,
-        target_path             : str   = "scans"
+        target_path             : str   = normalize_path("scans")
     ) -> bool:
     """
     Upload images → Gemini OCR → save to RTDB.
@@ -234,17 +235,26 @@ def _do_upload_and_save(
             
             try:
                 if len(scanned_files) > 1:
-                    collage_builder         = SmartCollage(scanned_files)
-                    image_to_send_gemini    = collage_builder.create_collage()
+                    collage_builder = SmartCollage(scanned_files)
+                    collage_image   = collage_builder.create_collage()  # in-memory object
                     
-                    # Optionally save collage
                     if collage_save_to_local:
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
                         collage_path = join_and_ensure_path(
                             target_path,
                             f"collage_{timestamp}.png"
                         )
-                        collage_builder.save(image_to_send_gemini, collage_path)
+                        collage_builder.save(collage_image, collage_path)
+                        image_to_send_gemini = collage_path  # ✅ NOW points to the saved file
+                    else:
+                        # No local save — save to a temp path anyway so Gemini has a real file
+                        timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        collage_path = join_and_ensure_path(
+                            target_path,
+                            f"collage_{timestamp}.png"
+                        )
+                        collage_builder.save(collage_image, collage_path)
+                        image_to_send_gemini = collage_path  # ✅ still needs a real path
                 else:
                     image_to_send_gemini = scanned_files[0]
                 
