@@ -347,7 +347,7 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
                         </>
                       ) : (
                         <View style={styles.pendingBadge}>
-                          <Text style={styles.pendingText}>⏳ Pending</Text>
+                          <Text style={styles.pendingText}> Pending</Text>
                         </View>
                       )}
                     </View>
@@ -396,7 +396,7 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
         {notScanned.length > 0 && (
           <View style={styles.notScannedSection}>
             <View style={styles.notScannedHeader}>
-              <Text style={styles.notScannedTitle}>⏳ Not Yet Scanned</Text>
+              <Text style={styles.notScannedTitle}> Not Yet Scanned</Text>
               <View style={styles.notScannedCount}>
                 <Text style={styles.notScannedCountText}>{notScanned.length}</Text>
               </View>

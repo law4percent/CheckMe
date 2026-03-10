@@ -361,7 +361,7 @@ const StudentDashboardScreen: React.FC<Props> = () => {
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={styles.gradientButton}
             >
-              <Text style={styles.joinButtonText}>📚 Join Subject</Text>
+              <Text style={styles.joinButtonText}> Join Subject</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
