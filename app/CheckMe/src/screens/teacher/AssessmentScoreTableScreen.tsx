@@ -145,7 +145,7 @@ const AssessmentScoreTableScreen: React.FC<Props> = ({ route, navigation }) => {
       msg += `${dirtyRows.length} answer${dirtyRows.length > 1 ? 's' : ''} edited.\n`;
     }
     msg += `New score: ${liveScore} / ${liveTotal} (${livePct}%)\n`;
-    msg += `Status: ${isFinal ? '✅ Final' : '⏳ Pending'}`;
+    msg += `Status: ${isFinal ? ' Final' : ' Pending'}`;
 
     if (isFinal && hasPendingRow) {
       msg += `\n\n⚠️ Some questions are still pending (essay). Marking as Final anyway — you can change this later.`;
@@ -180,7 +180,7 @@ const AssessmentScoreTableScreen: React.FC<Props> = ({ route, navigation }) => {
             Alert.alert(
               'Saved',
               `Score: ${liveScore} / ${liveTotal} (${livePct}%)\n` +
-              `Status: ${isFinal ? 'Final ✅' : 'Pending ⏳'}`
+              `Status: ${isFinal ? 'Final ' : 'Pending '}`
             );
           } catch (error: any) {
             Alert.alert('Error', error.message || 'Failed to save changes');
@@ -257,7 +257,7 @@ const AssessmentScoreTableScreen: React.FC<Props> = ({ route, navigation }) => {
           <View style={styles.finalToggleRow}>
             <View style={styles.finalToggleLeft}>
               <Text style={styles.finalToggleLabel}>
-                {isFinal ? '✅ Final Score' : '⏳ Pending'}
+                {isFinal ? ' Final Score' : ' Pending'}
               </Text>
               <Text style={styles.finalToggleSub}>
                 {isFinal
@@ -314,7 +314,7 @@ const AssessmentScoreTableScreen: React.FC<Props> = ({ route, navigation }) => {
 
         {/* ── Breakdown table ──────────────────── */}
         <View style={styles.breakdownSection}>
-          <Text style={styles.sectionTitle}>📝 Question Breakdown</Text>
+          <Text style={styles.sectionTitle}> Question Breakdown</Text>
 
           <View style={styles.tableHeader}>
             <Text style={[styles.thCell, styles.colQ]}>Q</Text>
@@ -391,7 +391,7 @@ const AssessmentScoreTableScreen: React.FC<Props> = ({ route, navigation }) => {
                         style={[styles.essayBtn, row.editedResult === 'pending' && styles.essayBtnActivePending]}
                         onPress={() => updateRow(index, 'editedResult', 'pending')}
                       >
-                        <Text style={styles.essayBtnText}>⏳</Text>
+                        <Text style={styles.essayBtnText}></Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -443,7 +443,7 @@ const AssessmentScoreTableScreen: React.FC<Props> = ({ route, navigation }) => {
             <Text style={styles.saveBarScore}>{liveScore} / {liveTotal}</Text>
             <Text style={styles.saveBarChanges}>
               {rows.filter(r => r.isDirty).length} change{rows.filter(r => r.isDirty).length !== 1 ? 's' : ''}
-              {' '}· {isFinal ? '✅ Final' : '⏳ Pending'}
+              {' '}· {isFinal ? ' Final' : ' Pending'}
             </Text>
           </View>
           <TouchableOpacity

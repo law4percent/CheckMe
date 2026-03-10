@@ -43,7 +43,7 @@ CheckMe is an automated grading system that runs on a Raspberry Pi. It uses a fl
 | Raspberry Pi | Raspberry Pi 4B |
 | LCD Display | I2C LCD — 16x2 or 20x4 |
 | Keypad | 4x3 Matrix Keypad |
-| Scanner | Epson L3210 |
+| Scanner | Canon PIXMA MG2570S Scanner |
 
 ---
 
@@ -100,7 +100,7 @@ raspi_code/
 │   ├── auth.py                     # Teacher authentication
 │   ├── lcd_hardware.py             # LCD I2C driver
 │   ├── keypad_hardware.py          # 4x3 Keypad driver
-│   ├── l3210_scanner_hardware.py   # Epson L3210 scanner interface
+│   ├── l3210_scanner_hardware.py   # Canon PIXMA MG2570S Scanner interface
 │   ├── firebase_rtdb_client.py     # Firebase RTDB (Admin SDK)
 │   ├── cloudinary_client.py        # Cloudinary image uploader
 │   ├── gemini_client.py            # Gemini OCR client
@@ -117,7 +117,7 @@ raspi_code/
 │   └── answer_sheets/              # Scanned student sheet images
 └── docs/
     └── raspi/
-        └── RASPI_L3210_SETUP.md    # Scanner setup guide
+        └── RASPI_MG2570S_SETUP.md    # Scanner setup guide
 ```
 
 ---
@@ -126,7 +126,7 @@ raspi_code/
 
 - **Python:** 3.12 or above
 - **OS:** Raspberry Pi OS Desktop (Bookworm recommended)
-- **System packages:** See `requirements.txt` and `docs/raspi/RASPI_L3210_SETUP.md`
+- **System packages:** See `requirements.txt` and `docs/raspi/RASPI_MG2570S_SETUP.md`
 
 Enable I2C on your Raspberry Pi:
 ```bash
@@ -159,7 +159,7 @@ pip install -r requirements.txt
 
 Follow the full scanner setup guide:
 ```
-docs/raspi/RASPI_L3210_SETUP.md
+docs/raspi/RASPI_MG2570S__SETUP.md
 ```
 
 **5. Set up Firebase credentials**
@@ -289,7 +289,7 @@ Scoring features:
 | `auth.py` | Manages `cred.txt` session, validates 8-digit temp codes via Firebase |
 | `lcd_hardware.py` | I2C LCD driver with scrollable menus, multi-line display |
 | `keypad_hardware.py` | 4x3 matrix keypad GPIO driver with debounce |
-| `l3210_scanner_hardware.py` | Epson L3210 scanner interface via SANE |
+| `l3210_scanner_hardware.py` | Canon PIXMA MG2570S Scanner interface via SANE |
 | `firebase_rtdb_client.py` | Firebase Admin SDK RTDB client (answer keys, student results, temp codes) |
 | `cloudinary_client.py` | Single and batch image upload, delete |
 | `gemini_client.py` | Gemini OCR with retry logic |
@@ -304,10 +304,10 @@ Scoring features:
 
 ## Scanner Setup
 
-Full Epson L3210 setup instructions (SANE driver, permissions, testing):
+Full Canon PIXMA MG2570S Scanner setup instructions (SANE driver, permissions, testing):
 
 ```
-docs/raspi/RASPI_L3210_SETUP.md
+docs/raspi/RASPI_MG2570S_SETUP.md
 ```
 
 ---

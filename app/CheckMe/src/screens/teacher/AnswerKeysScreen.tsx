@@ -242,7 +242,7 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
                         <Text style={styles.cardUid}>{item.assessmentUid}</Text>
                       </View>
                       <View style={styles.missingBadge}>
-                        <Text style={styles.missingBadgeText}>❌ Not Scanned</Text>
+                        <Text style={styles.missingBadgeText}> Not Scanned</Text>
                       </View>
                     </View>
                     <Text style={styles.missingHint}>
@@ -273,7 +273,7 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
                     </View>
                     <View style={styles.cardHeaderRight}>
                       <View style={styles.scannedBadge}>
-                        <Text style={styles.scannedBadgeText}>✅ Scanned</Text>
+                        <Text style={styles.scannedBadgeText}>Scanned</Text>
                       </View>
                       {hasImages && (
                         <View style={styles.imageBadge}>
@@ -290,7 +290,7 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
                       {/* Scanned Images */}
                       {hasImages && (
                         <View style={styles.imagesSection}>
-                          <Text style={styles.imagesSectionTitle}>📄 Scanned Answer Key Images</Text>
+                          <Text style={styles.imagesSectionTitle}> Scanned Answer Key Images</Text>
                           <ScrollView
                             horizontal
                             showsHorizontalScrollIndicator={false}
@@ -310,7 +310,7 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
                                 />
                                 <View style={styles.imageThumbnailOverlay}>
                                   <Text style={styles.imageThumbnailLabel}>Page {index + 1}</Text>
-                                  <Text style={styles.imageThumbnailZoom}>🔍</Text>
+                                  <Text style={styles.imageThumbnailZoom}></Text>
                                 </View>
                               </TouchableOpacity>
                             ))}

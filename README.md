@@ -95,7 +95,7 @@ CheckMe/
 │   │
 │   └── raspi/
 │       ├── AUTOSTART_CONVERTION.md     # Run CheckMe on boot (systemd)
-│       ├── L3210_INITIAL_SETUP.md      # Epson L3210 scanner setup
+│       ├── L3210_INITIAL_SETUP.md      # Canon PIXMA MG2570S Scanner setup
 │       ├── RASPI_SYSTEM_FLOW.md        # Full system flowchart
 │       ├── SCAN_ANSWER_KEY_FLOW.md     # Answer key scanning flowchart
 │       ├── SCAN_ANSWER_SHEET_FLOW.md   # Answer sheet checking flowchart
@@ -114,7 +114,7 @@ CheckMe/
 ## Components
 
 ### Raspberry Pi Device
-The physical grading machine. Runs Python on a Raspberry Pi 4B with an I2C LCD display, a 4x3 matrix keypad, and an Epson L3210 flatbed scanner.
+The physical grading machine. Runs Python on a Raspberry Pi 4B with an I2C LCD display, a 4x3 matrix keypad, and an Canon PIXMA MG2570S scanner.
 
 See [`raspi_code/`](./raspi_code/) and [`docs/raspi/`](./docs/raspi/) for setup and documentation.
 
@@ -129,7 +129,7 @@ See [`app/CheckMe/`](./app/CheckMe/) and [`app/README.md`](./app/README.md) for 
 
 | Layer | Technology |
 |---|---|
-| Hardware | Raspberry Pi 4B, Epson L3210, I2C LCD, 4x3 Keypad |
+| Hardware | Raspberry Pi 4B, Canon PIXMA MG2570S, I2C LCD, 4x3 Keypad |
 | Raspi Software | Python 3.12, Firebase Admin SDK, Gemini API, Cloudinary |
 | Mobile App | React Native (cross-platform) |
 | OCR | Google Gemini |

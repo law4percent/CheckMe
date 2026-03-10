@@ -375,7 +375,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
               style={styles.generateCodeButton}
               onPress={handleOpenCodeModal}
             >
-              <Text style={styles.generateCodeButtonText}>🔑 Raspi Login</Text>
+              <Text style={styles.generateCodeButtonText}> Raspi Login</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
@@ -429,7 +429,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                       }}
                       disabled={actionLoading}
                     >
-                      <Text style={styles.detailIconText}>ℹ️</Text>
+                      <Text style={styles.detailIconText}>🛈</Text>
                     </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
@@ -440,7 +440,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                     onPress={() => handleEditSection(section)}
                     disabled={actionLoading}
                   >
-                    <Text style={styles.iconActionText}>✏️</Text>
+                    <Text style={styles.iconActionText}>🖊</Text>
                   </TouchableOpacity>
                   <View style={styles.iconActionDivider} />
                   <TouchableOpacity
@@ -513,7 +513,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                       onPress={handleCopyCode}
                       disabled={codeSecondsLeft === 0}
                     >
-                      <Text style={styles.copyCodeButtonText}>📋 Copy Code</Text>
+                      <Text style={styles.copyCodeButtonText}> Copy Code</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -545,7 +545,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                     {codeGenerating ? (
                       <ActivityIndicator color="#ffffff" />
                     ) : (
-                      <Text style={styles.generateButtonText}>🔑 Generate Code</Text>
+                      <Text style={styles.generateButtonText}> Generate Code</Text>
                     )}
                   </LinearGradient>
                 </TouchableOpacity>
@@ -581,7 +581,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                     <TouchableOpacity style={[styles.iconButton, styles.saveButton]} onPress={handleSaveProfile} disabled={actionLoading}>
                       {actionLoading
                         ? <ActivityIndicator size="small" color="#ffffff" />
-                        : <Text style={[styles.iconButtonText, styles.saveButtonText]}>✓ Save</Text>
+                        : <Text style={[styles.iconButtonText, styles.saveButtonText]}> Save</Text>
                       }
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.iconButton} onPress={() => setIsEditing(false)} disabled={actionLoading}>
@@ -772,7 +772,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                     style={styles.copyButton}
                     onPress={() => handleCopyToClipboard(selectedSectionForDetails?.id || '', 'Section ID')}
                   >
-                    <Text style={styles.copyButtonText}>📋 Copy</Text>
+                    <Text style={styles.copyButtonText}>Copy</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -786,7 +786,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                     style={styles.copyButton}
                     onPress={() => handleCopyToClipboard(selectedSectionForDetails?.teacherId || '', 'Teacher ID')}
                   >
-                    <Text style={styles.copyButtonText}>📋 Copy</Text>
+                    <Text style={styles.copyButtonText}>Copy</Text>
                   </TouchableOpacity>
                 </View>
               </View>

@@ -78,7 +78,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       const sorted = result.sort((a, b) => b.createdAt - a.createdAt);
       setAssessments(sorted);
     } catch (error: any) {
-      console.error('❌ [SubjectDashboard] Error loading assessments:', error);
+      console.error(' [SubjectDashboard] Error loading assessments:', error);
       setAssessments([]);
     }
   };
@@ -102,7 +102,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       const code = await getSubjectInviteCode(user.uid, subject.id);
       setInviteCode(code);
     } catch (error: any) {
-      console.error('❌ Error loading invite code:', error);
+      console.error(' Error loading invite code:', error);
     }
   };
 
@@ -329,7 +329,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             <TouchableOpacity style={styles.inviteCodeContainer} onPress={handleCopyInviteCode}>
               <Text style={styles.inviteCodeLabel}>Invite Code:</Text>
               <Text style={styles.inviteCodeText}>{inviteCode}</Text>
-              <Text style={styles.copyIcon}>📋</Text>
+              <Text style={styles.copyIcon}></Text>
             </TouchableOpacity>
           )}
         </View>
@@ -347,7 +347,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
               end={{ x: 1, y: 0 }}
               style={styles.gradientButton}
             >
-              <Text style={styles.actionButtonText}>📝 Create Assessment</Text>
+              <Text style={styles.actionButtonText}> Create Assessment</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -358,18 +358,18 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
             <Text style={styles.sectionTitle}>Assessments</Text>
             <View style={styles.headerButtonsContainer}>
               <TouchableOpacity style={styles.answerKeysHeaderButton} onPress={handleViewAnswerKeys} disabled={actionLoading}>
-                <Text style={styles.answerKeysHeaderButtonText}>🗝️ Answer Keys</Text>
+                <Text style={styles.answerKeysHeaderButtonText}> Answer Keys</Text>
               </TouchableOpacity>
               {pendingEnrollments.length > 0 && (
                 <TouchableOpacity onPress={handleViewPendingEnrollments}>
                   <Text style={[styles.sectionTitle, styles.clickableTitle, styles.pendingBadge]}>
-                    Pending ({pendingEnrollments.length}) 🔔
+                    Pending ({pendingEnrollments.length}) 
                   </Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity onPress={handleViewEnrolledStudents}>
                 <Text style={[styles.sectionTitle, styles.clickableTitle]}>
-                  Enrolled ({approvedEnrollments.length}) 👁️
+                  Enrolled ({approvedEnrollments.length}) 
                 </Text>
               </TouchableOpacity>
             </View>
@@ -554,7 +554,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                       onPress={() => setIsEditingEnrollments(!isEditingEnrollments)}
                     >
                       <Text style={styles.editButtonText}>
-                        {isEditingEnrollments ? '✓ Done' : '✏️ Edit'}
+                        {isEditingEnrollments ? ' Done' : ' Edit'}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -590,7 +590,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
               <View style={styles.modalBody}>
                 {pendingEnrollments.length === 0 ? (
                   <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateIcon}>✅</Text>
+                    <Text style={styles.emptyStateIcon}></Text>
                     <Text style={styles.emptyStateText}>No pending requests</Text>
                   </View>
                 ) : (
@@ -609,14 +609,14 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                           onPress={() => handleApproveEnrollment(enrollment)}
                           disabled={actionLoading}
                         >
-                          <Text style={styles.approveButtonText}>✓ Approve</Text>
+                          <Text style={styles.approveButtonText}> Approve</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.rejectButton}
                           onPress={() => handleRejectEnrollment(enrollment)}
                           disabled={actionLoading}
                         >
-                          <Text style={styles.rejectButtonText}>✕ Reject</Text>
+                          <Text style={styles.rejectButtonText}> Reject</Text>
                         </TouchableOpacity>
                       </View>
                     </View>

@@ -262,7 +262,7 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                       }}
                       disabled={actionLoading}
                     >
-                      <Text style={styles.detailIconText}>ℹ️</Text>
+                      <Text style={styles.detailIconText}>🛈</Text>
                     </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
@@ -406,7 +406,7 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   <View style={styles.uidContainer}>
                     <Text style={[styles.modalValue, styles.monoValue]}>{row.val}</Text>
                     <TouchableOpacity style={styles.copyButton} onPress={() => handleCopyToClipboard(row.val || '', row.label)}>
-                      <Text style={styles.copyButtonText}>📋 Copy</Text>
+                      <Text style={styles.copyButtonText}>Copy</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
