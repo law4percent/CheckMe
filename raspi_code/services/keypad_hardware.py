@@ -3,7 +3,7 @@ Keypad 3x4 Module
 Provides a class-based interface for reading input from a 3x4 matrix keypad.
 
 Pin wiring (BCM numbering):
-    ALL_PINS = [6, 12, 17, 18, 21, 22, 23]
+    ALL_PINS = [4, 5, 6, 7, 11, 12, 17]
 
 Key-to-pin mapping (discovered via hardware scan):
     [1] out=20, in=21
@@ -56,7 +56,7 @@ class Keypad3x4:
     """
 
     # All GPIO pins used by the keypad (BCM numbering)
-    ALL_PINS = [6, 12, 17, 18, 21, 22, 23]
+    ALL_PINS = [4, 5, 6, 7, 11, 12, 17]
 
     # Direct mapping: (out_pin, in_pin) -> key character
     # Discovered via hardware scan
