@@ -5,19 +5,19 @@ Provides a class-based interface for reading input from a 3x4 matrix keypad.
 Pin wiring (BCM numbering):
     ALL_PINS = [4, 5, 6, 7, 11, 12, 17]
 
-Key-to-pin mapping (discovered via hardware scan):
-    [1] out=20, in=21
-    [2] out=19, in=21
-    [3] out=12, in=21
-    [4] out=6,  in=20
-    [5] out=6,  in=19
-    [6] out=6,  in=12
-    [7] out=13, in=20
-    [8] out=13, in=19
-    [9] out=12, in=13
-    [*] out=16, in=20
-    [0] out=16, in=19
-    [#] out=12, in=16
+Key-to-pin mapping (discovered via keypad_remap.py hardware scan):
+    [1] out=6,  in=5
+    [2] out=4,  in=5
+    [3] out=5,  in=11
+    [4] out=6,  in=17
+    [5] out=4,  in=17
+    [6] out=11, in=17
+    [7] out=6,  in=12
+    [8] out=4,  in=12
+    [9] out=11, in=12
+    [*] out=6,  in=7
+    [0] out=4,  in=7
+    [#] out=7,  in=11
 """
 
 import RPi.GPIO as GPIO
@@ -59,20 +59,20 @@ class Keypad3x4:
     ALL_PINS = [4, 5, 6, 7, 11, 12, 17]
 
     # Direct mapping: (out_pin, in_pin) -> key character
-    # Discovered via hardware scan
+    # Discovered via keypad_remap.py hardware scan
     KEYMAP = {
-        (20, 21): '1',
-        (19, 21): '2',
-        (12, 21): '3',
-        (6,  20): '4',
-        (6,  19): '5',
-        (6,  12): '6',
-        (13, 20): '7',
-        (13, 19): '8',
-        (12, 13): '9',
-        (16, 20): '*',
-        (16, 19): '0',
-        (12, 16): '#',
+        ( 6,  5): '1',
+        ( 4,  5): '2',
+        ( 5, 11): '3',
+        ( 6, 17): '4',
+        ( 4, 17): '5',
+        (11, 17): '6',
+        ( 6, 12): '7',
+        ( 4, 12): '8',
+        (11, 12): '9',
+        ( 6,  7): '*',
+        ( 4,  7): '0',
+        ( 7, 11): '#',
     }
 
     def __init__(
