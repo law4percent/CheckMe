@@ -169,6 +169,7 @@ export type RootStackParamList = {
   ViewScores: {
     assessmentUid: string;
     assessmentName?: string;
+    assessmentType?: string;
     teacherUid: string;
     subjectUid: string;
   };

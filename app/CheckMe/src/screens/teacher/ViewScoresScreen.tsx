@@ -16,6 +16,9 @@ import {
   deleteAnswerSheet,
 } from '../../services/answerSheetService';
 import { getSubjectEnrollments, Enrollment } from '../../services/enrollmentService';
+import * as XLSX from 'xlsx';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ViewScores'>;
 
@@ -57,7 +60,7 @@ const formatDate = (ts: number) => {
 // ─────────────────────────────────────────────
 
 const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { assessmentUid, assessmentName, teacherUid, subjectUid } = route.params;
+  const { assessmentUid, assessmentName, assessmentType, teacherUid, subjectUid } = route.params;
   const { user } = useAuth();
   const effectiveTeacherUid = teacherUid ?? user?.uid ?? '';
 
@@ -69,6 +72,11 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   // ── Delete answer sheet ──────────────────────
   const [deleteTarget, setDeleteTarget] = useState<AnswerSheetResult | null>(null);
   const [deleting, setDeleting]         = useState(false);
+
+  // ── Export ──────────────────────────────────
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportSortOrder, setExportSortOrder] = useState<'firstName' | 'lastName' | 'studentId'>('firstName');
+  const [exporting, setExporting] = useState(false);
 
   // ── Reassign Student ID modal ──────────────
   const [reassignModalVisible, setReassignModalVisible] = useState(false);
@@ -123,6 +131,195 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
   const highPct      = scored.length > 0
     ? Math.max(...scored.map(r => pct(r.total_score, r.total_questions))) : 0;
   const hasUnmatched = results.some(r => !r.matchedStudentName);
+
+  // ─────────────────────────────────────────────
+  // Export to Excel
+  // ─────────────────────────────────────────────
+
+  const resolveTimestamp = (val: any): number => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return new Date(val).getTime();
+    return 0;
+  };
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+
+      // ── Sort scanned results ──
+      const sorted = [...results].sort((a, b) => {
+        if (exportSortOrder === 'studentId') {
+          return String(a.studentId).localeCompare(String(b.studentId), undefined, { numeric: true });
+        }
+        const nameA = a.matchedStudentName ?? '';
+        const nameB = b.matchedStudentName ?? '';
+        if (exportSortOrder === 'firstName') {
+          const firstA = nameA.trim().split(' ')[0] ?? '';
+          const firstB = nameB.trim().split(' ')[0] ?? '';
+          return firstA.localeCompare(firstB);
+        }
+        // lastName
+        const partsA = nameA.trim().split(' ');
+        const partsB = nameB.trim().split(' ');
+        const lastA = partsA[partsA.length - 1] ?? '';
+        const lastB = partsB[partsB.length - 1] ?? '';
+        return lastA.localeCompare(lastB);
+      });
+
+      // ── Sort not-scanned ──
+      const sortedNotScanned = [...notScanned].sort((a, b) => {
+        if (exportSortOrder === 'studentId') {
+          return String(a.schoolId ?? '').localeCompare(String(b.schoolId ?? ''), undefined, { numeric: true });
+        }
+        const nameA = a.studentName ?? '';
+        const nameB = b.studentName ?? '';
+        if (exportSortOrder === 'firstName') {
+          const firstA = nameA.trim().split(' ')[0] ?? '';
+          const firstB = nameB.trim().split(' ')[0] ?? '';
+          return firstA.localeCompare(firstB);
+        }
+        const partsA = nameA.trim().split(' ');
+        const partsB = nameB.trim().split(' ');
+        const lastA = partsA[partsA.length - 1] ?? '';
+        const lastB = partsB[partsB.length - 1] ?? '';
+        return lastA.localeCompare(lastB);
+      });
+
+      // ── Build rows ──
+      const rows: any[] = [];
+
+      // Assessment info rows
+      rows.push([`Assessment Type: ${assessmentType ?? '—'}`]);
+      rows.push([`Assessment Name: ${assessmentName ?? '—'}`]);
+      rows.push([`Assessment UID: ${assessmentUid}`]);
+      rows.push([]); // empty spacer row
+
+      // Header row
+      rows.push([
+        '#',
+        'Student ID',
+        'Student Name',
+        'Score',
+        'Total Items',
+        'Percentage',
+        'Grade',
+        'Status',
+        'Scanned At',
+      ]);
+
+      // Scanned students
+      sorted.forEach((r, index) => {
+        const percentage = r.total_questions > 0
+          ? Math.round((r.total_score / r.total_questions) * 100)
+          : 0;
+        const grade = (() => {
+          if (!r.is_final_score) return 'Pending';
+          if (percentage >= 90) return 'A';
+          if (percentage >= 85) return 'B+';
+          if (percentage >= 80) return 'B';
+          if (percentage >= 75) return 'C+';
+          if (percentage >= 70) return 'C';
+          if (percentage >= 65) return 'D+';
+          if (percentage >= 60) return 'D';
+          return 'F';
+        })();
+        const status = r.is_final_score ? 'Scored' : 'Pending (Essay)';
+        const scannedAt = resolveTimestamp(r.checked_at);
+        const scannedAtStr = scannedAt
+          ? new Date(scannedAt).toLocaleString('en-US', {
+              month: 'short', day: 'numeric', year: 'numeric',
+              hour: '2-digit', minute: '2-digit',
+            })
+          : '—';
+
+        rows.push([
+          index + 1,
+          r.studentId,
+          r.matchedStudentName ?? 'Unknown',
+          r.is_final_score ? r.total_score : '—',
+          r.total_questions,
+          r.is_final_score ? `${percentage}%` : '—',
+          grade,
+          status,
+          scannedAtStr,
+        ]);
+      });
+
+      // Not-scanned students
+      sortedNotScanned.forEach((e) => {
+        rows.push([
+          '—',
+          e.schoolId ?? '—',
+          e.studentName ?? 'Unknown',
+          '—',
+          '—',
+          '—',
+          '—',
+          'No Answer Sheet Scanned',
+          '—',
+        ]);
+      });
+
+      // ── Build worksheet ──
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      // Column widths
+      ws['!cols'] = [
+        { wch: 4 },   // #
+        { wch: 18 },  // Student ID
+        { wch: 28 },  // Student Name
+        { wch: 8 },   // Score
+        { wch: 10 },  // Total Items
+        { wch: 12 },  // Percentage
+        { wch: 8 },   // Grade
+        { wch: 24 },  // Status
+        { wch: 24 },  // Scanned At
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Scores');
+
+      // ── Write to base64 ──
+      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+
+      // ── Save to cache dir ──
+      const safeName = (assessmentName ?? assessmentUid)
+        .replace(/[^a-zA-Z0-9_\-]/g, '_')
+        .substring(0, 40);
+      const fileName = `${safeName}_${assessmentUid}_scores.xlsx`;
+      // Property 'cacheDirectory' does not exist on type 'typeof import("/Users/fdc.lawrence-nc-aisolution/Desktop/CheckMe/app/CheckMe/node_modules/expo-file-system/build/index")'.ts(2339)
+      // any
+      const fileUri = `${FileSystem.cacheDirectory}${fileName}`; 
+
+      // The signature '(fileUri: string, contents: string, options?: WritingOptions | undefined): Promise<void>' of 'FileSystem.writeAsStringAsync' is deprecated.ts(6387)
+      // legacyWarnings.d.ts(15, 4): The declaration was marked as deprecated here.
+      // function writeAsStringAsync(fileUri: string, contents: string, options?: WritingOptions | undefined): Promise<void>
+      // @deprecated — Use new File().write() or import this method from expo-file-system/legacy. This method will throw in runtime.
+      await FileSystem.writeAsStringAsync(fileUri, wbout, {
+        encoding: 'base64',
+      });
+
+      // ── Share via Android share sheet ──
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert('Error', 'Sharing is not available on this device.');
+        return;
+      }
+
+      setExportModalVisible(false);
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: `Export ${assessmentName ?? assessmentUid} Scores`,
+        UTI: 'com.microsoft.excel.xlsx',
+      });
+
+    } catch (error: any) {
+      Alert.alert('Export Failed', error.message || 'Failed to generate Excel file');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // ─────────────────────────────────────────────
   // Reassign Student ID
@@ -304,6 +501,14 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
               </Text>
             </View>
           )}
+
+          <TouchableOpacity
+            style={styles.exportButton}
+            onPress={() => setExportModalVisible(true)}
+            disabled={exporting}
+          >
+            <Text style={styles.exportButtonText}>📥 Export Excel</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Scanned results ─────────────────────── */}
@@ -543,6 +748,81 @@ const ViewScoresScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* ── Export Modal ──────────────────────────── */}
+      <Modal
+        visible={exportModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>📥 Export to Excel</Text>
+
+            <View style={styles.exportInfoBox}>
+              <Text style={styles.exportInfoText}>
+                {results.length} scanned · {notScanned.length} not scanned
+              </Text>
+              <Text style={styles.exportInfoSub}>
+                Not-scanned students will be included at the bottom.
+              </Text>
+            </View>
+
+            <Text style={styles.fieldLabel}>Sort Order</Text>
+
+            <TouchableOpacity
+              style={[styles.sortOption, exportSortOrder === 'firstName' && styles.sortOptionSelected]}
+              onPress={() => setExportSortOrder('firstName')}
+            >
+              <View style={[styles.sortRadio, exportSortOrder === 'firstName' && styles.sortRadioSelected]} />
+              <Text style={[styles.sortOptionText, exportSortOrder === 'firstName' && styles.sortOptionTextSelected]}>
+                Alphabetical by First Name
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.sortOption, exportSortOrder === 'lastName' && styles.sortOptionSelected]}
+              onPress={() => setExportSortOrder('lastName')}
+            >
+              <View style={[styles.sortRadio, exportSortOrder === 'lastName' && styles.sortRadioSelected]} />
+              <Text style={[styles.sortOptionText, exportSortOrder === 'lastName' && styles.sortOptionTextSelected]}>
+                Alphabetical by Last Name
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.sortOption, exportSortOrder === 'studentId' && styles.sortOptionSelected]}
+              onPress={() => setExportSortOrder('studentId')}
+            >
+              <View style={[styles.sortRadio, exportSortOrder === 'studentId' && styles.sortRadioSelected]} />
+              <Text style={[styles.sortOptionText, exportSortOrder === 'studentId' && styles.sortOptionTextSelected]}>
+                By Student ID (Numeric)
+              </Text>
+            </TouchableOpacity>
+
+            <View style={[styles.modalButtons, { marginTop: 20 }]}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setExportModalVisible(false)}
+                disabled={exporting}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: '#16a34a' }]}
+                onPress={handleExport}
+                disabled={exporting}
+              >
+                {exporting
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.saveBtnText}>Download</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -735,6 +1015,71 @@ const styles = StyleSheet.create({
   deleteWarningTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b', marginBottom: 2 },
   deleteWarningSub: { fontSize: 12, color: '#64748b', fontFamily: 'monospace', marginBottom: 10 },
   deleteWarningDesc: { fontSize: 13, color: '#7f1d1d', lineHeight: 20 },
+  exportButton: {
+    marginTop: 14,
+    backgroundColor: '#16a34a',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  exportButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  exportInfoBox: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  exportInfoText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534',
+    marginBottom: 2,
+  },
+  exportInfoSub: {
+    fontSize: 12,
+    color: '#16a34a',
+  },
+  sortOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    marginBottom: 10,
+    backgroundColor: '#ffffff',
+    gap: 12,
+  },
+  sortOptionSelected: {
+    borderColor: '#16a34a',
+    backgroundColor: '#f0fdf4',
+  },
+  sortRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
+  },
+  sortRadioSelected: {
+    borderColor: '#16a34a',
+    backgroundColor: '#16a34a',
+  },
+  sortOptionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#475569',
+  },
+  sortOptionTextSelected: {
+    color: '#166534',
+    fontWeight: '600',
+  },
 });
 
 export default ViewScoresScreen;

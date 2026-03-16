@@ -278,6 +278,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     navigation.navigate('ViewScores', {
       assessmentUid: assessment.assessmentUid,
       assessmentName: assessment.assessmentName,
+      assessmentType: assessment.assessmentType,
       teacherUid: user.uid,
       subjectUid: assessment.subjectUid,
     });
