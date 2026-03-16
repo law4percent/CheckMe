@@ -390,21 +390,36 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
         {/* Assessments Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
+            {/* Row 1 — Title */}
             <Text style={styles.sectionTitle}>Assessments</Text>
-            <View style={styles.headerButtonsContainer}>
-              <TouchableOpacity style={styles.answerKeysHeaderButton} onPress={handleViewAnswerKeys} disabled={actionLoading}>
-                <Text style={styles.answerKeysHeaderButtonText}>🗝️ Answer Keys</Text>
+
+            {/* Row 2 — Buttons always visible */}
+            <View style={styles.headerButtonsRow}>
+              <TouchableOpacity
+                style={[styles.headerRowButton, styles.headerRowButtonAmber]}
+                onPress={handleViewAnswerKeys}
+                disabled={actionLoading}
+              >
+                <Text style={styles.headerRowButtonTextAmber}>Answer Keys</Text>
               </TouchableOpacity>
+
               {pendingEnrollments.length > 0 && (
-                <TouchableOpacity onPress={handleViewPendingEnrollments}>
-                  <Text style={[styles.sectionTitle, styles.clickableTitle, styles.pendingBadge]}>
-                    Pending ({pendingEnrollments.length}) 🔔
+                <TouchableOpacity
+                  style={[styles.headerRowButton, styles.headerRowButtonOrange]}
+                  onPress={handleViewPendingEnrollments}
+                >
+                  <Text style={styles.headerRowButtonTextOrange}>
+                    Pending ({pendingEnrollments.length})
                   </Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity onPress={handleViewEnrolledStudents}>
-                <Text style={[styles.sectionTitle, styles.clickableTitle]}>
-                  Enrolled ({approvedEnrollments.length}) 👁️
+
+              <TouchableOpacity
+                style={[styles.headerRowButton, styles.headerRowButtonBlue]}
+                onPress={handleViewEnrolledStudents}
+              >
+                <Text style={styles.headerRowButtonTextBlue}>
+                  Enrolled ({approvedEnrollments.length})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -770,14 +785,52 @@ const styles = StyleSheet.create({
   subjectInfoTitle: { fontSize: 24, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
   subjectInfoSubtitle: { fontSize: 14, color: '#cdd5df', marginBottom: 12 },
   copyIcon: { fontSize: 16 },
-  headerButtonsContainer: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  pendingBadge: { color: '#f59e0b', marginRight: 8 },
+  headerButtonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  headerRowButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  headerRowButtonAmber: {
+    backgroundColor: '#fef3c7',
+  },
+  headerRowButtonOrange: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  headerRowButtonBlue: {
+    backgroundColor: '#dbeafe',
+  },
+  headerRowButtonTextAmber: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#d97706',
+  },
+  headerRowButtonTextOrange: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#d97706',
+  },
+  headerRowButtonTextBlue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563eb',
+  },
+  pendingBadge: {},
+  answerKeysHeaderButton: {},
+  answerKeysHeaderButtonText: {},
   actionSection: { paddingHorizontal: 24, paddingVertical: 20 },
   actionButton: { borderRadius: 12, overflow: 'hidden' },
   gradientButton: { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   actionButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
   section: { paddingHorizontal: 24, paddingBottom: 24 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionHeader: { flexDirection: 'column', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },
   clickableTitle: { color: '#6366f1', textDecorationLine: 'underline' },
   inviteCodeContainer: {
@@ -815,17 +868,6 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 12, color: '#22c55e', fontWeight: '600' },
   assessmentActions: { flexDirection: 'row', gap: 8 },
-  answerKeysHeaderButton: {
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  answerKeysHeaderButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#d97706',
-  },
   viewScoresButton: { flex: 1, backgroundColor: '#dbeafe', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   viewScoresButtonText: { fontSize: 14, fontWeight: '600', color: '#2563eb' },
   deleteAssessmentIconButton: {
