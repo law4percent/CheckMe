@@ -239,12 +239,7 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           ) : (
             subjects.map(subject => (
               <View key={subject.id} style={styles.subjectCard}>
-                <TouchableOpacity
-                  style={styles.subjectCardContent}
-                  onPress={() => handleSubjectPress(subject)}
-                  activeOpacity={0.7}
-                  disabled={actionLoading}
-                >
+                <View style={styles.subjectCardContent}>
                   <View style={styles.subjectCardContentRow}>
                     <View style={styles.subjectCardInfo}>
                       <Text style={styles.subjectCardTitle}>{subject.subjectName}</Text>
@@ -265,10 +260,18 @@ const SectionDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                       <Text style={styles.detailIconText}>ℹ️</Text>
                     </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
+                </View>
 
                 {/* Icon-only action row */}
                 <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    style={styles.cardNavButton}
+                    onPress={() => handleSubjectPress(subject)}
+                    disabled={actionLoading}
+                  >
+                    <Text style={styles.cardNavButtonText}>View Assessments</Text>
+                  </TouchableOpacity>
+                  <View style={styles.iconActionDivider} />
                   <TouchableOpacity
                     style={styles.iconActionBtn}
                     onPress={() => handleEditSubject(subject)}
@@ -551,6 +554,18 @@ const styles = StyleSheet.create({
   deleteCancelBtnText: { fontSize: 15, fontWeight: '600', color: '#475569' },
   deleteConfirmBtn: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },
   deleteConfirmBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  cardNavButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe',
+  },
+  cardNavButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2563eb',
+  },
 });
 
 export default SectionDashboardScreen;

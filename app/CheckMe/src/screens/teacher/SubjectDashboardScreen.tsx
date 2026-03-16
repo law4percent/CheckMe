@@ -534,30 +534,31 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                   ) : (
                     /* ── Normal View Mode ── */
                     <>
-                      <View style={styles.assessmentHeader}>
-                        <Text style={styles.assessmentIcon}>
-                          {assessment.assessmentType === 'quiz' ? '📝' : '📄'}
-                        </Text>
-                        <View style={styles.assessmentInfo}>
-                          <Text style={styles.assessmentName}>{assessment.assessmentName}</Text>
-                          <Text style={styles.assessmentType}>
-                            {assessment.assessmentType.charAt(0).toUpperCase() +
-                              assessment.assessmentType.slice(1)}
+                      <View style={{ padding: 16 }}>
+                        <View style={styles.assessmentHeader}>
+                          <Text style={styles.assessmentIcon}>
+                            {assessment.assessmentType === 'quiz' ? '📝' : '📄'}
                           </Text>
-                          <Text style={styles.assessmentUid}>UID: {assessment.assessmentUid}</Text>
+                          <View style={styles.assessmentInfo}>
+                            <Text style={styles.assessmentName}>{assessment.assessmentName}</Text>
+                            <Text style={styles.assessmentType}>
+                              {assessment.assessmentType.charAt(0).toUpperCase() +
+                                assessment.assessmentType.slice(1)}
+                            </Text>
+                            <Text style={styles.assessmentUid}>UID: {assessment.assessmentUid}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.assessmentMeta}>
+                          <Text style={styles.assessmentDate}>
+                            Created: {new Date(assessment.createdAt).toLocaleDateString()}
+                          </Text>
+                          <View style={styles.assessmentStatus}>
+                            <View style={[styles.statusDot, { backgroundColor: '#22c55e' }]} />
+                            <Text style={styles.statusText}>Active</Text>
+                          </View>
                         </View>
                       </View>
-
-                      <View style={styles.assessmentMeta}>
-                        <Text style={styles.assessmentDate}>
-                          Created: {new Date(assessment.createdAt).toLocaleDateString()}
-                        </Text>
-                        <View style={styles.assessmentStatus}>
-                          <View style={[styles.statusDot, { backgroundColor: '#22c55e' }]} />
-                          <Text style={styles.statusText}>Active</Text>
-                        </View>
-                      </View>
-
                       <View style={styles.assessmentActions}>
                         <TouchableOpacity
                           style={styles.viewScoresButton}
@@ -970,10 +971,11 @@ const styles = StyleSheet.create({
   emptyStateText: { fontSize: 18, color: '#64748b', fontWeight: '600', marginBottom: 8 },
   emptyStateSubtext: { fontSize: 14, color: '#94a3b8', textAlign: 'center' },
   assessmentCard: {
-    backgroundColor: '#ffffff', borderRadius: 12, padding: 16,
+    backgroundColor: '#ffffff', borderRadius: 12,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
-    borderLeftWidth: 4, borderLeftColor: '#6366f1'
+    borderLeftWidth: 4, borderLeftColor: '#6366f1',
+    overflow: 'hidden',
   },
   assessmentHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   assessmentIcon: { fontSize: 40, marginRight: 12 },
@@ -989,12 +991,15 @@ const styles = StyleSheet.create({
   assessmentStatus: { flexDirection: 'row', alignItems: 'center' },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 12, color: '#22c55e', fontWeight: '600' },
-  assessmentActions: { flexDirection: 'row', gap: 8 },
-  viewScoresButton: { flex: 1, backgroundColor: '#dbeafe', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  assessmentActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  viewScoresButton: { flex: 1, backgroundColor: '#dbeafe', paddingVertical: 12, alignItems: 'center' },
   viewScoresButtonText: { fontSize: 14, fontWeight: '600', color: '#2563eb' },
   deleteAssessmentIconButton: {
-    backgroundColor: '#fee2e2', paddingVertical: 12, paddingHorizontal: 14,
-    borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fee2e2',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   deleteAssessmentIconText: { fontSize: 18 },
   // Delete modal
@@ -1175,8 +1180,7 @@ const styles = StyleSheet.create({
   editAssessmentIconButton: {
     backgroundColor: '#f0fdf4',
     paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 8,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
