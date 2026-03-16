@@ -2,3 +2,9 @@ raspi_code
 docs
 README.md
 .DS_Store
+
+.idea
+app/CheckMe/ios
+app/CheckMe/.idea
+app/CheckMe/.expo
+app/CheckMe/node_modules
