@@ -248,3 +248,70 @@ export const deleteSectionCascade = async (
   // 2. Delete section record
   await remove(ref(database, `sections/${teacherId}/${sectionId}`));
 };
+
+
+/**
+ * Check whether an assessmentUid already exists under a given teacher's account.
+ *
+ * Reads: /assessments/{teacherId}/{assessmentUid}
+ * Returns true if it exists, false otherwise.
+ */
+export const checkAssessmentUidExists = async (
+  teacherId: string,
+  assessmentUid: string
+): Promise<boolean> => {
+  if (!teacherId || !assessmentUid) return false;
+  const snapshot = await get(
+    ref(database, `assessments/${teacherId}/${assessmentUid}`)
+  );
+  return snapshot.exists();
+};
+
+/**
+ * Create a new assessment using a manually provided UID (e.g. reusing
+ * another teacher's printed assessment UID).
+ *
+ * Caller is responsible for ensuring the UID does not already exist
+ * under this teacher's account (use checkAssessmentUidExists first).
+ *
+ * Writes to: /assessments/{teacherId}/{assessmentUid}/
+ */
+export const createAssessmentWithUid = async (
+  teacherId: string,
+  assessmentUid: string,
+  assessmentName: string,
+  assessmentType: 'quiz' | 'exam',
+  sectionUid: string,
+  subjectUid: string
+): Promise<Assessment> => {
+  if (!teacherId) throw new Error('teacherId is required');
+  if (!assessmentUid.trim()) throw new Error('assessmentUid is required');
+  if (!assessmentName.trim()) throw new Error('assessmentName is required');
+  if (!sectionUid) throw new Error('sectionUid is required');
+  if (!subjectUid) throw new Error('subjectUid is required');
+
+  const createdAt = Date.now();
+
+  const data = {
+    assessmentName: assessmentName.trim(),
+    assessmentType,
+    created_at: createdAt,
+    section_uid: sectionUid,
+    subject_uid: subjectUid,
+  };
+
+  await set(
+    ref(database, `assessments/${teacherId}/${assessmentUid.trim().toUpperCase()}`),
+    data
+  );
+
+  return {
+    assessmentUid: assessmentUid.trim().toUpperCase(),
+    assessmentName: assessmentName.trim(),
+    assessmentType,
+    sectionUid,
+    subjectUid,
+    teacherId,
+    createdAt,
+  };
+};

@@ -28,6 +28,8 @@ import {
 import { getSubjectInviteCode } from '../../services/inviteCodeService';
 import {
   createAssessment,
+  createAssessmentWithUid,
+  checkAssessmentUidExists,
   getAssessments,
   deleteAssessment,
 } from '../../services/assessmentService';
@@ -51,6 +53,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [createAssessmentModalVisible, setCreateAssessmentModalVisible] = useState(false);
   const [selectedAssessmentType, setSelectedAssessmentType] = useState<'quiz' | 'exam' | null>(null);
   const [assessmentName, setAssessmentName] = useState('');
+  const [uidMode, setUidMode] = useState<'auto' | 'manual'>('auto');
+  const [customUid, setCustomUid] = useState('');
   const [enrolledStudentsModalVisible, setEnrolledStudentsModalVisible] = useState(false);
   const [isEditingEnrollments, setIsEditingEnrollments] = useState(false);
   const [pendingEnrollmentsModalVisible, setPendingEnrollmentsModalVisible] = useState(false);
@@ -116,6 +120,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const handleCreateAssessment = () => {
     setSelectedAssessmentType(null);
     setAssessmentName('');
+    setUidMode('auto');
+    setCustomUid('');
     setCreateAssessmentModalVisible(true);
   };
 
@@ -128,6 +134,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       Alert.alert('Error', 'Please enter assessment name');
       return;
     }
+    if (uidMode === 'manual' && !customUid.trim()) {
+      Alert.alert('Error', 'Please enter the existing Assessment UID');
+      return;
+    }
     if (!user?.uid) {
       Alert.alert('Error', 'User not authenticated');
       return;
@@ -136,15 +146,38 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       setActionLoading(true);
 
-      // NEW: createAssessment now takes (teacherId, name, type, sectionUid, subjectUid)
-      // Path written: /assessments/{teacherId}/{assessmentUid}/
-      const assessment = await createAssessment(
-        user.uid,
-        assessmentName.trim(),
-        selectedAssessmentType,
-        section.id,   // sectionUid
-        subject.id    // subjectUid
-      );
+      let assessment: Assessment;
+
+      if (uidMode === 'manual') {
+        const normalizedUid = customUid.trim().toUpperCase();
+
+        // Validate: check if this UID already exists under this teacher's account
+        const alreadyExists = await checkAssessmentUidExists(user.uid, normalizedUid);
+        if (alreadyExists) {
+          Alert.alert(
+            'UID Already Exists',
+            `Assessment UID "${normalizedUid}" already exists in your account. Please use a different UID or check your existing assessments.`
+          );
+          return;
+        }
+
+        assessment = await createAssessmentWithUid(
+          user.uid,
+          normalizedUid,
+          assessmentName.trim(),
+          selectedAssessmentType,
+          section.id,
+          subject.id
+        );
+      } else {
+        assessment = await createAssessment(
+          user.uid,
+          assessmentName.trim(),
+          selectedAssessmentType,
+          section.id,
+          subject.id
+        );
+      }
 
       setAssessments(prev => [assessment, ...prev]);
       setCreateAssessmentModalVisible(false);
@@ -157,6 +190,8 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
       setSelectedAssessmentType(null);
       setAssessmentName('');
+      setUidMode('auto');
+      setCustomUid('');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to create assessment');
     } finally {
@@ -453,6 +488,39 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
                 onChangeText={setAssessmentName}
                 autoCapitalize="words"
               />
+
+              {/* ── UID Mode Toggle ── */}
+              <Text style={[styles.modalLabel, { marginTop: 20 }]}>Assessment UID</Text>
+              <View style={styles.uidToggleContainer}>
+                <TouchableOpacity
+                  style={[styles.uidToggleButton, uidMode === 'auto' && styles.uidToggleButtonActive]}
+                  onPress={() => { setUidMode('auto'); setCustomUid(''); }}
+                >
+                  <Text style={[styles.uidToggleText, uidMode === 'auto' && styles.uidToggleTextActive]}>
+                    ✨ Auto-generate
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.uidToggleButton, uidMode === 'manual' && styles.uidToggleButtonActive]}
+                  onPress={() => setUidMode('manual')}
+                >
+                  <Text style={[styles.uidToggleText, uidMode === 'manual' && styles.uidToggleTextActive]}>
+                    🔑 Enter existing UID
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {uidMode === 'manual' && (
+                <TextInput
+                  style={[styles.textInput, styles.uidInput]}
+                  placeholder="e.g. QWER1234"
+                  placeholderTextColor="#94a3b8"
+                  value={customUid}
+                  onChangeText={text => setCustomUid(text.toUpperCase())}
+                  autoCapitalize="characters"
+                  maxLength={8}
+                />
+              )}
 
               <Text style={[styles.modalLabel, { marginTop: 20 }]}>Assessment Type</Text>
 
@@ -849,6 +917,42 @@ const styles = StyleSheet.create({
   assessmentTypeIcon: { fontSize: 24, marginRight: 12 },
   assessmentTypeText: { fontSize: 16, fontWeight: '600', color: '#475569' },
   assessmentTypeTextSelected: { color: '#16a34a' },
+    uidToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 12,
+  },
+  uidToggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  uidToggleButtonActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  uidToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  uidToggleTextActive: {
+    color: '#6366f1',
+  },
+  uidInput: {
+    fontFamily: 'monospace',
+    letterSpacing: 3,
+    fontSize: 18,
+    textAlign: 'center',
+    color: '#6366f1',
+  },
 });
 
 export default SubjectDashboardScreen;
