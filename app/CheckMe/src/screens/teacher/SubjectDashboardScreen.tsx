@@ -32,6 +32,7 @@ import {
   checkAssessmentUidExists,
   getAssessments,
   deleteAssessment,
+  updateAssessment,
 } from '../../services/assessmentService';
 import { deleteSubjectCascade } from '../../services/assessmentService';
 
@@ -48,6 +49,9 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
   const [actionLoading, setActionLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [editingAssessmentUid, setEditingAssessmentUid] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState<'quiz' | 'exam'>('quiz');
 
   // Modal states
   const [createAssessmentModalVisible, setCreateAssessmentModalVisible] = useState(false);
@@ -84,6 +88,46 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
     } catch (error: any) {
       console.error('❌ [SubjectDashboard] Error loading assessments:', error);
       setAssessments([]);
+    }
+  };
+
+  // ── Edit Assessment ───────────────────────────
+  const handleEditAssessment = (assessment: Assessment) => {
+    setEditingAssessmentUid(assessment.assessmentUid);
+    setEditName(assessment.assessmentName);
+    setEditType(assessment.assessmentType);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAssessmentUid(null);
+    setEditName('');
+    setEditType('quiz');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editName.trim()) {
+      Alert.alert('Error', 'Assessment name cannot be empty');
+      return;
+    }
+    if (!user?.uid || !editingAssessmentUid) return;
+
+    try {
+      setActionLoading(true);
+      await updateAssessment(user.uid, editingAssessmentUid, editName.trim(), editType);
+      setAssessments(prev =>
+        prev.map(a =>
+          a.assessmentUid === editingAssessmentUid
+            ? { ...a, assessmentName: editName.trim(), assessmentType: editType }
+            : a
+        )
+      );
+      setEditingAssessmentUid(null);
+      setEditName('');
+      setEditType('quiz');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update assessment');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -426,42 +470,119 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
 
           {assessments.length > 0 ? (
-            assessments.map(assessment => (
-              <View key={assessment.assessmentUid} style={styles.assessmentCard}>
-                <View style={styles.assessmentHeader}>
-                  <Text style={styles.assessmentIcon}>
-                    {assessment.assessmentType === 'quiz' ? '📝' : '📄'}
-                  </Text>
-                  <View style={styles.assessmentInfo}>
-                    <Text style={styles.assessmentName}>{assessment.assessmentName}</Text>
-                    <Text style={styles.assessmentType}>
-                      {assessment.assessmentType.charAt(0).toUpperCase() +
-                        assessment.assessmentType.slice(1)}
-                    </Text>
-                    <Text style={styles.assessmentUid}>UID: {assessment.assessmentUid}</Text>
-                  </View>
-                </View>
+            assessments.map(assessment => {
+              const isEditing = editingAssessmentUid === assessment.assessmentUid;
+              return (
+                <View key={assessment.assessmentUid} style={styles.assessmentCard}>
 
-                <View style={styles.assessmentMeta}>
-                  <Text style={styles.assessmentDate}>
-                    Created: {new Date(assessment.createdAt).toLocaleDateString()}
-                  </Text>
-                  <View style={styles.assessmentStatus}>
-                    <View style={[styles.statusDot, { backgroundColor: '#22c55e' }]} />
-                    <Text style={styles.statusText}>Active</Text>
-                  </View>
-                </View>
+                  {isEditing ? (
+                    /* ── Inline Edit Mode ── */
+                    <>
+                      <Text style={styles.assessmentUid}>UID: {assessment.assessmentUid}</Text>
+                      <Text style={styles.assessmentDate}>
+                        Created: {new Date(assessment.createdAt).toLocaleDateString()}
+                      </Text>
 
-                <View style={styles.assessmentActions}>
-                  <TouchableOpacity style={styles.viewScoresButton} onPress={() => handleViewScores(assessment)}>
-                    <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.deleteAssessmentIconButton} onPress={() => handleDeleteAssessment(assessment)}>
-                    <Text style={styles.deleteAssessmentIconText}>🗑️</Text>
-                  </TouchableOpacity>
+                      <TextInput
+                        style={[styles.textInput, { marginTop: 12 }]}
+                        value={editName}
+                        onChangeText={setEditName}
+                        placeholder="Assessment name"
+                        placeholderTextColor="#94a3b8"
+                        autoCapitalize="words"
+                      />
+
+                      <View style={styles.editTypeRow}>
+                        <TouchableOpacity
+                          style={[styles.editTypeButton, editType === 'quiz' && styles.editTypeButtonSelected]}
+                          onPress={() => setEditType('quiz')}
+                        >
+                          <Text style={[styles.editTypeText, editType === 'quiz' && styles.editTypeTextSelected]}>
+                            📝 Quiz
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.editTypeButton, editType === 'exam' && styles.editTypeButtonSelected]}
+                          onPress={() => setEditType('exam')}
+                        >
+                          <Text style={[styles.editTypeText, editType === 'exam' && styles.editTypeTextSelected]}>
+                            📄 Exam
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.editActionRow}>
+                        <TouchableOpacity
+                          style={styles.editCancelButton}
+                          onPress={handleCancelEdit}
+                        >
+                          <Text style={styles.editCancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.editSaveButton}
+                          onPress={handleSaveEdit}
+                          disabled={actionLoading}
+                        >
+                          {actionLoading
+                            ? <ActivityIndicator color="#fff" size="small" />
+                            : <Text style={styles.editSaveButtonText}>Save</Text>
+                          }
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    /* ── Normal View Mode ── */
+                    <>
+                      <View style={styles.assessmentHeader}>
+                        <Text style={styles.assessmentIcon}>
+                          {assessment.assessmentType === 'quiz' ? '📝' : '📄'}
+                        </Text>
+                        <View style={styles.assessmentInfo}>
+                          <Text style={styles.assessmentName}>{assessment.assessmentName}</Text>
+                          <Text style={styles.assessmentType}>
+                            {assessment.assessmentType.charAt(0).toUpperCase() +
+                              assessment.assessmentType.slice(1)}
+                          </Text>
+                          <Text style={styles.assessmentUid}>UID: {assessment.assessmentUid}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.assessmentMeta}>
+                        <Text style={styles.assessmentDate}>
+                          Created: {new Date(assessment.createdAt).toLocaleDateString()}
+                        </Text>
+                        <View style={styles.assessmentStatus}>
+                          <View style={[styles.statusDot, { backgroundColor: '#22c55e' }]} />
+                          <Text style={styles.statusText}>Active</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.assessmentActions}>
+                        <TouchableOpacity
+                          style={styles.viewScoresButton}
+                          onPress={() => handleViewScores(assessment)}
+                        >
+                          <Text style={styles.viewScoresButtonText}>📊 View Scores</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.editAssessmentIconButton}
+                          onPress={() => handleEditAssessment(assessment)}
+                        >
+                          <Text style={styles.editAssessmentIconText}>✏️</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.deleteAssessmentIconButton}
+                          onPress={() => handleDeleteAssessment(assessment)}
+                        >
+                          <Text style={styles.deleteAssessmentIconText}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+
                 </View>
-              </View>
-            ))
+              );
+            })
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateIcon}>📝</Text>
@@ -994,6 +1115,72 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textAlign: 'center',
     color: '#6366f1',
+  },
+  editTypeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  editTypeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+  editTypeButtonSelected: {
+    borderColor: '#22c55e',
+    backgroundColor: '#f0fdf4',
+  },
+  editTypeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  editTypeTextSelected: {
+    color: '#16a34a',
+  },
+  editActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  editCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  editCancelButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  editSaveButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#22c55e',
+    alignItems: 'center',
+  },
+  editSaveButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  editAssessmentIconButton: {
+    backgroundColor: '#f0fdf4',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editAssessmentIconText: {
+    fontSize: 18,
   },
 });
 

@@ -1,5 +1,5 @@
 // src/services/assessmentService.ts
-import { ref, set, get, remove } from 'firebase/database';
+import { ref, set, get, remove, update } from 'firebase/database';
 import { database } from '../config/firebase';
 
 // ─────────────────────────────────────────────
@@ -314,4 +314,29 @@ export const createAssessmentWithUid = async (
     teacherId,
     createdAt,
   };
+};
+
+/**
+ * Update assessment name and type only.
+ *
+ * Writes to: /assessments/{teacherId}/{assessmentUid}/
+ * Only assessmentName and assessmentType are modified.
+ */
+export const updateAssessment = async (
+  teacherId: string,
+  assessmentUid: string,
+  assessmentName: string,
+  assessmentType: 'quiz' | 'exam'
+): Promise<void> => {
+  if (!teacherId) throw new Error('teacherId is required');
+  if (!assessmentUid) throw new Error('assessmentUid is required');
+  if (!assessmentName.trim()) throw new Error('assessmentName is required');
+
+  await update(
+    ref(database, `assessments/${teacherId}/${assessmentUid}`),
+    {
+      assessmentName: assessmentName.trim(),
+      assessmentType,
+    }
+  );
 };
