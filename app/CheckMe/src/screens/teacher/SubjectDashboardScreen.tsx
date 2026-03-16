@@ -34,6 +34,7 @@ import {
   deleteAssessment,
   updateAssessment,
 } from '../../services/assessmentService';
+import { checkAndCopySharedAnswerKey } from '../../services/answerSheetService';
 import { deleteSubjectCascade } from '../../services/assessmentService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDashboard'>;
@@ -191,6 +192,7 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
       setActionLoading(true);
 
       let assessment: Assessment;
+      let answerKeyCopied = false;
 
       if (uidMode === 'manual') {
         const normalizedUid = customUid.trim().toUpperCase();
@@ -213,6 +215,14 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
           section.id,
           subject.id
         );
+
+        // Attempt to copy shared answer key if available
+        answerKeyCopied = await checkAndCopySharedAnswerKey(
+          user.uid,
+          normalizedUid,
+          subject.id,
+          section.id
+        );
       } else {
         assessment = await createAssessment(
           user.uid,
@@ -228,7 +238,10 @@ const SubjectDashboardScreen: React.FC<Props> = ({ route, navigation }) => {
 
       Alert.alert(
         'Success! 🎉',
-        `Assessment "${assessment.assessmentName}" created!\n\nAssessment UID: ${assessment.assessmentUid}\n\nWrite this UID at the top of your answer key paper before scanning.`,
+        `Assessment "${assessment.assessmentName}" created!\n\nAssessment UID: ${assessment.assessmentUid}\n\n` +
+        (answerKeyCopied
+          ? '✅ Answer key was found and copied to your account automatically.'
+          : 'Write this UID at the top of your answer key paper before scanning.'),
         [{ text: 'OK' }]
       );
 
