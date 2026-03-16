@@ -406,12 +406,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           ) : (
             sections.map(section => (
               <View key={section.id} style={styles.sectionCard}>
-                <TouchableOpacity
-                  style={styles.sectionCardContent}
-                  onPress={() => handleSectionPress(section)}
-                  activeOpacity={0.7}
-                  disabled={actionLoading}
-                >
+                <View style={styles.sectionCardContent}>
                   <View style={styles.sectionCardContentRow}>
                     <View style={styles.sectionCardInfo}>
                       <Text style={styles.sectionCardTitle}>
@@ -432,9 +427,17 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                       <Text style={styles.detailIconText}>ℹ️</Text>
                     </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
+                </View>
 
                 <View style={styles.sectionCardActions}>
+                  <TouchableOpacity
+                    style={styles.cardNavButton}
+                    onPress={() => handleSectionPress(section)}
+                    disabled={actionLoading}
+                  >
+                    <Text style={styles.cardNavButtonText}>View Subjects</Text>
+                  </TouchableOpacity>
+                  <View style={styles.iconActionDivider} />
                   <TouchableOpacity
                     style={styles.iconActionBtn}
                     onPress={() => handleEditSection(section)}
@@ -1007,6 +1010,18 @@ const styles = StyleSheet.create({
   confirmButton: { flex: 1, borderRadius: 10, overflow: 'hidden' },
   gradientButton: { paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
   confirmButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
+  cardNavButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe',
+  },
+  cardNavButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2563eb',
+  },
 });
 
 export default DashboardScreen;

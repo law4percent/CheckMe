@@ -1,5 +1,7 @@
 // src/screens/teacher/AnswerKeysScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
+import { ref, get } from 'firebase/database';
+import { database } from '../../config/firebase';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
   RefreshControl, TouchableOpacity, Alert, TextInput, Modal,
@@ -14,6 +16,9 @@ import {
   deleteAnswerKey,
   rescoreAnswerSheets,
   getAnswerSheetCount,
+  shareAnswerKeyPublicly,
+  unshareAnswerKey,
+  isAnswerKeyShared,
   AnswerKeyListItem,
   AnswerKeyEntry,
 } from '../../services/answerSheetService';
@@ -57,10 +62,33 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
   const [imageModalUrls, setImageModalUrls]       = useState<string[]>([]);
   const [imageModalIndex, setImageModalIndex]     = useState(0);
 
+  const [sharedUids, setSharedUids] = useState<Record<string, string>>({}); // uid → sharedByconst [sharedUids, setSharedUids] = useState<Set<string>>(new Set());
+  const [sharingUid, setSharingUid] = useState<string | null>(null);
+
   const loadItems = useCallback(async () => {
     try {
       const data = await getAnswerKeysForSubject(teacherUid, subjectUid);
       setItems(data);
+
+      // Check which scanned assessments are currently publicly shared
+      const scanned = data.filter(i => i.hasAnswerKey) as AnswerKeyEntry[];
+      const sharedChecks = await Promise.all(
+        scanned.map(async entry => {
+          const snap = await get(
+            ref(database, `open_share_answer_keys/${entry.assessmentUid}`)
+          );
+          return {
+            uid: entry.assessmentUid,
+            shared: snap.exists(),
+            sharedBy: snap.exists() ? snap.val()?.sharedBy ?? null : null,
+          };
+        })
+      );
+      const sharedMap: Record<string, string> = {};
+      sharedChecks.forEach(r => {
+        if (r.shared && r.sharedBy) sharedMap[r.uid] = r.sharedBy;
+      });
+      setSharedUids(sharedMap);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to load answer keys');
     }
@@ -183,6 +211,72 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
     setImageModalIndex(0);
   };
 
+  const handleSharePublicly = async (entry: AnswerKeyEntry) => {
+    Alert.alert(
+      '🔓 Share Answer Key Publicly',
+      `Share the answer key for "${entry.assessmentName}" publicly?\n\nAny teacher who imports Assessment UID "${entry.assessmentUid}" will receive a copy of this answer key.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Share',
+          onPress: async () => {
+            try {
+              setSharingUid(entry.assessmentUid);
+              await shareAnswerKeyPublicly(
+                teacherUid,
+                entry.assessmentUid,
+                entry.assessmentName,
+                'exam' // assessmentType not stored in answer key — kept generic
+              );
+              //Argument of type '(prev: Record<string, string>) => Set<any>' is not assignable to parameter of type 'SetStateAction<Record<string, string>>'.
+  // Type '(prev: Record<string, string>) => Set<any>' is not assignable to type '(prevState: Record<string, string>) => Record<string, string>'.
+//     Type 'Set<any>' is not assignable to type 'Record<string, string>'.
+//       Index signature for type 'string' is missing in type 'Set<any>'.ts(2345)
+// Type 'Record<string, string>' must have a '[Symbol.iterator]()' method that returns an iterator.ts(2488)
+// (parameter) prev: Record<string, string>
+              setSharedUids(prev => ({ ...prev, [entry.assessmentUid]: teacherUid }));
+              Alert.alert('Shared!', `Answer key for "${entry.assessmentName}" is now publicly available.`);
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to share answer key');
+            } finally {
+              setSharingUid(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleUnshare = async (entry: AnswerKeyEntry) => {
+    Alert.alert(
+      '🔒 Unshare Answer Key',
+      `Stop sharing the answer key for "${entry.assessmentName}"?\n\nTeachers who already copied it will keep their copy.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unshare',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSharingUid(entry.assessmentUid);
+              await unshareAnswerKey(teacherUid, entry.assessmentUid);
+              setSharedUids(prev => {
+                const next = { ...prev };
+                delete next[entry.assessmentUid];
+                return next;
+              });
+              Alert.alert('Unshared', `Answer key for "${entry.assessmentName}" is no longer public.`);
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to unshare');
+            } finally {
+              setSharingUid(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -275,6 +369,11 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
                       <View style={styles.scannedBadge}>
                         <Text style={styles.scannedBadgeText}>✅ Scanned</Text>
                       </View>
+                      {entry.assessmentUid in sharedUids && (
+                        <View style={styles.sharedBadge}>
+                          <Text style={styles.sharedBadgeText}>🔓 Shared</Text>
+                        </View>
+                      )}
                       {hasImages && (
                         <View style={styles.imageBadge}>
                           <Text style={styles.imageBadgeText}>🖼 {imageUrls.length}</Text>
@@ -354,6 +453,36 @@ const AnswerKeysScreen: React.FC<Props> = ({ route }) => {
                             ⚠️ Some answers are flagged (unreadable / missing). Review and correct them before scanning student sheets.
                           </Text>
                         </View>
+                      )}
+
+                      {entry.assessmentUid in sharedUids ? (
+                        sharedUids[entry.assessmentUid] === teacherUid ? (
+                          <TouchableOpacity
+                            style={styles.unshareKeyBtn}
+                            onPress={() => handleUnshare(entry)}
+                            disabled={sharingUid === entry.assessmentUid}
+                          >
+                            {sharingUid === entry.assessmentUid
+                              ? <ActivityIndicator color="#d97706" size="small" />
+                              : <Text style={styles.unshareKeyBtnText}>🔒 Unshare Answer Key</Text>
+                            }
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={styles.sharedByOtherBox}>
+                            <Text style={styles.sharedByOtherText}>🔓 Shared by another teacher</Text>
+                          </View>
+                        )
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.shareKeyBtn}
+                          onPress={() => handleSharePublicly(entry)}
+                          disabled={sharingUid === entry.assessmentUid}
+                        >
+                          {sharingUid === entry.assessmentUid
+                            ? <ActivityIndicator color="#16a34a" size="small" />
+                            : <Text style={styles.shareKeyBtnText}>🔓 Share Publicly</Text>
+                          }
+                        </TouchableOpacity>
                       )}
 
                       <TouchableOpacity style={styles.deleteKeyBtn} onPress={() => handleDelete(entry)}>
@@ -555,6 +684,59 @@ const styles = StyleSheet.create({
   imageViewerDots: { position: 'absolute', bottom: 48, flexDirection: 'row', gap: 8, alignSelf: 'center' },
   imageViewerDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.35)' },
   imageViewerDotActive: { backgroundColor: '#ffffff', width: 20 },
+  sharedBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  sharedBadgeText: {
+    fontSize: 12,
+    color: '#d97706',
+    fontWeight: '600',
+  },
+  shareKeyBtn: {
+    marginTop: 10,
+    backgroundColor: '#f0fdf4',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  shareKeyBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#16a34a',
+  },
+  unshareKeyBtn: {
+    marginTop: 10,
+    backgroundColor: '#fffbeb',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  unshareKeyBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#d97706',
+  },
+  sharedByOtherBox: {
+    marginTop: 10,
+    backgroundColor: '#f8fafc',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  sharedByOtherText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
 });
 
 export default AnswerKeysScreen;

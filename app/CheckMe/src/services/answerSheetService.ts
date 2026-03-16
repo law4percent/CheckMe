@@ -652,3 +652,120 @@ export const deleteAnswerSheet = async (
 
   await remove(ref(database, `answer_sheets/${teacherUid}/${assessmentUid}/${studentId}`));
 };
+
+// ─────────────────────────────────────────────
+// Open Share Answer Keys
+// ─────────────────────────────────────────────
+
+/**
+ * Share an answer key publicly.
+ * Reads /answer_keys/{teacherUid}/{assessmentUid}/
+ * Writes to /open_share_answer_keys/{assessmentUid}/
+ */
+export const shareAnswerKeyPublicly = async (
+  teacherUid: string,
+  assessmentUid: string,
+  assessmentName: string,
+  assessmentType: string
+): Promise<void> => {
+  const keySnap = await get(
+    ref(database, `answer_keys/${teacherUid}/${assessmentUid}`)
+  );
+  if (!keySnap.exists()) {
+    throw new Error('No scanned answer key found for this assessment.');
+  }
+
+  const keyData = keySnap.val();
+
+  await set(
+    ref(database, `open_share_answer_keys/${assessmentUid}`),
+    {
+      assessmentUid,
+      assessmentName,
+      assessmentType,
+      sharedBy: teacherUid,
+      sharedAt: Date.now(),
+      answer_key: keyData.answer_key ?? {},
+      total_questions: keyData.total_questions ?? 0,
+      section_uid: keyData.section_uid ?? '',
+      subject_uid: keyData.subject_uid ?? '',
+      image_urls: keyData.image_urls ?? [],
+    }
+  );
+};
+
+/**
+ * Unshare a publicly shared answer key.
+ * Deletes /open_share_answer_keys/{assessmentUid}/
+ */
+export const unshareAnswerKey = async (
+  teacherUid: string,
+  assessmentUid: string
+): Promise<void> => {
+  const snap = await get(
+    ref(database, `open_share_answer_keys/${assessmentUid}`)
+  );
+  if (!snap.exists()) throw new Error('Shared answer key not found.');
+
+  const data = snap.val();
+  if (data.sharedBy !== teacherUid) {
+    throw new Error('You are not authorized to unshare this answer key.');
+  }
+
+  await remove(ref(database, `open_share_answer_keys/${assessmentUid}`));
+};
+
+/**
+ * Check if a shared answer key exists and copy it to Teacher B's account.
+ * Reads /open_share_answer_keys/{assessmentUid}/
+ * Writes to /answer_keys/{teacherBUid}/{assessmentUid}/
+ * Returns true if copied, false if not found.
+ */
+export const checkAndCopySharedAnswerKey = async (
+  teacherBUid: string,
+  assessmentUid: string,
+  subjectUid: string,
+  sectionUid: string
+): Promise<boolean> => {
+  const snap = await get(
+    ref(database, `open_share_answer_keys/${assessmentUid}`)
+  );
+  if (!snap.exists()) return false;
+
+  const data = snap.val();
+
+  // Check if Teacher B already has this answer key — don't overwrite
+  const existingSnap = await get(
+    ref(database, `answer_keys/${teacherBUid}/${assessmentUid}`)
+  );
+  if (existingSnap.exists()) return true; // already has it
+
+  await set(
+    ref(database, `answer_keys/${teacherBUid}/${assessmentUid}`),
+    {
+      answer_key: data.answer_key ?? {},
+      total_questions: data.total_questions ?? 0,
+      section_uid: sectionUid,
+      subject_uid: subjectUid,
+      image_urls: data.image_urls ?? [],
+      created_at: Date.now(),
+      updated_at: Date.now(),
+      copied_from: data.sharedBy ?? '',
+    }
+  );
+
+  return true;
+};
+
+/**
+ * Check if an assessment UID is currently publicly shared.
+ * Returns true if /open_share_answer_keys/{assessmentUid}/ exists.
+ */
+export const isAnswerKeyShared = async (
+  assessmentUid: string
+): Promise<boolean> => {
+  const snap = await get(
+    ref(database, `open_share_answer_keys/${assessmentUid}`)
+  );
+  return snap.exists();
+};
