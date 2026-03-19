@@ -335,20 +335,25 @@ Scores appear instantly on the teacher's phone. The teacher can:
 
 ## App UI Screenshots
 
-| Teacher Login | Teacher Dashboard | Section Dashboard |
+| Main Portal | Teacher Login | Student Login |
 |:---:|:---:|:---:|
-| <img src="docs/images/ui_teacher_login.jpg" width="200"> | <img src="docs/images/ui_teacher_dashboard.jpg" width="200"> | <img src="docs/images/ui_section_dashboard.jpg" width="200"> |
-| Teacher login with email and password | Overview of all sections with View Subjects button | Subjects list with assessment counts and View Assessments button |
+| <img src="docs/images/ui_main_portal.jpg" width="200"> | <img src="docs/images/ui_teacher_login.jpg" width="200"> | <img src="docs/images/ui_student_login.jpg" width="200"> |
+| Main portal where users choose between Teacher or Student authentication | Teacher login with email and password | Student login screen |
 
-| Subject Dashboard | Answer Keys | View Scores |
+| Teacher Dashboard | Section Dashboard | Subject Dashboard |
 |:---:|:---:|:---:|
-| <img src="docs/images/ui_subject_dashboard.jpg" width="200"> | <img src="docs/images/ui_answer_keys.jpg" width="200"> | <img src="docs/images/ui_view_scores.jpg" width="200"> |
-| Assessments list with UID, inline edit, create, and manage | Scanned answer keys with Share Publicly and per-question breakdown | Full class results with scores, grades, and Export Excel button |
+| <img src="docs/images/ui_teacher_dashboard.jpg" width="200"> | <img src="docs/images/ui_section_dashboard.jpg" width="200"> | <img src="docs/images/ui_subject_dashboard.jpg" width="200"> |
+| Overview of all sections with View Subjects button | Subjects list with assessment counts and View Assessments button | Assessments list with UID, inline edit, create, and manage |
 
-| Score Breakdown | Export Excel | Student Dashboard |
+| Answer Keys | View Scores | Score Breakdown |
 |:---:|:---:|:---:|
-| <img src="docs/images/ui_score_breakdown.jpg" width="200"> | <img src="docs/images/ui_export.jpg" width="200"> | <img src="docs/images/ui_student_dashboard.jpg" width="200"> |
-| Per-question result with manual edit support | Sort options and download results as .xlsx | Student view of enrolled subjects and scores |
+| <img src="docs/images/ui_answer_keys.jpg" width="200"> | <img src="docs/images/ui_view_scores.jpg" width="200"> | <img src="docs/images/ui_score_breakdown.jpg" width="200"> |
+| Scanned answer keys with Share Publicly and per-question breakdown | Full class results with scores, grades, and Export Excel button | Per-question result with manual edit support |
+
+| Export Excel | Student Dashboard | |
+|:---:|:---:|:---:|
+| <img src="docs/images/ui_export.jpg" width="200"> | <img src="docs/images/ui_student_dashboard.jpg" width="200"> | |
+| Sort options and download results as .xlsx | Student view of enrolled subjects and scores | |
 
 ---
 
