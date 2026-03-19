@@ -20,13 +20,12 @@ giving teachers more time to focus on teaching.
 8. [Supported Scanners](#supported-scanners)
 9. [RTDB Structure](#rtdb-structure)
 10. [Development Environment](#development-environment)
-11. [Repository Structure](#repository-structure)
-12. [Circuit Diagram](#circuit-diagram)
-13. [3D Model](#3d-model)
-14. [App UI Screenshots](#app-ui-screenshots)
-15. [Downloads](#downloads)
-16. [Future Works](#future-works)
-17. [Acknowledgments](#acknowledgments)
+11. [Circuit Diagram](#circuit-diagram)
+12. [3D Model](#3d-model)
+13. [App UI Screenshots](#app-ui-screenshots)
+14. [Downloads](#downloads)
+15. [Future Works](#future-works)
+16. [Acknowledgments](#acknowledgments)
 
 ---
 
@@ -291,26 +290,6 @@ Scores appear instantly on the teacher's phone. The teacher can:
 /temp_codes/{uid}/                         ← Raspi one-time login codes
 ```
 
-### `/open_share_answer_keys/{assessmentUid}/`
-
-Written by Teacher A when they share an answer key publicly via the mobile app.
-Read by Teacher B when importing an existing Assessment UID. Teacher B receives
-their own independent copy under their own `/answer_keys/` path — unsharing by
-Teacher A does not affect Teacher B's copy.
-
-```
-assessmentUid:    string
-assessmentName:   string
-assessmentType:   string
-sharedBy:         string  ← Teacher A's uid (only they can unshare)
-sharedAt:         number  ← timestamp
-answer_key:       { Q1: string, Q2: string, ... }
-total_questions:  number
-section_uid:      string
-subject_uid:      string
-image_urls:       string[]
-```
-
 ---
 
 ## Development Environment
@@ -327,51 +306,6 @@ image_urls:       string[]
 | Target Platforms | Android, iOS |
 | Scanner Interface | SANE (Linux USB) on Raspberry Pi |
 | Excel Export | SheetJS (xlsx) + expo-file-system/legacy + expo-sharing |
-
----
-
-## Repository Structure
-
-```
-CheckMe/
-├── src/
-│   ├── screens/
-│   │   ├── teacher/
-│   │   │   ├── DashboardScreen.tsx
-│   │   │   ├── SectionDashboardScreen.tsx
-│   │   │   ├── SubjectDashboardScreen.tsx
-│   │   │   ├── AnswerKeysScreen.tsx
-│   │   │   ├── ViewScoresScreen.tsx
-│   │   │   └── TeacherAssessmentScoreTableScreen.tsx
-│   │   └── student/
-│   │       ├── StudentDashboardScreen.tsx
-│   │       └── StudentEnrollmentScreen.tsx
-│   ├── services/
-│   │   ├── assessmentService.ts
-│   │   ├── answerSheetService.ts
-│   │   ├── enrollmentService.ts
-│   │   ├── inviteCodeService.ts
-│   │   ├── sectionService.ts
-│   │   ├── subjectService.ts
-│   │   └── authService.ts
-│   ├── contexts/
-│   │   └── AuthContext.tsx
-│   ├── config/
-│   │   └── firebase.ts
-│   └── types/
-│       └── index.ts
-├── raspi/                        ← Raspberry Pi Python scanning pipeline
-│   ├── main.py
-│   ├── scanner.py
-│   ├── ocr.py
-│   ├── firebase_writer.py
-│   └── cloudinary_uploader.py
-├── assets/
-├── App.tsx
-├── app.json
-├── package.json
-└── tsconfig.json
-```
 
 ---
 
