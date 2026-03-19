@@ -21,11 +21,11 @@ giving teachers more time to focus on teaching.
 9. [RTDB Structure](#rtdb-structure)
 10. [Development Environment](#development-environment)
 11. [Repository Structure](#repository-structure)
-12. [Future Works](#future-works)
-13. [Circuit Diagram](#circuit-diagram)
-14. [3D Model](#3d-model)
-15. [App UI Screenshots](#app-ui-screenshots)
-16. [Downloads](#downloads)
+12. [Circuit Diagram](#circuit-diagram)
+13. [3D Model](#3d-model)
+14. [App UI Screenshots](#app-ui-screenshots)
+15. [Downloads](#downloads)
+16. [Future Works](#future-works)
 17. [Acknowledgments](#acknowledgments)
 
 ---
@@ -375,52 +375,6 @@ CheckMe/
 
 ---
 
-## Future Works
-
-CheckMe was designed with extensibility in mind. The following features and
-directions are planned or proposed for future development:
-
-### 🖥️ Web or Desktop Application
-A web-based or desktop version of the teacher portal would allow teachers to manage
-assessments, view scores, and export results directly from a browser or desktop
-computer — without needing a phone. This would be particularly useful in school
-computer labs or for teachers who prefer a larger screen for data review.
-
-### 🖨️ PC-Based Scanning (No Raspberry Pi Required)
-The current system requires a Raspberry Pi as the scanning station. A future version
-could replace the Raspberry Pi entirely with a desktop or laptop application that
-communicates directly with a USB-connected scanner. Since most school computers
-already have scanner software installed, this would dramatically lower the hardware
-cost and setup complexity. Any PC with a compatible scanner could become a checking
-station.
-
-### 👨‍💼 Admin Portal
-An admin panel for school administrators to oversee all teacher accounts, subjects,
-sections, and assessment activity across the institution — providing a school-wide
-view of assessment data without requiring access to individual teacher accounts.
-
-### 📊 Analytics Dashboard
-Visual analytics for teachers showing class performance trends across assessments —
-including score distributions, question-level difficulty analysis, and student
-progress over time.
-
-### 🔔 Push Notifications
-Real-time push notifications to notify teachers when a student's answer sheet has
-been successfully scanned and scored, or when a student requests enrollment in their
-subject.
-
-### 🌐 Broader Scanner Compatibility Testing
-CheckMe has been confirmed working on the **Epson L3210 Series** and
-**Canon PIXMA MG2570S**. Future work includes formal testing across a wider range
-of flatbed scanner models to build a verified compatibility list.
-
-### 📱 Student Mobile Improvements
-Enhanced student-facing features such as score history graphs, notifications when
-results are published, and the ability to view scanned answer sheet images alongside
-their personal breakdown.
-
----
-
 ## Circuit Diagram
 
 <!-- Replace with your actual circuit diagram image -->
@@ -494,6 +448,52 @@ their personal breakdown.
 > 4. Add your Firebase service account key as `serviceAccountKey.json`
 > 5. Run `python main.py` to start the scanning pipeline
 > 6. Log in using the 8-digit one-time code generated from the mobile app
+
+---
+
+## Future Works
+
+CheckMe was designed with extensibility in mind. The following features and
+directions are planned or proposed for future development:
+
+### 🖥️ Web or Desktop Application
+A web-based or desktop version of the teacher portal would allow teachers to manage assessments, view scores, and export results directly from a browser or computer — without needing a mobile device. This would be particularly useful in school computer labs or for teachers who prefer a larger screen for data review.
+
+### 🖨️ PC-Based Scanning (No Raspberry Pi Required)
+The current system requires a Raspberry Pi as the dedicated scanning station. A future version could replace it entirely with a desktop or laptop application that communicates directly with a USB-connected scanner. Since most school computers already have scanner software installed, this would significantly reduce hardware costs and setup complexity, allowing any compatible PC to serve as a checking station.
+
+### 👨‍💼 Admin Portal and Enhanced Security
+A dedicated admin panel would allow school administrators to oversee all teacher accounts, subjects, sections, and assessment activity across the institution — providing a school-wide view without requiring access to individual teacher accounts. An approval-based registration flow would also be introduced, requiring admin authorization before new accounts are activated. This prevents unauthorized sign-ups and protects publicly shared answer keys from being accessed by non-teachers.
+
+### 📊 Analytics Dashboard
+Visual analytics for teachers showing class performance trends across assessments, including score distributions, question-level difficulty analysis, and individual student progress over time.
+
+### 🔔 Push Notifications
+Real-time push notifications to alert teachers when a student's answer sheet has been successfully scanned and scored, or when a student requests enrollment in their subject.
+
+### 🌐 Broader Scanner Compatibility Testing
+CheckMe has been confirmed working on the Epson L3210 Series and Canon PIXMA MG2570S. Future work includes formal compatibility testing across a wider range of flatbed scanner models to build a verified support list. Additionally, support for sheet-fed document scanners — such as the Epson WorkForce DS-410 — is being explored to enable batch scanning. This would allow multiple pages from multiple students (e.g., 4-page answer sheets for 30 students, totaling 120 pages) to be fed and processed in a single pass.
+
+### 📱 Student Mobile Improvements
+Enhanced student-facing features such as score history graphs, notifications when results are published, and the ability to view scanned answer sheet images alongside a personal score breakdown.
+
+### 💰 Monetization and Usage Quota System
+As CheckMe scales to more teachers and institutions, a subscription-based monetization model is planned. Teachers or schools would be offered tiered plans with defined monthly scan quotas. Usage will be tracked per account in the backend, and the system will enforce limits before invoking the Gemini API — blocking scans once a quota is reached and prompting an upgrade. This approach allows CheckMe to absorb API costs centrally while maintaining healthy margins, without requiring individual teachers to manage their own API billing. A per-school licensing model is also being considered, where a school admin pays a flat fee covering all teachers under their institution.
+
+### 🔁 Gemini OCR Pipeline Optimization
+The current implementation collages multiple scanned pages into a single image before sending it to Gemini for extraction. While functional, this approach increases token consumption and can reduce OCR accuracy when the combined image becomes very large. A planned improvement is to send each scanned page as a separate inline image within a single Gemini API request — a pattern now reliably supported by the updated Google Gen AI SDK. Additionally, native PDF input is being explored for future compatibility with sheet-fed scanners that output multi-page PDFs directly, which would eliminate the image conversion step entirely and further streamline the scanning pipeline.
+
+### 🗂️ CheckMe Formatter
+A dedicated Formatter screen is planned for both the teacher and student sides of the mobile app. Its purpose is to provide structured, printable templates — for answer keys and answer sheets — that are deliberately designed around the constraints and expectations of the Gemini OCR extraction pipeline.
+
+
+On the teacher side, the Formatter would generate a clean answer key template that enforces CheckMe's format rules: continuous question numbering, clearly designated answer fields, and labeled sections for Multiple Choice, True/False, Enumeration, and Essay questions. Because the Gemini OCR prompt is designed to locate explicitly marked, circled, or written answers — and to distinguish them from printed choices and decorative marks — a well-structured template significantly reduces the likelihood of misreads or unreadable results.
+
+
+On the student side, the Formatter would produce a standardized answer sheet that visually guides students on where and how to write their answers. This includes clearly labeled answer fields, explicit instructions for cancelling answers using strikethrough, and reminders to write True or False in full rather than using T or F. Since the OCR system relies on specific visual cues — circled letters, shaded bubbles, written text in blanks, and strikethroughs for cancellations — a purpose-built answer sheet reduces ambiguity and improves scoring accuracy across the board.
+
+
+The Formatter does not replace free-form test papers but serves as an optional tool for teachers who want to maximize OCR reliability and minimize the need for manual corrections after scanning.
 
 ---
 
