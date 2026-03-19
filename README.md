@@ -74,10 +74,15 @@ automated checking accessible to any school.
    question breakdowns.
 4. Implement an enrollment system where students request to join a subject and
    teachers approve or reject requests.
-5. Enable teachers to share answer keys across accounts so that multiple teachers
-   using the same printed test paper can reuse each other's scanned answer keys.
-6. Store scanned answer sheet images on Cloudinary so teachers can visually review
+5. Enable teachers to reuse an existing Assessment UID from another teacher's printed
+   test paper, and automatically receive a copy of the shared answer key if one has
+   been made publicly available.
+6. Allow teachers to share scanned answer keys publicly so that multiple teachers
+   using the same printed test paper can reuse each other's work without re-scanning.
+7. Store scanned answer sheet images on Cloudinary so teachers can visually review
    the original paper alongside the OCR results.
+8. Allow teachers to export full class results as a formatted Excel file for record
+   keeping and reporting.
 
 ---
 
@@ -156,12 +161,13 @@ Built with **React Native (Expo)** for cross-platform compatibility (iOS and And
 The app has two separate portals:
 
 #### Teacher Portal
-- **Dashboard** — manage sections and subjects
-- **Subject Dashboard** — create assessments, manage enrollments, view answer keys
-- **Answer Keys** — view scanned answer keys, edit individual answers, re-score sheets, share answer keys publicly
-- **View Scores** — full student result list with scores, percentages, grades, and breakdown
+- **Dashboard** — manage sections and subjects with dedicated View Subjects and View Assessments navigation buttons per card
+- **Subject Dashboard** — create assessments, manage enrollments, view answer keys and pending enrollment requests
+- **Assessment Management** — create quizzes and exams with auto-generated UIDs; rename assessments and change assessment type after creation; import an existing Assessment UID from another teacher's printed test paper
+- **Answer Keys** — view scanned answer keys, edit individual answers, re-score sheets, share answer keys publicly, and unshare
+- **View Scores** — full student result list with scores, percentages, grades, breakdown, and not-yet-scanned students
 - **Score Table** — per-question breakdown for individual students with manual edit support
-- **Export to Excel** — download assessment results as a formatted `.xlsx` file sorted by name or student ID
+- **Export to Excel** — download assessment results as a formatted `.xlsx` file sorted by first name, last name, or student ID; includes enrolled students who have not yet been scanned
 
 #### Student Portal
 - **Dashboard** — view enrolled subjects and assessment results
@@ -204,6 +210,11 @@ React Native Mobile App (Teacher's phone)
 The teacher opens the app, navigates to a subject, and creates an assessment (quiz
 or exam). The app generates a unique 8-character Assessment UID (e.g., `QWER1234`).
 
+Alternatively, if another teacher has already printed a test paper, the teacher can
+**import an existing Assessment UID** using the Enter existing UID toggle in the
+Create Assessment modal. If the owner of that UID has shared their answer key
+publicly, a copy is automatically delivered to the importing teacher's account.
+
 ### Step 2 — Teacher prints the test paper
 The teacher writes or prints the Assessment UID at the top of the answer sheet
 paper. Students fill in their school ID and answers on the paper.
@@ -232,16 +243,13 @@ Scores appear instantly on the teacher's phone. The teacher can:
 
 ### For Teachers
 - **Assessment management** — create quizzes and exams with auto-generated UIDs
-- **Import existing UID** — reuse another teacher's Assessment UID and automatically
-  receive their shared answer key
-- **Share answer key publicly** — share a scanned answer key so other teachers using
-  the same test paper can import it without re-scanning
-- **Enrollment management** — approve or reject student enrollment requests per subject
-- **Answer key editing** — correct individual OCR errors and automatically re-score
-  all affected student sheets
+- **Rename and edit assessments** — update an assessment's name or type after creation directly from the assessment card via inline editing
+- **Import existing UID** — reuse another teacher's Assessment UID and automatically receive their shared answer key if one is publicly available
+- **Share answer key publicly** — share a scanned answer key so other teachers using the same test paper can import it without re-scanning; only the sharing teacher can unshare
+- **Enrollment management** — approve or reject student enrollment requests per subject; pending requests shown with a badge indicator on the subject dashboard
+- **Answer key editing** — correct individual OCR errors and automatically re-score all affected student sheets
 - **Manual score editing** — override individual student answers with teacher judgment
-- **Export to Excel** — download class results sorted alphabetically or by student ID,
-  including students who have not yet been scanned
+- **Export to Excel** — download class results sorted by first name, last name, or student ID; includes students who have not yet been scanned, marked clearly in the export
 - **Invite codes** — share a subject invite code with students for easy enrollment
 
 ### For Students
@@ -283,6 +291,26 @@ Scores appear instantly on the teacher's phone. The teacher can:
 /temp_codes/{uid}/                         ← Raspi one-time login codes
 ```
 
+### `/open_share_answer_keys/{assessmentUid}/`
+
+Written by Teacher A when they share an answer key publicly via the mobile app.
+Read by Teacher B when importing an existing Assessment UID. Teacher B receives
+their own independent copy under their own `/answer_keys/` path — unsharing by
+Teacher A does not affect Teacher B's copy.
+
+```
+assessmentUid:    string
+assessmentName:   string
+assessmentType:   string
+sharedBy:         string  ← Teacher A's uid (only they can unshare)
+sharedAt:         number  ← timestamp
+answer_key:       { Q1: string, Q2: string, ... }
+total_questions:  number
+section_uid:      string
+subject_uid:      string
+image_urls:       string[]
+```
+
 ---
 
 ## Development Environment
@@ -298,6 +326,7 @@ Scores appear instantly on the teacher's phone. The teacher can:
 | npm | ≥ 11.4.2 |
 | Target Platforms | Android, iOS |
 | Scanner Interface | SANE (Linux USB) on Raspberry Pi |
+| Excel Export | SheetJS (xlsx) + expo-file-system/legacy + expo-sharing |
 
 ---
 
@@ -343,82 +372,6 @@ CheckMe/
 ├── package.json
 └── tsconfig.json
 ```
-
----
-
-## Circuit Diagram
-
-<!-- Replace with your actual circuit diagram image -->
-![Circuit Diagram](docs/images/circuit_diagram.png)
-
-> Wiring diagram of the Raspberry Pi connected to the USB flatbed scanner,
-> power supply, and any GPIO components used in the scanning station.
-
----
-
-## 3D Model
-
-<!-- Replace with your actual 3D render screenshots -->
-
-| Front | Back | Assembled |
-|:---:|:---:|:---:|
-| ![Front](docs/images/3d_front.png) | ![Back](docs/images/3d_back.png) | ![Assembled](docs/images/3d_assembled.png) |
-
-> **[⬇️ Download STL File (Google Drive)](https://your-google-drive-link-here)**
->
-> Recommended print settings: PLA, 0.2mm layer height, 20% infill.
-
----
-
-## App UI Screenshots
-
-| Teacher Login | Teacher Dashboard | Section Dashboard |
-|:---:|:---:|:---:|
-| <img src="docs/images/ui_teacher_login.jpg" width="200"> | <img src="docs/images/ui_teacher_dashboard.jpg" width="200"> | <img src="docs/images/ui_section_dashboard.jpg" width="200"> |
-| Teacher login with email and password | Overview of all sections and subjects | Subjects list with assessment counts |
-
-| Subject Dashboard | Answer Keys | View Scores |
-|:---:|:---:|:---:|
-| <img src="docs/images/ui_subject_dashboard.jpg" width="200"> | <img src="docs/images/ui_answer_keys.jpg" width="200"> | <img src="docs/images/ui_view_scores.jpg" width="200"> |
-| Assessments list with UID, create and manage | Scanned answer keys with per-question breakdown | Full class results with scores and grades |
-
-| Score Breakdown | Export Excel | Student Dashboard |
-|:---:|:---:|:---:|
-| <img src="docs/images/ui_score_breakdown.jpg" width="200"> | <img src="docs/images/ui_export.jpg" width="200"> | <img src="docs/images/ui_student_dashboard.jpg" width="200"> |
-| Per-question result with manual edit support | Sort and download results as .xlsx | Student view of enrolled subjects and scores |
-
----
-
-## Downloads
-
-### 📱 Android APK
-
-> **[⬇️ Download CheckMe APK (Google Drive)](https://your-google-drive-link-here)**
->
-> Minimum Android version: API 21 (Android 5.0)
->
-> **Install instructions:**
-> 1. Download the APK on your Android phone
-> 2. Go to **Settings → Security → Enable Install from unknown sources**
-> 3. Open the APK and tap **Install**
-> 4. Open CheckMe and sign in as a Teacher or Student
-
-### 🖥️ Raspberry Pi Setup
-
-> **[⬇️ Download Raspi Scanning Pipeline (Google Drive)](https://your-google-drive-link-here)**
->
-> **Requirements:**
-> - Raspberry Pi 3B+ or newer
-> - Python 3.10+
-> - SANE-compatible USB flatbed scanner (see [Supported Scanners](#supported-scanners))
->
-> **Setup instructions:**
-> 1. Clone or download the `raspi/` folder onto your Raspberry Pi
-> 2. Run `pip install -r requirements.txt`
-> 3. Connect your USB scanner and verify with `scanimage -L`
-> 4. Add your Firebase service account key as `serviceAccountKey.json`
-> 5. Run `python main.py` to start the scanning pipeline
-> 6. Log in using the 8-digit one-time code generated from the mobile app
 
 ---
 
@@ -468,10 +421,87 @@ their personal breakdown.
 
 ---
 
+## Circuit Diagram
+
+<!-- Replace with your actual circuit diagram image -->
+![Circuit Diagram](docs/images/circuit_diagram.png)
+
+> Wiring diagram of the Raspberry Pi connected to the USB flatbed scanner,
+> power supply, and any GPIO components used in the scanning station.
+
+---
+
+## 3D Model
+
+<!-- Replace with your actual 3D render screenshots -->
+
+| Front | Back | Assembled |
+|:---:|:---:|:---:|
+| ![Front](docs/images/3d_front.png) | ![Back](docs/images/3d_back.png) | ![Assembled](docs/images/3d_assembled.png) |
+
+> **[⬇️ Download STL File (Google Drive)](https://your-google-drive-link-here)**
+>
+> Recommended print settings: PLA, 0.2mm layer height, 20% infill.
+
+---
+
+## App UI Screenshots
+
+| Teacher Login | Teacher Dashboard | Section Dashboard |
+|:---:|:---:|:---:|
+| <img src="docs/images/ui_teacher_login.jpg" width="200"> | <img src="docs/images/ui_teacher_dashboard.jpg" width="200"> | <img src="docs/images/ui_section_dashboard.jpg" width="200"> |
+| Teacher login with email and password | Overview of all sections with View Subjects button | Subjects list with assessment counts and View Assessments button |
+
+| Subject Dashboard | Answer Keys | View Scores |
+|:---:|:---:|:---:|
+| <img src="docs/images/ui_subject_dashboard.jpg" width="200"> | <img src="docs/images/ui_answer_keys.jpg" width="200"> | <img src="docs/images/ui_view_scores.jpg" width="200"> |
+| Assessments list with UID, inline edit, create, and manage | Scanned answer keys with Share Publicly and per-question breakdown | Full class results with scores, grades, and Export Excel button |
+
+| Score Breakdown | Export Excel | Student Dashboard |
+|:---:|:---:|:---:|
+| <img src="docs/images/ui_score_breakdown.jpg" width="200"> | <img src="docs/images/ui_export.jpg" width="200"> | <img src="docs/images/ui_student_dashboard.jpg" width="200"> |
+| Per-question result with manual edit support | Sort options and download results as .xlsx | Student view of enrolled subjects and scores |
+
+---
+
+## Downloads
+
+### 📱 Android APK
+
+> **[⬇️ Download CheckMe APK (Google Drive)](https://your-google-drive-link-here)**
+>
+> Minimum Android version: API 21 (Android 5.0)
+>
+> **Install instructions:**
+> 1. Download the APK on your Android phone
+> 2. Go to **Settings → Security → Enable Install from unknown sources**
+> 3. Open the APK and tap **Install**
+> 4. Open CheckMe and sign in as a Teacher or Student
+
+### 🖥️ Raspberry Pi Setup
+
+> **[⬇️ Download Raspi Scanning Pipeline (Google Drive)](https://your-google-drive-link-here)**
+>
+> **Requirements:**
+> - Raspberry Pi 3B+ or newer
+> - Python 3.10+
+> - SANE-compatible USB flatbed scanner (see [Supported Scanners](#supported-scanners))
+>
+> **Setup instructions:**
+> 1. Clone or download the `raspi/` folder onto your Raspberry Pi
+> 2. Run `pip install -r requirements.txt`
+> 3. Connect your USB scanner and verify with `scanimage -L`
+> 4. Add your Firebase service account key as `serviceAccountKey.json`
+> 5. Run `python main.py` to start the scanning pipeline
+> 6. Log in using the 8-digit one-time code generated from the mobile app
+
+---
+
 ## Acknowledgments
 
 - Google Firebase for real-time cloud infrastructure and RTDB
 - Cloudinary for free-tier image hosting and CDN delivery
 - Expo and the React Native community for the cross-platform mobile framework
 - SANE Project for open-source scanner driver support on Linux / Raspberry Pi
+- SheetJS (xlsx) for Excel file generation
 - The teachers and students who participated in testing and provided feedback
