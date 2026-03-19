@@ -495,6 +495,14 @@ On the student side, the Formatter would produce a standardized answer sheet tha
 
 The Formatter does not replace free-form test papers but serves as an optional tool for teachers who want to maximize OCR reliability and minimize the need for manual corrections after scanning.
 
+### 🗃️ CheckMe OS Image for Raspberry Pi
+
+For institutions that prefer to keep using a Raspberry Pi as their scanning station, a pre-built CheckMe OS image is planned for release. Rather than manually setting up dependencies, configuring the scanner, and installing the application from scratch, users would simply flash the image onto an SD card and boot directly into a ready-to-use CheckMe environment. This significantly lowers the technical barrier for schools without dedicated IT support and ensures a consistent, stable setup across all Raspberry Pi deployments.
+
+### 📷 Camera-Based Scanning
+
+As an alternative to a physical flatbed scanner, a future update to the mobile app would introduce a built-in camera scanning feature. Teachers or students could photograph an answer key or answer sheet directly using their phone camera, which the app would then process and send to the Gemini OCR pipeline — eliminating the need for any external hardware entirely. This makes CheckMe accessible in settings where scanners are unavailable, and serves as a lightweight fallback for occasional use. Image quality guidelines would be provided in-app to help users capture clean, well-lit shots that the OCR can read reliably.
+
 ---
 
 ## Acknowledgments
