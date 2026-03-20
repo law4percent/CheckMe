@@ -6,6 +6,7 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [System Architecture](#system-architecture)
 - [Hardware Requirements](#hardware-requirements)
 - [GPIO Pin Configuration](#gpio-pin-configuration)
 - [Project Structure](#project-structure)
@@ -36,6 +37,121 @@ CheckMe is an automated grading system that runs on a Raspberry Pi. It uses a fl
 
 ---
 
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        TEACHER (Mobile App)                         │
+│                     React Native (Expo SDK 52)                      │
+│                                                                     │
+│   ┌─────────────┐   ┌──────────────┐   ┌───────────────────────┐  │
+│   │  Auth Flow  │   │  Answer Keys │   │   Student Scores      │  │
+│   │  Temp Code  │   │  View / Edit │   │   View / Re-score     │  │
+│   └──────┬──────┘   └──────┬───────┘   └───────────┬───────────┘  │
+└──────────┼────────────────┼───────────────────────┼───────────────┘
+           │                │                        │
+           ▼                ▼                        ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Firebase RTDB                                  │
+│               (asia-southeast1 — Real-time Sync)                    │
+│                                                                     │
+│  /users_temp_code/{code}         /answer_keys/{teacher}/{uid}       │
+│  /users/teachers/{uid}           /answer_sheets/{teacher}/{uid}     │
+│  /enrollments/{teacher}/{subj}   /assessments/{teacher}/{uid}       │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            │ Read / Write (Admin SDK)
+                            │
+┌───────────────────────────▼─────────────────────────────────────────┐
+│                    Raspberry Pi 4B                                  │
+│                  Raspberry Pi OS Bookworm 32-bit                    │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                      main.py                                 │  │
+│  │              (Entry point — orchestrates all)                │  │
+│  └──────┬───────────────────┬──────────────────┬───────────────┘  │
+│         │                   │                  │                   │
+│         ▼                   ▼                  ▼                   │
+│  ┌─────────────┐   ┌───────────────┐   ┌─────────────────┐       │
+│  │  auth.py    │   │menu_scan_     │   │menu_check_      │       │
+│  │  Temp code  │   │answer_key.py  │   │answer_sheets.py │       │
+│  │  login      │   │               │   │                 │       │
+│  └─────────────┘   └──────┬────────┘   └────────┬────────┘       │
+│                            │                     │                  │
+│         ┌──────────────────┴─────────────────────┘                 │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                        Services                              │  │
+│  │                                                              │  │
+│  │  lcd_hardware.py      keypad_hardware.py                     │  │
+│  │  l3210_scanner.py     smart_collage.py                       │  │
+│  │  gemini_client.py     firebase_rtdb_client.py                │  │
+│  │  cloudinary_client.py scorer.py  sanitizer.py                │  │
+│  └──────┬──────────┬──────────────────┬──────────────┬─────────┘  │
+│         │          │                  │              │              │
+└─────────┼──────────┼──────────────────┼──────────────┼─────────────┘
+          │          │                  │              │
+          ▼          ▼                  ▼              ▼
+   ┌──────────┐ ┌─────────┐    ┌──────────────┐ ┌──────────────┐
+   │I2C LCD   │ │ Keypad  │    │ Epson L3210  │ │  Cloudinary  │
+   │16x2/20x4 │ │ 4x3     │    │ Scanner      │ │  Image Store │
+   │ 0x27     │ │ Matrix  │    │ (SANE/epson2)│ │              │
+   └──────────┘ └─────────┘    └──────────────┘ └──────────────┘
+                                       │
+                                       ▼
+                               ┌──────────────┐
+                               │ Google Gemini│
+                               │  OCR / AI    │
+                               │  Extraction  │
+                               └──────────────┘
+```
+
+### Data Flow — Scan Answer Key
+
+```
+Teacher presses [Scan]
+        │
+        ▼
+Epson L3210 → scanimage → PNG saved locally
+        │
+        ▼ (if multi-page)
+smart_collage.py → stitch pages into one image
+        │
+        ▼
+gemini_client.py → OCR → extract assessment_uid + answer_key JSON
+        │
+        ▼
+sanitizer.py → validate + clean JSON response
+        │
+        ├──▶ cloudinary_client.py → upload PNG → get public URL
+        │
+        └──▶ firebase_rtdb_client.py → save to /answer_keys/{teacher}/{uid}
+```
+
+### Data Flow — Check Answer Sheets
+
+```
+Teacher selects assessment → scans student sheet
+        │
+        ▼
+Epson L3210 → scanimage → PNG saved locally
+        │
+        ▼ (if multi-page)
+smart_collage.py → stitch pages
+        │
+        ▼
+gemini_client.py → OCR → extract student_id + student answers JSON
+        │
+        ▼
+scorer.py → compare vs answer_key → calculate score + breakdown
+        │
+        ├──▶ cloudinary_client.py → upload PNG → get public URL
+        │
+        └──▶ firebase_rtdb_client.py → save to /answer_sheets/{teacher}/{uid}/{student_id}
+```
+
+---
+
 ## Hardware Requirements
 
 | Component | Model / Spec |
@@ -51,13 +167,27 @@ CheckMe is an automated grading system that runs on a Raspberry Pi. It uses a fl
 
 ### Keypad (4x3 Matrix)
 
-> Replace the images below with your actual wiring diagrams.
+**All pins used (BCM):** `4, 5, 6, 7, 11, 12, 17`
 
-**Row Pins (BCM):** `19, 21, 20, 16`  
-**Column Pins (BCM):** `12, 13, 6`
+**Key-to-pin mapping** (discovered via hardware scan):
+
+| Key | OUT pin | IN pin |
+|-----|---------|--------|
+| `1` | 6       | 5      |
+| `2` | 4       | 5      |
+| `3` | 5       | 11     |
+| `4` | 6       | 17     |
+| `5` | 4       | 17     |
+| `6` | 11      | 17     |
+| `7` | 6       | 12     |
+| `8` | 4       | 12     |
+| `9` | 11      | 12     |
+| `*` | 6       | 7      |
+| `0` | 4       | 7      |
+| `#` | 7       | 11     |
 
 ```
-Default Key Layout:
+Keypad Layout:
 [1] [2] [3]
 [4] [5] [6]
 [7] [8] [9]
@@ -73,8 +203,15 @@ Default Key Layout:
 
 ### LCD I2C
 
-**I2C Address:** `0x27` or `0x3F` (detected automatically at startup)  
+**I2C Address:** `0x27` (detected via `i2cdetect -y 1`)
 **Bus:** I2C Bus 1 (default on Raspberry Pi 4B)
+
+| LCD Pin | Raspberry Pi Pin |
+|---------|-----------------|
+| GND     | Pin 6 (GND)     |
+| VCC     | Pin 2 (5V)      |
+| SDA     | Pin 3 (GPIO 2)  |
+| SCL     | Pin 5 (GPIO 3)  |
 
 📷 **LCD Wiring Diagram:**
 ```
@@ -124,14 +261,21 @@ raspi_code/
 
 ## Prerequisites
 
-- **Python:** 3.12 or above
-- **OS:** Raspberry Pi OS Desktop (Bookworm recommended)
-- **System packages:** See `requirements.txt` and `docs/raspi/RASPI_L3210_SETUP.md`
+- **Python:** 3.11 or above
+- **OS:** Raspberry Pi OS Bookworm 32-bit (armhf) — headless
+- **Kernel:** 32-bit userland required (`dpkg --print-architecture` = `armhf`)
+- **System packages:** See `setup.sh` in project root
 
 Enable I2C on your Raspberry Pi:
 ```bash
-sudo raspi-config
-# Interface Options → I2C → Enable
+# Add to /boot/firmware/config.txt (Bookworm)
+dtparam=i2c_arm=on
+
+# Load module without reboot
+sudo modprobe i2c-dev
+
+# Add to /etc/modules for persistence on boot
+echo "i2c-dev" | sudo tee -a /etc/modules
 ```
 
 ---
@@ -141,85 +285,100 @@ sudo raspi-config
 **1. Clone the repository**
 ```bash
 git clone <your-repo-url>
-cd raspi_code
+cd CheckMe
 ```
 
-**2. Create and activate a virtual environment**
+**2. Run the setup script**
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+chmod +x setup.sh
+./setup.sh
 ```
 
-**3. Install dependencies**
+The setup script handles:
+- System packages (SANE, OpenCV deps, I2C tools, libopenblas)
+- Python virtual environment (`~/checkme-env`) with piwheels
+- All Python dependencies
+- SANE backend configuration for Epson L3210
+- I2C enable in `/boot/firmware/config.txt`
+- User group assignments (scanner, i2c, gpio, lp)
+
+**3. Reboot after setup**
 ```bash
-pip install -r requirements.txt
+sudo reboot
 ```
 
-**4. Set up scanner**
-
-Follow the full scanner setup guide:
+**4. Set up Firebase credentials**
 ```
-docs/raspi/RASPI_L3210_SETUP.md
+raspi_code/config/firebase-credentials.json
 ```
 
-**5. Set up Firebase credentials**
-
-Place your Firebase service account JSON file at:
-```
-config/firebase-credentials.json
-```
-
-**6. Configure environment variables**
+**5. Configure environment variables**
 ```bash
-cp config/.env.example config/.env
-# Edit config/.env with your values
+cp raspi_code/config/.env.example raspi_code/config/.env
+nano raspi_code/config/.env
 ```
 
 ---
 
 ## Configuration
 
-All configuration lives in `config/.env`. See `config/.env.example` for the full list of required variables:
+All configuration lives in `config/.env`:
 
-```
-raspi_code/config/.env.example
-```
-
-Key variables include:
-
-| Variable | Description |
-|---|---|
-| `GEMINI_API_KEY` | Gemini API key |
-| `GEMINI_MODEL` | Gemini model name |
-| `GEMINI_PREFERRED_METHOD` | `sdk` or `rest` |
-| `CLOUDINARY_NAME` | Cloudinary cloud name |
-| `CLOUDINARY_API_KEY` | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | Cloudinary API secret |
-| `CLOUDINARY_ANSWER_SHEETS_PATH` | Cloudinary folder for answer sheets |
-| `FIREBASE_RTDB_BASE_REFERENCE` | Firebase RTDB URL |
-| `FIREBASE_CREDENTIALS_PATH` | Path to Firebase service account JSON |
-| `USER_CREDENTIALS_FILE` | Path to local session cache file |
-| `ANSWER_KEYS_PATH` | Local directory for scanned answer key images |
-| `ANSWER_SHEETS_PATH` | Local directory for scanned student sheet images |
-| `SCAN_DEBOUNCE_SECONDS` | Scanner debounce delay in seconds |
+| Variable | Description | Example |
+|---|---|---|
+| `GEMINI_API_KEY` | Gemini API key | `AIzaSy...` |
+| `GEMINI_MODEL` | Gemini model name | `gemini-2.5-flash-preview-04-17` |
+| `GEMINI_PREFERRED_METHOD` | `sdk` or `rest` | `sdk` |
+| `CLOUDINARY_NAME` | Cloudinary cloud name | `dyls...` |
+| `CLOUDINARY_API_KEY` | Cloudinary API key | `628...` |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret | `6F7...` |
+| `CLOUDINARY_ANSWER_KEYS_PATH` | Cloudinary folder for answer keys | `answer-keys` |
+| `CLOUDINARY_ANSWER_SHEETS_PATH` | Cloudinary folder for answer sheets | `answer-sheets` |
+| `FIREBASE_RTDB_BASE_REFERENCE` | Firebase RTDB URL | `https://project.asia-southeast1.firebasedatabase.app` |
+| `FIREBASE_CREDENTIALS_PATH` | Path to Firebase service account JSON | `config/firebase-credentials.json` |
+| `USER_CREDENTIALS_FILE` | Path to local session cache | `credentials/cred.txt` |
+| `ANSWER_KEYS_PATH` | Local dir for scanned answer key images | `scans/answer_keys` |
+| `ANSWER_SHEETS_PATH` | Local dir for scanned student sheet images | `scans/answer_sheets` |
+| `MAX_QUESTION_DIGITS` | Max digits for question count input | `2` |
+| `SCAN_DEBOUNCE_SECONDS` | Scanner debounce delay (seconds) | `3` |
+| `INPUT_TIMEOUT_SECONDS` | Keypad input timeout (seconds) | `300` |
 
 ---
 
 ## Running the System
 
 ```bash
-cd raspi_code
-source venv/bin/activate
+source ~/checkme-env/bin/activate
+cd ~/CheckMe/raspi_code
 python main.py
 ```
 
 To run on boot (systemd):
 
 ```bash
-# Create a service file at /etc/systemd/system/checkme.service
-# Then:
+sudo nano /etc/systemd/system/checkme.service
+```
+
+```ini
+[Unit]
+Description=CheckMe Grading System
+After=network.target
+
+[Service]
+User=checkme
+WorkingDirectory=/home/checkme/CheckMe/raspi_code
+ExecStart=/home/checkme/checkme-env/bin/python main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
 sudo systemctl enable checkme
 sudo systemctl start checkme
+sudo systemctl status checkme
 ```
 
 ---
@@ -229,18 +388,20 @@ sudo systemctl start checkme
 ```
 System Start
     │
-    ├─ Setup (LCD, Keypad, Auth)
+    ├─ Setup (LCD, Keypad, Scanner, Auth)
     │
     ├─ Authentication
     │   ├─ Check cred.txt → AUTHENTICATED → Main Menu
-    │   └─ NOT AUTHENTICATED → Enter 8-digit code from mobile app
-    │           └─ Validate via Firebase RTDB → Save credentials → Main Menu
+    │   └─ NOT AUTHENTICATED
+    │           └─ Enter 8-digit code from mobile app
+    │                   └─ Validate via Firebase RTDB
+    │                           └─ Save to cred.txt → Main Menu
     │
     └─ Main Menu
         ├─ [0] Scan Answer Key  → menu_scan_answer_key.run()
         ├─ [1] Check Sheets     → menu_check_answer_sheets.run()
         └─ [2] Settings
-                ├─ Logout   → Clear cred.txt → Restart process
+                ├─ Logout   → Clear cred.txt → os.execv() restart
                 ├─ Shutdown → Confirm → sudo shutdown -h now
                 └─ Back     → Main Menu
 ```
@@ -253,13 +414,13 @@ System Start
 
 Handles the full answer key ingestion flow:
 
-1. Ask teacher for total number of questions (1–99)
+1. Ask teacher for total number of questions (1–99, shown on LCD as typed)
 2. Show **SCAN ANSWER KEY** menu loop:
-   - **[0] Scan** — Trigger scanner, append file to list, loop back
-   - **[1] Done & Save** — Collage (if multi-page) → Gemini OCR → Extract `assessment_uid` + `answer_key` → Validate in RTDB → Save → Prompt to scan another or exit
+   - **[0] Scan** — Trigger scanner, append PNG to list, loop back
+   - **[1] Done & Save** — Collage if multi-page → Gemini OCR → Extract `assessment_uid` + `answer_key` → Validate in RTDB → Upload to Cloudinary → Save to Firebase → Prompt to scan another or exit
    - **[2] Cancel** — Delete local scans, return to Main Menu
 
-Error handling at each step: Cloudinary upload failure, collage failure, Gemini extraction failure, Firebase save failure — each shows a **Retry / Exit** menu.
+Error handling at each step shows a **Retry / Exit** menu on the LCD.
 
 ---
 
@@ -271,13 +432,13 @@ Handles the full student sheet grading flow:
 2. Teacher selects which assessment to grade against
 3. Validate assessment exists in RTDB
 4. Show **CHECK SHEETS** menu loop:
-   - **[0] Scan** — Trigger scanner, append file to list, loop back
-   - **[1] Done & Save** — Collage (if multi-page) → Gemini OCR → Extract `student_id` + `answers` → Score vs answer key → Upload to Cloudinary → Save to RTDB → Reset for next student
+   - **[0] Scan** — Trigger scanner, append PNG to list, loop back
+   - **[1] Done & Save** — Collage if multi-page → Gemini OCR → Extract `student_id` + answers → Score vs answer key → Upload to Cloudinary → Save to RTDB → Reset for next student
    - **[2] Cancel** — Delete local scans, return to Main Menu
 
 Scoring features:
 - Automatic answer comparison per question
-- Essay answers detected and flagged as `pending` (not auto-scored, `is_final_score = False`)
+- Essay answers flagged as `pending` (`is_final_score = False`)
 - Warning shown if scanned answer count doesn't match answer key count
 
 ---
@@ -287,12 +448,12 @@ Scoring features:
 | Service | Description |
 |---|---|
 | `auth.py` | Manages `cred.txt` session, validates 8-digit temp codes via Firebase |
-| `lcd_hardware.py` | I2C LCD driver with scrollable menus, multi-line display |
-| `keypad_hardware.py` | 4x3 matrix keypad GPIO driver with debounce |
-| `l3210_scanner_hardware.py` | Epson L3210 scanner interface via SANE |
-| `firebase_rtdb_client.py` | Firebase Admin SDK RTDB client (answer keys, student results, temp codes) |
+| `lcd_hardware.py` | I2C LCD driver with scrollable menus, 16x2/20x4 support |
+| `keypad_hardware.py` | 4x3 matrix keypad GPIO driver with debounce and echo callback |
+| `l3210_scanner_hardware.py` | Epson L3210 scanner interface via SANE (`scanimage -L`) |
+| `firebase_rtdb_client.py` | Firebase Admin SDK RTDB client — answer keys, student results, temp codes |
 | `cloudinary_client.py` | Single and batch image upload, delete |
-| `gemini_client.py` | Gemini OCR with retry logic |
+| `gemini_client.py` | Gemini OCR with retry logic (SDK and REST modes) |
 | `smart_collage.py` | Stitches multiple scanned pages into one image for Gemini |
 | `scorer.py` | Compares student answers to answer key, calculates score and breakdown |
 | `sanitizer.py` | Cleans and parses raw Gemini JSON responses |
@@ -304,11 +465,12 @@ Scoring features:
 
 ## Scanner Setup
 
-Full Epson L3210 setup instructions (SANE driver, permissions, testing):
-
+Full Epson L3210 setup instructions:
 ```
 docs/raspi/RASPI_L3210_SETUP.md
 ```
+
+**Known issue:** The L3210 is a multifunction printer+scanner. If the printer enters an error state (waste ink pad full, ink not detected), the scanner USB is reset by firmware and all scan commands return `Error during device I/O`. Fix the printer error first (reset waste ink counter via WIC Reset Utility on Windows), then scanning resumes normally.
 
 ---
 
@@ -316,28 +478,46 @@ docs/raspi/RASPI_L3210_SETUP.md
 
 **LCD not detected**
 ```bash
+sudo modprobe i2c-dev
 i2cdetect -y 1
-# Should show 0x27 or 0x3F
+# Should show 0x27
+```
+
+**I2C not loading on boot**
+```bash
+echo "i2c-dev" | sudo tee -a /etc/modules
+sudo reboot
 ```
 
 **Scanner not found**
 ```bash
 scanimage -L
-# Should list the Epson L3210
+# Should show: device 'epson2:libusb:001:xxx' is a Epson PID 1188 flatbed scanner
 ```
 
-**Firebase initialization error**
-- Confirm `config/firebase-credentials.json` exists and is valid
-- Confirm `FIREBASE_RTDB_BASE_REFERENCE` in `.env` matches your project URL
+**Scanner `Error during device I/O`**
+- Check printer LED status — 3 LEDs blinking = hardware error
+- Most common cause: waste ink pad full — reset via WIC Reset Utility on Windows
+- If LEDs stable and error persists: `groups $USER` must include `lp` and `scanner`
 
-**`SCAN_DEBOUNCE_SECONDS` crash on startup**
-- Ensure this variable is set in `config/.env` as an integer string e.g. `SCAN_DEBOUNCE_SECONDS=3`
+**numpy `libopenblas.so.0 not found`**
+```bash
+sudo apt install -y libopenblas-dev
+```
+
+**Firebase `db.SERVER_TIMESTAMP` AttributeError**
+- Not supported in Python Admin SDK — use `datetime.now(timezone.utc).isoformat()` instead
 
 **Keypad not responding**
-- Check BCM pin assignments in `services/keypad_hardware.py`
-- Confirm I2C and GPIO are enabled via `raspi-config`
+- Verify BCM pins match the hardware scan table above
+- `groups $USER` must include `gpio`
+- Re-run hardware pin scan: `python services/keypad_remap.py`
 
 **Gemini returns None or bad JSON**
-- Check `GEMINI_API_KEY` is valid
-- Check quota limits on your Gemini project
-- Review raw responses in logs (debug level)
+- Verify `GEMINI_API_KEY` is valid
+- Confirm model: `GEMINI_MODEL=gemini-2.5-flash-preview-04-17`
+- Check quota limits and review raw responses in `logs/`
+
+**Ethernet connection drops after ~1 minute**
+- Windows ICS DHCP lease timeout — restart ICS: `net stop SharedAccess && net start SharedAccess`
+- Or assign a static IP to the Pi's eth0 interface
