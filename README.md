@@ -327,7 +327,7 @@ Scores appear instantly on the teacher's phone. The teacher can:
 |:---:|:---:|:---:|
 | ![Front](docs/images/3d_front.png) | ![Back](docs/images/3d_back.png) | ![Assembled](docs/images/3d_assembled.png) |
 
-> **[⬇️ Download STL File (Google Drive)](https://your-google-drive-link-here)**
+> **[⬇️ Download STL File (Google Drive)](https://drive.google.com/drive/folders/1htZS2gGShpGqaIfvgbmEBvvoWkSfhs8W?usp=sharing)**
 >
 > Recommended print settings: PLA, 0.2mm layer height, 20% infill.
 
@@ -361,7 +361,7 @@ Scores appear instantly on the teacher's phone. The teacher can:
 
 ### 📱 Android APK
 
-> **[⬇️ Download CheckMe APK (Google Drive)](https://your-google-drive-link-here)**
+> **[⬇️ Download CheckMe APK (Google Drive)](https://drive.google.com/drive/folders/1BjFJGvU9MaaUgBxwOaqnnwYfOpYkgsbK?usp=sharing)**
 >
 > Minimum Android version: API 21 (Android 5.0)
 >
@@ -370,23 +370,6 @@ Scores appear instantly on the teacher's phone. The teacher can:
 > 2. Go to **Settings → Security → Enable Install from unknown sources**
 > 3. Open the APK and tap **Install**
 > 4. Open CheckMe and sign in as a Teacher or Student
-
-### 🖥️ Raspberry Pi Setup
-
-> **[⬇️ Download Raspi Scanning Pipeline (Google Drive)](https://your-google-drive-link-here)**
->
-> **Requirements:**
-> - Raspberry Pi 3B+ or newer
-> - Python 3.10+
-> - SANE-compatible USB flatbed scanner (see [Supported Scanners](#supported-scanners))
->
-> **Setup instructions:**
-> 1. Clone or download the `raspi/` folder onto your Raspberry Pi
-> 2. Run `pip install -r requirements.txt`
-> 3. Connect your USB scanner and verify with `scanimage -L`
-> 4. Add your Firebase service account key as `serviceAccountKey.json`
-> 5. Run `python main.py` to start the scanning pipeline
-> 6. Log in using the 8-digit one-time code generated from the mobile app
 
 ---
 
